@@ -5,13 +5,13 @@ export type ExpenseCategory = typeof EXPENSE_CATEGORIES[number]
 const CATEGORY_RULES: [ExpenseCategory,RegExp][] = [
   ['政府規費',/移民署|監理|稅捐|IMMIGRATION/],
   ['數位服務',/CLAUDE\.?AI|ANTHROPIC|OPENAI|CHATGPT|APPLE\.COM\/BILL|MICROSOFT|ADOBE|AMAZON WEB SERVICES|\bAWS\b|GOOGLE.*\b(?:ONE|STORAGE)\b/],
-  ['娛樂',/STEAM(?:GAMES)?|NETFLIX|SPOTIFY|DISNEY|PLAYSTATION|NINTENDO|電影院|影城|遊戲/],
-  ['交通',/UBER(?!\s*EATS)|\bGRAB\b(?!\s*(?:FOOD|MART))|高鐵|台鐵|臺鐵|捷運|計程車|停車|加油|\bSHELL\b|\bESSO\b/],
+  ['娛樂',/\bSTEAM(?:GAMES)?\b|NETFLIX|SPOTIFY|DISNEY|PLAYSTATION|NINTENDO|電影院|影城|遊戲/],
+  ['交通',/UBER(?!\s*EATS)|\bGRAB\b(?!.*(?:FOOD|MART))|高鐵|台鐵|臺鐵|捷運|計程車|停車|加油|\bSHELL\b|\bESSO\b/],
   ['旅遊住宿',/AGODA|BOOKING\.COM|AIRBNB|HOTEL|飯店|旅館|AIRLINES|航空/],
   ['餐飲',/UBER\s*EATS|GRAB\s*FOOD|FOODPANDA|STARBUCKS|MCDONALD|RESTAURANT|CAFE|COFFEE|餐廳|餐飲|咖啡|麥當勞|肯德基/],
   ['醫療',/HOSPITAL|CLINIC|PHARMACY|醫院|診所|藥局/],
   ['生活繳費',/電費|水費|瓦斯|電信|中華電信|台灣大哥大|遠傳|SINGTEL|STARHUB/],
-  ['購物',/AMAZON|SHOPEE|LAZADA|PCHOME|\bIKEA\b|\bWALMART\b|蝦皮|百貨|全聯|家樂福|便利商店|7[ -]ELEVEN|FAMILY\s*MART/],
+  ['購物',/AMAZON|SHOPEE|LAZADA|PCHOME|\bIKEA\b|\bWALMART\b|蝦皮|百貨|全聯|家樂福|便利商店|7 ?ELEVEN|FAMILY\s*MART/],
 ]
 
 export function expenseCategory(e: Pick<Expense,'description'|'category'>): ExpenseCategory {

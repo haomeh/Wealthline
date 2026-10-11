@@ -1723,3 +1723,10 @@ test('manual expense category edits persist only through the existing save flow'
   assert.equal(drive.uploaded.expenses[0].category,'醫療')
   await drive.finish()
 })
+
+
+test('overview without expenses keeps account onboarding first and hides the spending dashboard', async()=>{
+  await render(Overview,{data:fixture(),onGoRates(){},onNewAccount(){},onImport(){},onOpenAccount(){}})
+  assert.equal(document.querySelector('[aria-label="消費統計"]'),null)
+  assert.match(document.querySelector('.overview').firstElementChild.textContent,/開始記錄你的資產/)
+})

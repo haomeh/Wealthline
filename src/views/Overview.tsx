@@ -51,7 +51,7 @@ export function Overview({ data, onGoHistory, onGoRates, onGoLiabilities, onNewA
   const current = keys[index] === 'current'
   if (data.accounts.length === 0 && !data.liabilities?.length && points.length === 1) {
     return (
-      <div className="overview"><ExpenseSummary expenses={data.expenses ?? []} now={now} onGoExpenses={onGoExpenses}/><section className="panel empty span-2">
+      <div className="overview">{!!data.expenses?.length && <ExpenseSummary expenses={data.expenses} now={now} onGoExpenses={onGoExpenses}/>}<section className="panel empty span-2">
         <div className="empty-mark" aria-hidden>
           ＄
         </div>
@@ -74,7 +74,7 @@ export function Overview({ data, onGoHistory, onGoRates, onGoLiabilities, onNewA
 
   return (
     <div className="overview">
-      <ExpenseSummary expenses={data.expenses ?? []} now={now} onGoExpenses={onGoExpenses}/>
+      {!!data.expenses?.length && <ExpenseSummary expenses={data.expenses} now={now} onGoExpenses={onGoExpenses}/>}
       <section className="panel span-2 snapshot-timeline" aria-label="資產時間線">
         <div className="panel-head">
           <div><span className="eyebrow">資產時間線</span><h2>{current ? '目前資產' : point.date.replaceAll('-', '/')}</h2></div>

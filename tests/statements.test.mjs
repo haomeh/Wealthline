@@ -371,3 +371,12 @@ test('manual categories survive JSON roundtrip without changing import duplicate
   assert.deepEqual(expenses.parseExpense(prepared[0]),prepared[0])
   for(const category of ['invalid',null,3]) assert.throws(()=>expenses.parseExpense({...prepared[0],category}),/類別/)
 })
+
+
+test('merchant boundaries distinguish Steam, Grab food and compact convenience store names', () => {
+  for (const [description, category] of [
+    ['STEAMBOAT HOTPOT','未分類'], ['STEAM PURCHASE','娛樂'], ['STEAMGAMES.COM42595','娛樂'],
+    ['GRAB *GRABFOOD SG','餐飲'], ['GRAB *GRABMART SG','未分類'], ['GRAB *TRANSPORT SG','交通'],
+    ['7ELEVEN','購物'], ['7-ELEVEN','購物'], ['7 ELEVEN','購物'],
+  ]) assert.equal(expenses.expenseCategory({description}), category, description)
+})
