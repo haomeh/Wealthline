@@ -86,7 +86,7 @@ export function TrendChart({ dates, series, area = false, label = '資產走勢�
 
   function nearest(e: React.MouseEvent<SVGRectElement>) {
     const box = e.currentTarget.getBoundingClientRect()
-    const px = e.clientX - box.left + PAD.left
+    const px = e.clientX - box.left + (PAD.left - 10)
     let best = 0
     for (let i = 1; i < dates.length; i++) if (Math.abs(x(i) - px) < Math.abs(x(best) - px)) best = i
     return best

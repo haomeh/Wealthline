@@ -1926,6 +1926,37 @@ test('expense trends cross years, separate currencies and keep missing months di
 })
 
 
+for (const interaction of ['click','pointermove']) test(`narrow monthly trend ${interaction} targets every actual dot without a coordinate offset`,async()=>{
+  const {TrendChart}=await server.ssrLoadModule('/src/views/TrendChart.tsx')
+  const dates=Array.from({length:12},(_,i)=>`2026-${String(i+1).padStart(2,'0')}-01`)
+  const selected=[]
+  const originalObserver=globalThis.ResizeObserver
+  globalThis.ResizeObserver=class {constructor(callback){this.callback=callback} observe(){this.callback([{contentRect:{width:280}}])} disconnect(){}}
+  try {
+    await render(TrendChart,{dates,monthly:true,series:[{key:'TWD',label:'TWD',color:'red',values:dates.map((_,i)=>i+1)}],onSelect:date=>selected.push(date)})
+    const chart=document.querySelector('svg')
+    const rect=chart.querySelector('rect')
+    const dots=[...chart.querySelectorAll('.dot')]
+    assert.equal(dots.length,12)
+    for (const svgLeft of [0,137]) {
+      // JSDOM has no layout: model the overlay's real viewport bounds,
+      // including its SVG x offset, rather than the default zero rectangle.
+      const left=svgLeft+Number(rect.getAttribute('x'))
+      const width=Number(rect.getAttribute('width'))
+      rect.getBoundingClientRect=()=>({x:left,y:0,left,right:left+width,top:0,bottom:260,width,height:260})
+      const hovered=[]
+      selected.length=0
+      for (const dot of dots) {
+        const clientX=svgLeft+Number(dot.getAttribute('cx'))
+        await act(async()=>rect.dispatchEvent(new MouseEvent(interaction,{bubbles:true,clientX})))
+        if(interaction==='pointermove') hovered.push(document.querySelector('.trend-tip strong').textContent)
+      }
+      assert.deepEqual(interaction==='click'?selected:hovered,interaction==='click'?dates:dates.map(date=>date.slice(0,7).replace('-',' / ')),`SVG viewport left ${svgLeft}`)
+    }
+  } finally {globalThis.ResizeObserver=originalObserver}
+})
+
+
 test('personal password settings stay masked, auto-apply to import and save only ciphertext in version 12',async()=>{
   window.history.replaceState(null,'','/expenses')
   const drive=setupDrive(fixture())
