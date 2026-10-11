@@ -2518,16 +2518,15 @@ button.timeline-arrow { display: grid; place-items: center; flex: 0 0 36px; widt
 .expense-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 16px; border: 0; padding: 0; margin: 0 0 20px; min-width: 0; }
 .expense-fields .field { min-width: 0; margin: 0; }
 .expense-fields input { width: 100%; box-sizing: border-box; min-width: 0; }
-.expense-preview { display: grid; gap: 12px; }
-.expense-draft { border: 1px solid var(--hairline); border-radius: 10px; padding: 16px; min-width: 0; }
-.expense-draft .expense-fields { grid-template-columns: 150px minmax(180px, 1fr) 130px 80px; margin: 12px 0 0; }
-.expense-draft .expense-card { grid-column: 1 / -1; }
+.expense-preview { display: grid; gap: 12px; min-width: 0; overflow-x: auto; }
+.expense-draft { border: 1px solid var(--hairline); border-radius: 10px; padding: 16px; min-width: 780px; margin: 0; }
+.expense-draft .expense-fields { grid-template-columns: minmax(140px, 1fr) 150px minmax(180px, 1.5fr) 110px 70px; margin: 12px 0 0; }
 .statement-import > ul { overflow-wrap: anywhere; }
 .expense-select { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .statement-import details { margin-top: 16px; overflow-wrap: anywhere; }
 .statement-import > p { margin: 12px 0; }
 @media (max-width: 700px) {
-  .expense-fields, .expense-draft .expense-fields { grid-template-columns: minmax(0, 1fr); }
+  .expense-fields { grid-template-columns: minmax(0, 1fr); }
   .statement-import .panel-head { flex-wrap: wrap; }
 }
 .timeline-controls select { width: 100%; }
