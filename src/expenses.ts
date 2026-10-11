@@ -23,10 +23,15 @@ const CATEGORY_RULES: [ExpenseCategory,RegExp][] = [
   ['購物',/AMAZON|SHOPEE|LAZADA|PCHOME|\bIKEA\b|\bWALMART\b|蝦皮|百貨|全聯|家樂福|便利商店|7 ?ELEVEN|FAMILY\s*MART/],
 ]
 
+export function expenseCategoryRuleIndex(description:string,rules:ExpenseCategoryRule[]):number {
+  const merchant = categoryText(description)
+  return rules.findIndex(rule=>merchant.includes(categoryText(rule.keyword)))
+}
+
 export function expenseCategory(e: Pick<Expense,'description'|'category'>, rules: ExpenseCategoryRule[] = []): ExpenseCategory {
   if(e.category) return e.category
   const merchant = categoryText(e.description)
-  const custom = rules.find(rule=>merchant.includes(categoryText(rule.keyword)))
+  const custom = rules[expenseCategoryRuleIndex(e.description,rules)]
   if(custom) return custom.category
   return CATEGORY_RULES.find(([,rule])=>rule.test(merchant))?.[0] ?? '未分類'
 }
