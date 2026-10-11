@@ -131,11 +131,23 @@ test('Fubon ROC posting columns and E.SUN original amounts use the final billed 
     {date:'2025-11-03',description:'合成退款',amount:-100,currency:'TWD'}])
 })
 
-test('HSBC unreadable merchant rows require review; foreign source amount never replaces billed TWD',()=>{
-  const result=statements.parseStatement(['04/01 04/02 1,200', '04/03 04/04 USA USD 10.00 04/04 320'],'2026-04','TWD','HSBC信用卡.pdf')
-  assert.deepEqual(result.rows.map(r=>[r.amount,r.currency]),[[1200,'TWD'],[320,'TWD']])
-  assert.deepEqual(result.review,[0,1])
-  assert.ok(result.rows.every(r=>r.description.includes('未能辨識')))
+test('HSBC unknown merchants and OCR I separators stay in skipped rows, not spending',()=>{
+  const lines=['04/01 04/02 1,200','04/03 04/04 USA USD 10.00 04/04 320',
+    '04/05 04/06 I 80','04/07 04/08 | 100',
+    '04/09 04/10 商家未能辨識（請對照帳單填寫；可能包含繳款） 200',
+    '04/11 04/12 APPLE.COM/BILLITUNE 80']
+  const result=statements.parseStatement(lines,'2026-04','TWD','HSBC信用卡.pdf')
+  assert.deepEqual(result.rows,[{date:'2026-04-11',description:'APPLE.COM/BILLITUNE',amount:80,currency:'TWD'}])
+  assert.deepEqual(result.sourceIndexes,[5])
+  assert.deepEqual(result.skipped,lines.slice(0,5))
+})
+
+test('unrecognized merchant labels cannot be confirmed even without a review flag',async()=>{
+  for(const description of ['I','l','｜','商家未能辨識（請對照帳單填寫；可能包含繳款）']) {
+    const draft=await prepare([row(description)])
+    assert.throws(()=>expenses.mergeExpenses([],draft),/商家/)
+    assert.doesNotThrow(()=>model.parseWealthData({...model.emptyData(),version:10,expenses:draft}))
+  }
 })
 
 test('securities statements are rejected by filename and strong content markers, not credit-card ads',()=>{
@@ -201,6 +213,9 @@ test('merchant OCR preserves original date and billed amount, excludes repayment
   assert.deepEqual(statements.parseStatement([enriched],'2026-04','TWD','HSBC').rows,[{date:'2026-04-03',description:'SYNTHETIC.SHOP123',amount:320,currency:'TWD'}])
   assert.equal(statements.ocrMerchantLine(line,'unclear',20),line)
   assert.equal(statements.ocrMerchantLine(line,'123',99),line)
+  assert.equal(statements.ocrMerchantLine(line,'I',99),line)
+  assert.equal(statements.ocrMerchantLine(line,'l',99),line)
+  assert.equal(statements.ocrMerchantLine(line,'｜',99),line)
   assert.equal(statements.ocrMerchantLine(line,'word',NaN),line)
   assert.equal(statements.parseStatement([statements.ocrMerchantLine('04/01 04/02 -2,000','自動转帳繳款',90)],'2026-04','TWD','HSBC').rows.length,0)
   const item=(str,x,width)=>({str,width,height:9,transform:[1,0,0,1,x,100]})
@@ -212,7 +227,7 @@ test('merchant OCR preserves original date and billed amount, excludes repayment
 
 
 test('HSBC source rows stay stable when OCR excludes repayments or merchants change',async()=>{
-  const raw=['04/01 04/02 -2000','04/03 04/04 210','04/03 04/04 210']
+  const raw=['04/01 04/02 ORIGINAL MERCHANT -2000','04/03 04/04 ORIGINAL SHOP A 210','04/03 04/04 ORIGINAL SHOP B 210']
   const initial=statements.parseStatement(raw,'2026-04','TWD','HSBC')
   const recognized=raw.map((line,i)=>statements.ocrMerchantLine(line,['自動轉帳繳款','SYNTHETIC A','SYNTHETIC B'][i],90))
   const next=statements.parseStatement(recognized,'2026-04','TWD','HSBC')
@@ -254,7 +269,10 @@ test('synthetic HSBC PDF preserves readable scope headings and excludes date-sha
   assert.ok(start>0 && end>start)
   const indices=extracted.flatMap((_,i)=>i>start && i<end?[i]:[])
   const parsed=statements.parseStatement(extracted,'2026-04','TWD','HSBC',indices)
-  assert.deepEqual(parsed.rows.map(r=>r.amount),[210,900,640,-2000])
+  assert.deepEqual(parsed.rows,[])
+  assert.ok([210,900,640,-2000].every(amount=>parsed.skipped.some(line=>line.replace(/,/g,'').endsWith(String(amount)))))
+  const enriched=extracted.map(line=>statements.ocrMerchantLine(line,'SYNTHETIC SHOP',90))
+  assert.deepEqual(statements.parseStatement(enriched,'2026-04','TWD','HSBC',indices).rows.map(r=>r.amount),[210,900,640,-2000])
   assert.equal(extracted.filter(l=>l.endsWith('999')).length,2)
   assert.ok(parsed.rows.every(r=>r.amount!==999))
 })
@@ -269,7 +287,9 @@ test('multi-page HSBC fixture has a bankless continuation page with a readable t
     const second=statements.textLines((await (await pdf.getPage(2)).getTextContent()).items)
     assert.ok(second.some(l=>l.includes('消費日期') && l.includes('入帳日期')))
     assert.ok(!second.some(l=>/HSBC|匯豐/.test(l)))
-    assert.equal(statements.parseStatement(second,'2026-04','TWD','HSBC').rows.length,4)
+    assert.equal(statements.parseStatement(second,'2026-04','TWD','HSBC').rows.length,0)
+    const enriched=second.map(line=>statements.ocrMerchantLine(line,'SYNTHETIC SHOP',90))
+    assert.equal(statements.parseStatement(enriched,'2026-04','TWD','HSBC').rows.length,4)
   } finally {await task.destroy()}
 })
 
@@ -313,4 +333,22 @@ test('SG HSBC PDF skips its cover and combines only billed SGD transactions',asy
     const rows=await expenses.prepareExpenses(parsed.rows,'匯豐 (SG)','a'.repeat(64),parsed.sourceIndexes)
     assert.equal(expenses.mergeExpenses(rows,rows).added,0)
   } finally {await task.destroy()}
+})
+
+test('HSBC trims only merchant edge borders, preserving letters, inner separators and source keys',async()=>{
+  const source='04/03 04/05 1000'
+  for(const merchant of ['|SYNTHETIC TaipeiTWN | | |','｜SYNTHETIC TaipeiTWN｜｜','│SYNTHETIC TaipeiTWN 丨']) {
+    const enriched=statements.ocrMerchantLine(source,merchant,99)
+    const parsed=statements.parseStatement([enriched],'2026-04','TWD','HSBC')
+    assert.deepEqual(parsed.rows,[{date:'2026-04-03',description:'SYNTHETIC TaipeiTWN',amount:1000,currency:'TWD'}])
+    assert.equal(statements.parseStatement([`04/03 04/05 ${merchant} 1000`],'2026-04','TWD','HSBC').rows[0].description,'SYNTHETIC TaipeiTWN')
+    const first=await expenses.prepareExpenses(parsed.rows,'HSBC','a'.repeat(64),parsed.sourceIndexes)
+    const again=await expenses.prepareExpenses(statements.parseStatement([source.replace('1000','SYNTHETIC TaipeiTWN 1000')],'2026-04','TWD','HSBC').rows,'HSBC','a'.repeat(64),[0])
+    assert.equal(first[0].sourceKey,again[0].sourceKey)
+    assert.equal(expenses.mergeExpenses(first,again).added,0)
+  }
+  for(const merchant of ['IKEA','ILLUSTRATION','APPLE.COM/BILLITUNE','SHOP | BRANCH']) assert.equal(statements.ocrMerchantLine(source,merchant,99),`04/03 04/05 ${merchant} 1000`)
+  assert.equal(statements.ocrMerchantLine(source,'| | │',99),source)
+  const placeholder=await prepare([row('|商家未能辨識|')])
+  assert.throws(()=>expenses.mergeExpenses([],placeholder),/商家/)
 })

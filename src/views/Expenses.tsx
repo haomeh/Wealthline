@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
-import { mergeExpenses, parseExpense, prepareExpenses, sha256, type Expense } from '../expenses'
+import { mergeExpenses, isUnrecognizedMerchant, parseExpense, prepareExpenses, sha256, type Expense } from '../expenses'
 import { assertCreditCardFile, parseStatement, statementMetadata } from '../statements'
 import { fmt } from '../format'
 import type { WealthData } from '../model'
@@ -18,6 +18,10 @@ export function Expenses({data,onChange,busy}: {data:WealthData;onChange:(next:W
   if(editing) return <ExpenseEditor expense={editing} busy={busy} onCancel={()=>setEditing(null)} onSave={expense=>{
     onChange({...data,version:10,expenses:expenses.map(e=>e.id===expense.id?expense:e)})
     setEditing(null)
+  }} onRemove={()=>{
+    onChange({...data,version:10,expenses:expenses.filter(e=>e.id!==editing.id)})
+    setEditing(null)
+    setMessage('已移除這筆消費，請按「儲存變更」保存。')
   }}/>
   return <div className="expenses-page">
     <div className="page-head"><div><h2>消費明細</h2><p className="muted">從信用卡帳單匯入並整理交易。修改後請按「儲存變更」保存；這些紀錄不會自動扣除資產或變更信用卡負債。</p></div><button className="primary" disabled={busy} onClick={()=>{setMessage('');setImporting(true)}}>匯入信用卡帳單</button></div>
@@ -31,11 +35,11 @@ export function Expenses({data,onChange,busy}: {data:WealthData;onChange:(next:W
   </div>
 }
 
-function ExpenseEditor({expense,busy,onSave,onCancel}: {expense:Expense;busy:boolean;onSave:(e:Expense)=>void;onCancel:()=>void}) {
+function ExpenseEditor({expense,busy,onSave,onCancel,onRemove}: {expense:Expense;busy:boolean;onSave:(e:Expense)=>void;onCancel:()=>void;onRemove:()=>void}) {
   const [draft,setDraft] = useState(expense)
   const [amount,setAmount] = useState(String(expense.amount))
   const [error,setError] = useState('')
-  return <form className="panel form" onSubmit={e=>{e.preventDefault();try {if(!amount.trim()) throw new Error('請填寫金額');onSave(parseExpense({...draft,amount:Number(amount)}))} catch(e){setError(e instanceof Error?e.message:'資料無效')}}}>
+  return <form className="panel form" onSubmit={e=>{e.preventDefault();try {if(isUnrecognizedMerchant(draft.description)) throw new Error('請補上可辨識的商家，並核對是否為繳款');if(!amount.trim()) throw new Error('請填寫金額');onSave(parseExpense({...draft,amount:Number(amount)}))} catch(e){setError(e instanceof Error?e.message:'資料無效')}}}>
     <h2>編輯消費明細</h2>
     <fieldset disabled={busy} className="expense-fields">
       <label className="field"><span>消費日期</span><input type="date" required value={draft.date} onChange={e=>setDraft({...draft,date:e.target.value})}/></label>
@@ -45,14 +49,14 @@ function ExpenseEditor({expense,busy,onSave,onCancel}: {expense:Expense;busy:boo
       <label className="field"><span>幣別</span><input required pattern="[A-Z]{3}" value={draft.currency} onChange={e=>setDraft({...draft,currency:e.target.value.toUpperCase()})}/></label>
     </fieldset>
     {error && <p role="alert" className="banner error">{error}</p>}
-    <div className="row"><button className="primary" disabled={busy}>套用修改</button><button type="button" onClick={onCancel}>取消</button></div>
+    <div className="row"><button className="primary" disabled={busy}>套用修改</button><button type="button" onClick={onCancel}>取消</button><button type="button" className="danger" disabled={busy} onClick={()=>{if(confirm(`移除「${expense.description}」這筆消費？按「儲存變更」後才會保存。`)) onRemove()}}>移除這筆消費</button></div>
   </form>
 }
 
-type Draft = Expense & {selected:boolean;amountText:string;needsReview?:boolean}
+type Draft = Expense & {selected:boolean;amountText:string;needsReview?:boolean;sourceFile?:number}
 function StatementImport({existing,busy,onCancel,onImport}: {existing:Expense[];busy:boolean;onCancel:()=>void;onImport:(rows:Expense[],context:Expense[])=>void}) {
   const [files,setFiles] = useState<File[]>([])
-  const [reports,setReports] = useState<{name:string;bank?:string;month?:string;source?:string;count?:number;error?:string;ocr?:boolean;warning?:string}[]>([])
+  const [reports,setReports] = useState<{name:string;bank?:string;month?:string;source?:string;currency?:string;count?:number;error?:string;ocr?:boolean;warning?:string}[]>([])
   const [password,setPassword] = useState('')
   const [card,setCard] = useState('')
   const [month,setMonth] = useState('')
@@ -73,7 +77,6 @@ function StatementImport({existing,busy,onCancel,onImport}: {existing:Expense[];
   let validation = ''
   try {
     result = mergeExpenses(existing,selected.map(r=>{
-      if(r.needsReview && r.description.includes('商家未能辨識')) throw new Error('請先補上未辨識的商家，並核對是否為繳款')
       if(!r.amountText.trim()) throw new Error('請填寫每筆金額')
       return {...r,amount:Number(r.amountText)}
     }),drafts ?? [])
@@ -108,12 +111,12 @@ function StatementImport({existing,busy,onCancel,onImport}: {existing:Expense[];
           if(!statementMonth) throw new Error('無法辨識帳單月份，請填寫備用月份後重試')
           if(!statementCard.trim()) throw new Error('無法辨識銀行，請填寫備用銀行／卡片名稱後重試')
           const parsed = parseStatement(pdf.lines,statementMonth,info.currency || currency,info.bank || file.name,pdf.transactionIndexes)
-          if(!parsed.rows.length) throw new Error('沒有辨識到交易。此帳單的排版暫不支援，尚未匯入任何資料。')
+          if(!parsed.rows.length && !(info.bank === '匯豐' && parsed.skipped.length)) throw new Error(pdf.ocrError || '沒有辨識到交易。此帳單的排版暫不支援，尚未匯入任何資料。')
           const rows = await prepareExpenses(parsed.rows,statementCard,fileHash,info.bank === '匯豐' ? parsed.sourceIndexes : undefined)
           if(abort.signal.aborted) return
-          previews.push(...rows.map((r,i)=>({...r,selected:!pdf.ocrUsed && !parsed.review.includes(i),needsReview:pdf.ocrUsed || parsed.review.includes(i),amountText:String(r.amount)})))
+          previews.push(...rows.map(r=>({...r,selected:!pdf.ocrUsed,needsReview:pdf.ocrUsed,amountText:String(r.amount),sourceFile:outcomes.length})))
           ignored.push(...parsed.skipped.map(line=>`${file.name}：${line}`))
-          outcomes.push({name:file.name,bank:statementCard,month:statementMonth,source:info.monthSource || '手動備用',count:rows.length,ocr:pdf.ocrUsed,warning:pdf.ocrError})
+          outcomes.push({name:file.name,bank:statementCard,month:statementMonth,source:info.monthSource || '手動備用',currency:info.currency || currency,count:rows.length,ocr:pdf.ocrUsed,warning:pdf.ocrError || (!rows.length ? '沒有辨識到可匯入的交易，請核對下方未匯入文字列並手動補登。' : undefined)})
         } catch(e) {
           if(abort.signal.aborted) return
           outcomes.push({name:file.name,error:e instanceof Error?e.message:'無法解析帳單'})
@@ -121,7 +124,7 @@ function StatementImport({existing,busy,onCancel,onImport}: {existing:Expense[];
       }
       if(abort.signal.aborted) return
       setReports(outcomes)
-      if(previews.length) {setDrafts(previews);setSkipped(ignored);setFiles([])}
+      if(outcomes.some(r=>!r.error)) {setDrafts(previews);setSkipped(ignored);setFiles([])}
       else setError('所有檔案都未匯入，請查看各檔案的原因後重試。')
     } finally {if(!abort.signal.aborted) setParsing(false)}
   }
@@ -144,24 +147,40 @@ function StatementImport({existing,busy,onCancel,onImport}: {existing:Expense[];
       <button className="primary" disabled={locked || !files.length}>{parsing?'正在本機解析…':`解析並預覽${files.length?`（${files.length} 份）`:''}`}</button>
     </form> : <>
       <div className="page-head"><div><h3>確認交易 · {reports.filter(r=>!r.error).length} 份帳單</h3><p className="muted">辨識 {drafts.length} 筆。可取消勾選或修改內容；相同交易依出現次數比對，保留同日同額的多筆消費。</p></div></div>
-      <div className="expense-preview">{drafts.map((r,i)=>{
-        const duplicate = (r.sourceKey && existingSourceKeys.has(r.sourceKey)) || (r.importKey && existingImportKeys.has(r.importKey))
-        return <fieldset key={r.id} className="expense-draft" disabled={busy} aria-label={`交易 ${i+1}`}>
-          <label className="expense-select"><input type="checkbox" checked={r.selected} onChange={e=>patch(r.id,{selected:e.target.checked})}/><strong>第 {i+1} 筆</strong>{r.needsReview && <span className="tag">請核對商家與繳款</span>}{duplicate && <span className="tag">原始交易已匯入</span>}</label>
-          <div className="expense-fields">
-            <label className="field expense-card"><span>銀行／卡片名稱</span><input maxLength={100} aria-label={`第 ${i+1} 筆卡片`} value={r.card} onChange={e=>patch(r.id,{card:e.target.value})}/></label>
-            <label className="field"><span>日期</span><input type="date" aria-label={`第 ${i+1} 筆日期`} value={r.date} onChange={e=>patch(r.id,{date:e.target.value})}/></label>
-            <label className="field expense-description"><span>商家／說明</span><input maxLength={500} aria-label={`第 ${i+1} 筆商家`} value={r.description} onChange={e=>patch(r.id,{description:e.target.value})}/></label>
-            <label className="field"><span>金額</span><input type="number" step="0.01" aria-label={`第 ${i+1} 筆金額`} value={r.amountText} onChange={e=>patch(r.id,{amountText:e.target.value})}/></label>
-            <label className="field"><span>幣別</span><input maxLength={3} aria-label={`第 ${i+1} 筆幣別`} value={r.currency} onChange={e=>patch(r.id,{currency:e.target.value.toUpperCase()})}/></label>
-          </div>
-        </fieldset>
-      })}</div>
-      <button disabled={busy} onClick={()=>setDrafts(rows=>[...(rows??[]),{id:crypto.randomUUID(),date:`${month || reports.find(r=>r.month)?.month || new Date().toISOString().slice(0,7)}-01`,description:'',amount:0,amountText:'',currency,card:card || reports.find(r=>r.bank)?.bank || '',selected:true}])}>＋ 補上一筆交易</button>
-      {!!skipped.length && <details className="notice"><summary>未匯入的文字列（{skipped.length}）：含總計、繳款與無法辨識內容</summary><p className="small">只在本次預覽顯示，離開後不保存。請核對是否有漏掉的交易。</p><ul>{skipped.map((line,i)=><li key={i}>{line}</li>)}</ul></details>}
+      <div className="expense-preview">{[...reports.map((report,index)=>({report,index})).filter(({report})=>!report.error),...(drafts.some(r=>r.sourceFile===undefined)?[{report:{name:'手動補登'},index:undefined}]:[])].map(({report,index})=>
+        <section className="statement-group" key={index ?? 'manual'} aria-label={`來源：${report.name}`}>
+          <header><strong>{report.name}</strong><span className="muted small">{drafts.filter(r=>r.sourceFile===index).length} 筆</span></header>
+          <div className="table-wrap"><table className="data statement-preview-table"><thead><tr><th>選取</th><th>銀行／卡片</th><th>日期</th><th>商家／說明</th><th className="num">金額</th><th>幣別</th></tr></thead><tbody>
+          {drafts.map((r,i)=>{
+            if(r.sourceFile!==index) return null
+            const duplicate = (r.sourceKey && existingSourceKeys.has(r.sourceKey)) || (r.importKey && existingImportKeys.has(r.importKey))
+            return <tr key={r.id} aria-label={`交易 ${i+1}`}>
+              <td><label className="expense-select"><input type="checkbox" disabled={busy} aria-label={`第 ${i+1} 筆`} checked={r.selected} onChange={e=>patch(r.id,{selected:e.target.checked})}/><span>{i+1}</span>{r.needsReview && <span className="tag" title="請核對商家、日期、金額並排除繳款">核對</span>}{duplicate && <span className="tag">重複</span>}</label></td>
+              <td><PreviewField label={`第 ${i+1} 筆卡片`} value={r.card} maxLength={100} disabled={busy} onChange={card=>patch(r.id,{card})}/></td>
+              <td><PreviewField label={`第 ${i+1} 筆日期`} type="date" value={r.date} disabled={busy} onChange={date=>patch(r.id,{date})}/></td>
+              <td><PreviewField label={`第 ${i+1} 筆商家`} value={r.description} maxLength={500} disabled={busy} onChange={description=>patch(r.id,{description})}/></td>
+              <td className="num"><PreviewField label={`第 ${i+1} 筆金額`} type="number" value={r.amountText} disabled={busy} onChange={amountText=>patch(r.id,{amountText})}/></td>
+              <td><PreviewField label={`第 ${i+1} 筆幣別`} value={r.currency} maxLength={3} disabled={busy} onChange={currency=>patch(r.id,{currency:currency.toUpperCase()})}/></td>
+            </tr>
+          })}</tbody></table></div>
+          {!drafts.some(r=>r.sourceFile===index) && <p className="muted small">沒有辨識到可匯入的交易，請核對未匯入文字列。</p>}
+        </section>
+      )}</div>
+      <button disabled={busy} onClick={()=>{setDrafts(null);setSkipped([]);setReports([]);setError('')}}>重新選擇帳單</button>
+      <button disabled={busy} onClick={()=>setDrafts(rows=>[...(rows??[]),{id:crypto.randomUUID(),date:`${month || reports.find(r=>r.month)?.month || new Date().toISOString().slice(0,7)}-01`,description:'',amount:0,amountText:'',currency:reports.find(r=>r.month)?.currency || currency,card:card || reports.find(r=>r.bank)?.bank || '',selected:true}])}>＋ 補上一筆交易</button>
+      {!!skipped.length && <details className="notice"><summary>未匯入的文字列（{skipped.length}）：含總計、繳款與無法辨識內容</summary><p className="small">只在本次預覽顯示，離開後不保存。未辨識商家及單獨的 I、l／分隔線不列為消費。請核對是否有漏掉的交易，確認後可用「補上一筆交易」手動補登。</p><ul>{skipped.map((line,i)=><li key={i}>{line}</li>)}</ul></details>}
       {validation && <p role="alert" className="banner error">{validation}</p>}
       <p role="status">選取 {selected.length} 筆 · 可新增 {result?.added ?? 0} 筆 · 略過重複 {result?.duplicates ?? 0} 筆</p>
       <button className="primary" disabled={busy || !!validation || !result?.added} onClick={()=>{try{onImport(selected.map(r=>({...r,amount:Number(r.amountText)})),drafts)}catch(e){setError(e instanceof Error?e.message:'匯入失敗')}}}>確認匯入 {result?.added ?? 0} 筆</button>
     </>}
   </section>
+}
+
+function PreviewField({label,value,type='text',maxLength,disabled,onChange}: {label:string;value:string;type?:string;maxLength?:number;disabled:boolean;onChange:(value:string)=>void}) {
+  const [editing,setEditing] = useState<string|null>(null)
+  if(editing!==null) return <input className="preview-input" aria-label={label} autoFocus disabled={disabled} type={type} step={type==='number'?'0.01':undefined} maxLength={maxLength} value={editing} onChange={e=>setEditing(e.target.value)} onBlur={()=>{onChange(editing);setEditing(null)}} onKeyDown={e=>{
+    if(e.key==='Enter') {e.preventDefault();e.currentTarget.blur()}
+    if(e.key==='Escape') {e.preventDefault();setEditing(null)}
+  }}/>
+  return <button type="button" className="preview-value" disabled={disabled} aria-label={`編輯${label}`} title={value || '點擊填寫'} onClick={()=>setEditing(value)}>{value || <span className="muted">待填寫</span>}</button>
 }
