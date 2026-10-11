@@ -249,3 +249,11 @@ test('holding period edits preserve v11 category rules',()=>{
    assert.deepEqual(next.expenseCategoryRules,rules)
  }
 })
+
+
+test('holding period edits preserve password settings version 12',()=>{
+ const data={...fixture(),version:12,statementPasswords:[]}
+ const next=p.applyHoldingPeriod(data,period(),p.periodRevision(data),true,now)
+ assert.equal(next.version,12)
+ assert.deepEqual(next.statementPasswords,[])
+})

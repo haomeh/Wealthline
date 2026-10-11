@@ -2,43 +2,50 @@ import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { mergeExpenses, isUnrecognizedMerchant, parseExpense, prepareExpenses, sha256, expenseCategory, parseExpenseCategoryRules, EXPENSE_CATEGORIES, type ExpenseCategoryRule, type ExpenseCategory, type Expense } from '../expenses'
 import { assertCreditCardFile, parseStatement, statementMetadata } from '../statements'
 import { fmt } from '../format'
-import { ExpenseCategoryRules, AddCategoryRuleButton, CategoryRuleDialog } from './ExpenseCategoryRules'
+import { ExpenseCategoryRules, CategoryRuleButton, CategoryRuleDialog } from './ExpenseCategoryRules'
+import { StatementPasswordSettings } from './StatementPasswordSettings'
+import { parseStatementPasswords, statementPasswordStatus, unlockStatementPasswords, type StatementPassword } from '../statementPasswords'
 import type { WealthData } from '../model'
 
-export function Expenses({data,onChange,busy}: {data:WealthData;onChange:(next:WealthData)=>void;busy:boolean}) {
+export function Expenses({data,onChange,busy,passwordScope}: {passwordScope?:string;data:WealthData;onChange:(next:WealthData)=>void;busy:boolean}) {
   const [importing,setImporting] = useState(false)
   const [editing,setEditing] = useState<Expense|null>(null)
   const [message,setMessage] = useState('')
-  const [ruleExpense,setRuleExpense] = useState<Expense|null>(null)
+  const [managingPasswords,setManagingPasswords] = useState(false)
+  const [ruleExpense,setRuleExpense] = useState<{expense:Expense;index?:number}|null>(null)
   const expenses = data.expenses ?? []
   const rules = data.expenseCategoryRules ?? []
-  const ruleDialog = ruleExpense && <CategoryRuleDialog expense={ruleExpense} busy={busy} onCancel={()=>setRuleExpense(null)} onSave={rule=>{
-    onChange({...data,version:11,expenseCategoryRules:parseExpenseCategoryRules([...rules,rule])})
+  const passwords = data.statementPasswords ?? []
+  const passwordDialog = managingPasswords && passwordScope && <StatementPasswordSettings scope={passwordScope} passwords={passwords} busy={busy} onClose={()=>setManagingPasswords(false)} onSave={p=>onChange({...data,version:12,statementPasswords:parseStatementPasswords(passwords.some(x=>x.id===p.id)?passwords.map(x=>x.id===p.id?p:x):[...passwords,p])})} onRemove={id=>onChange({...data,version:12,statementPasswords:passwords.filter(p=>p.id!==id)})}/>
+
+  const ruleDialog = ruleExpense && <CategoryRuleDialog expense={ruleExpense.expense} rule={ruleExpense.index===undefined?undefined:rules[ruleExpense.index]} busy={busy} onCancel={()=>setRuleExpense(null)} onSave={rule=>{
+    onChange({...data,version:data.version===12 || data.statementPasswords!==undefined ? 12 : 11,expenseCategoryRules:parseExpenseCategoryRules(ruleExpense.index===undefined?[...rules,rule]:rules.map((r,i)=>i===ruleExpense.index?rule:r))})
     setRuleExpense(null)
   }}/>
-  if(importing) return <>{ruleDialog}<StatementImport onAddRule={setRuleExpense} rules={rules} existing={expenses} busy={busy} onCancel={()=>setImporting(false)} onImport={(rows,context)=>{
+  if(importing) return <>{ruleDialog}{passwordDialog}<StatementImport passwords={passwords} passwordScope={passwordScope} onManagePasswords={()=>setManagingPasswords(true)} onAddRule={(expense,index)=>setRuleExpense({expense,index})} rules={rules} existing={expenses} busy={busy} onCancel={()=>setImporting(false)} onImport={(rows,context)=>{
     const result = mergeExpenses(expenses,rows,context)
-    if(result.added) onChange({...data,version:data.version===11 || data.expenseCategoryRules!==undefined ? 11 : 10,expenses:result.expenses})
+    if(result.added) onChange({...data,version:data.version===12 || data.statementPasswords!==undefined ? 12 : data.version===11 || data.expenseCategoryRules!==undefined ? 11 : 10,expenses:result.expenses})
     setMessage(`已加入 ${result.added} 筆，略過 ${result.duplicates} 筆重複。`)
     setImporting(false)
   }}/></>
   if(editing) return <ExpenseEditor rules={rules} expense={editing} busy={busy} onCancel={()=>setEditing(null)} onSave={expense=>{
-    onChange({...data,version:data.version===11 || data.expenseCategoryRules!==undefined ? 11 : 10,expenses:expenses.map(e=>e.id===expense.id?expense:e)})
+    onChange({...data,version:data.version===12 || data.statementPasswords!==undefined ? 12 : data.version===11 || data.expenseCategoryRules!==undefined ? 11 : 10,expenses:expenses.map(e=>e.id===expense.id?expense:e)})
     setEditing(null)
   }} onRemove={()=>{
-    onChange({...data,version:data.version===11 || data.expenseCategoryRules!==undefined ? 11 : 10,expenses:expenses.filter(e=>e.id!==editing.id)})
+    onChange({...data,version:data.version===12 || data.statementPasswords!==undefined ? 12 : data.version===11 || data.expenseCategoryRules!==undefined ? 11 : 10,expenses:expenses.filter(e=>e.id!==editing.id)})
     setEditing(null)
     setMessage('已移除這筆消費，請按「儲存變更」保存。')
   }}/>
   return <div className="expenses-page">
-    {ruleDialog}
+    {ruleDialog}{passwordDialog}
     <div className="page-head"><div><h2>消費明細</h2><p className="muted">從信用卡帳單匯入並整理交易。修改後請按「儲存變更」保存；這些紀錄不會自動扣除資產或變更信用卡負債。</p></div><button className="primary" disabled={busy} onClick={()=>{setMessage('');setImporting(true)}}>匯入信用卡帳單</button></div>
-    <ExpenseCategoryRules rules={rules} busy={busy} onChange={expenseCategoryRules=>onChange({...data,version:11,expenseCategoryRules})}/>
+    {passwordScope && <div className="statement-password-summary"><span className="muted small">帳單密碼 · {passwords.length?`${passwords.length} 組設定`:'可設定後自動套用'}</span><button disabled={busy} onClick={()=>setManagingPasswords(true)}>管理帳單密碼</button></div>}
+    <ExpenseCategoryRules rules={rules} busy={busy} onChange={expenseCategoryRules=>onChange({...data,version:data.version===12 || data.statementPasswords!==undefined ? 12 : 11,expenseCategoryRules})}/>
     {message && <p role="status" className="notice">{message}</p>}
     {!expenses.length ? <section className="panel empty"><p>還沒有消費紀錄。選擇文字 PDF 帳單，預覽確認後即可匯入。</p></section> : <section className="panel">
       <h3>{expenses.length} 筆交易</h3>
       <div className="table-wrap"><table className="data expense-table"><thead><tr><th>日期</th><th>銀行／卡片</th><th>商家／說明</th><th>類別</th><th className="num">金額</th><th>操作</th></tr></thead><tbody>
-        {[...expenses].sort((a,b)=>b.date.localeCompare(a.date)).map(e=><tr key={e.id}><td>{e.date}</td><td>{e.card}</td><td>{e.description}</td><td><div className="expense-category-cell"><span>{expenseCategory(e,rules)}</span><AddCategoryRuleButton expense={e} rules={rules} busy={busy} onClick={()=>setRuleExpense(e)}/></div></td><td className="num">{e.currency} {fmt(e.amount)}</td><td><button disabled={busy} aria-label={`編輯消費 ${e.date} ${e.description}`} onClick={()=>setEditing(e)}>編輯</button></td></tr>)}
+        {[...expenses].sort((a,b)=>b.date.localeCompare(a.date)).map(e=><tr key={e.id}><td>{e.date}</td><td>{e.card}</td><td>{e.description}</td><td><div className="expense-category-cell"><span>{expenseCategory(e,rules)}</span><CategoryRuleButton expense={e} rules={rules} busy={busy} onClick={index=>setRuleExpense({expense:e,index})}/></div></td><td className="num">{e.currency} {fmt(e.amount)}</td><td><button disabled={busy} aria-label={`編輯消費 ${e.date} ${e.description}`} onClick={()=>setEditing(e)}>編輯</button></td></tr>)}
       </tbody></table></div>
     </section>}
   </div>
@@ -64,10 +71,13 @@ function ExpenseEditor({expense,busy,onSave,onCancel,onRemove,rules}: {rules:Exp
 }
 
 type Draft = Expense & {selected:boolean;amountText:string;needsReview?:boolean;sourceFile?:number}
-function StatementImport({existing,busy,onCancel,onImport,rules,onAddRule}: {onAddRule:(expense:Expense)=>void;rules:ExpenseCategoryRule[];existing:Expense[];busy:boolean;onCancel:()=>void;onImport:(rows:Expense[],context:Expense[])=>void}) {
+function StatementImport({existing,busy,onCancel,onImport,rules,onAddRule,passwords,passwordScope,onManagePasswords}: {passwords:StatementPassword[];passwordScope?:string;onManagePasswords:()=>void;onAddRule:(expense:Expense,index?:number)=>void;rules:ExpenseCategoryRule[];existing:Expense[];busy:boolean;onCancel:()=>void;onImport:(rows:Expense[],context:Expense[])=>void}) {
   const [files,setFiles] = useState<File[]>([])
   const [reports,setReports] = useState<{name:string;bank?:string;month?:string;source?:string;currency?:string;count?:number;error?:string;ocr?:boolean;warning?:string}[]>([])
   const [password,setPassword] = useState('')
+  const [available,setAvailable] = useState<string[]>([])
+  const [passwordNotice,setPasswordNotice] = useState('')
+  useEffect(()=>{let cancelled=false;void statementPasswordStatus(passwordScope ?? '',passwords).then(ids=>{if(!cancelled)setAvailable(ids)});return()=>{cancelled=true}},[passwordScope,passwords])
   const [card,setCard] = useState('')
   const [month,setMonth] = useState('')
   const [currency,setCurrency] = useState('TWD')
@@ -103,6 +113,10 @@ function StatementImport({existing,busy,onCancel,onImport,rules,onAddRule}: {onA
     const previews:Draft[] = [], ignored:string[] = []
     const outcomes:typeof reports = []
     try {
+      const stored = await unlockStatementPasswords(passwordScope ?? '',passwords)
+      if(abort.signal.aborted)return
+      const candidates = passwords.length ? [...stored.values,...secret.split(',').map(p=>p.trim()).filter(Boolean)] : secret
+      setPasswordNotice(stored.unavailable?`${stored.unavailable} 組密碼無法在此瀏覽器解鎖；請重新設定或手動輸入。`:'')
       for(const file of files) {
         if(abort.signal.aborted) return
         try {
@@ -114,7 +128,7 @@ function StatementImport({existing,busy,onCancel,onImport,rules,onAddRule}: {onA
           const fileHash = await sha256(bytes)
           const {readStatementPdf} = await import('../statementPdf')
           if(abort.signal.aborted) return
-          const pdf = await readStatementPdf(bytes,secret,abort.signal,file.name,message=>{if(!abort.signal.aborted)setProgress(message)})
+          const pdf = await readStatementPdf(bytes,candidates,abort.signal,file.name,message=>{if(!abort.signal.aborted)setProgress(message)})
           const info = statementMetadata(pdf.lines,pdf.title,file.name)
           const statementMonth = info.month || month
           const statementCard = card.trim() || (info.bank ? `${info.bank}${info.currency === 'SGD' ? ' (SG)' : ''}` : '')
@@ -141,7 +155,9 @@ function StatementImport({existing,busy,onCancel,onImport,rules,onAddRule}: {onA
 
   return <section className="panel statement-import">
     <div className="panel-head"><h2>匯入信用卡帳單</h2><button onClick={()=>{controller.current?.abort();onCancel()}}>取消匯入</button></div>
-    <p className="statement-privacy">PDF 與密碼只在瀏覽器處理，不上傳、不保存。確認匯入後，消費明細才會隨資料檔存於本機或 Google Drive。</p>
+    <p className="statement-privacy">PDF 與解密都只在瀏覽器處理，原始帳單不保存、不上傳。選擇保存的密碼會加密；密碼設定與確認匯入的消費明細，儲存後才會存於本機或自己的 Google Drive。</p>
+    {passwordScope && !drafts && <div className="statement-password-summary"><span className="muted small">{available.length?`已設定 ${available.length} 組密碼，解析時自動套用。`:'可先設定常用帳單密碼。'}{passwords.length>available.length?` ${passwords.length-available.length} 組需在此瀏覽器重新設定。`:''}</span><button disabled={locked} onClick={onManagePasswords}>管理帳單密碼</button></div>}
+    {passwordNotice && <p role="status" className="notice">{passwordNotice}</p>}
     {parsing && progress && <p role="status">{progress}</p>}
     {error && <p className="banner error" role="alert">{error}</p>}
     {!!reports.length && <ul className="notice" aria-label="各帳單解析結果">{reports.map((r,i)=><li key={i}><strong>{r.name}</strong>：{r.error || `${r.bank} · ${r.month}（${r.source}）· ${r.count} 筆待核對${r.ocr?' · OCR 商家請核對':''}${r.warning?` · ${r.warning}`:''}`}</li>)}</ul>}
@@ -172,7 +188,7 @@ function StatementImport({existing,busy,onCancel,onImport,rules,onAddRule}: {onA
               <td><PreviewField label={`第 ${i+1} 筆卡片`} value={r.card} maxLength={100} disabled={busy} onChange={card=>patch(r.id,{card})}/></td>
               <td><PreviewField label={`第 ${i+1} 筆日期`} type="date" value={r.date} disabled={busy} onChange={date=>patch(r.id,{date})}/></td>
               <td><PreviewField label={`第 ${i+1} 筆商家`} value={r.description} maxLength={500} disabled={busy} onChange={description=>patch(r.id,{description})}/></td>
-              <td><div className="expense-category-cell"><PreviewCategory rules={rules} expense={r} label={`第 ${i+1} 筆類別`} disabled={busy} onChange={category=>patch(r.id,{category})}/><AddCategoryRuleButton expense={r} rules={rules} busy={busy} label={`新增第 ${i+1} 筆分類規則`} onClick={()=>onAddRule(r)}/></div></td>
+              <td><div className="expense-category-cell"><PreviewCategory rules={rules} expense={r} label={`第 ${i+1} 筆類別`} disabled={busy} onChange={category=>patch(r.id,{category})}/><CategoryRuleButton expense={r} rules={rules} busy={busy} label={`新增第 ${i+1} 筆分類規則`} editLabel={`編輯第 ${i+1} 筆分類規則`} onClick={index=>onAddRule(r,index)}/></div></td>
               <td className="num"><PreviewField label={`第 ${i+1} 筆金額`} type="number" value={r.amountText} disabled={busy} onChange={amountText=>patch(r.id,{amountText})}/></td>
               <td><PreviewField label={`第 ${i+1} 筆幣別`} value={r.currency} maxLength={3} disabled={busy} onChange={currency=>patch(r.id,{currency:currency.toUpperCase()})}/></td>
             </tr>

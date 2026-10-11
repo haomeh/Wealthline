@@ -23,10 +23,15 @@ const CATEGORY_RULES: [ExpenseCategory,RegExp][] = [
   ['購物',/AMAZON|SHOPEE|LAZADA|PCHOME|\bIKEA\b|\bWALMART\b|蝦皮|百貨|全聯|家樂福|便利商店|7 ?ELEVEN|FAMILY\s*MART/],
 ]
 
+export function expenseCategoryRuleIndex(description:string,rules:ExpenseCategoryRule[]):number {
+  const merchant = categoryText(description)
+  return rules.findIndex(rule=>merchant.includes(categoryText(rule.keyword)))
+}
+
 export function expenseCategory(e: Pick<Expense,'description'|'category'>, rules: ExpenseCategoryRule[] = []): ExpenseCategory {
   if(e.category) return e.category
   const merchant = categoryText(e.description)
-  const custom = rules.find(rule=>merchant.includes(categoryText(rule.keyword)))
+  const custom = rules[expenseCategoryRuleIndex(e.description,rules)]
   if(custom) return custom.category
   return CATEGORY_RULES.find(([,rule])=>rule.test(merchant))?.[0] ?? '未分類'
 }
@@ -63,6 +68,23 @@ export function expenseMonthSummary(expenses: Expense[], month: string, rules: E
     currencies.set(e.currency,group)
   }
   return [...currencies.values()].sort((a,b)=>a.currency.localeCompare(b.currency)).map(g=>({...g,cards:[...g.cards.values()].sort((a,b)=>b.net-a.net),categories:[...g.categories.values()].sort((a,b)=>b.spending-a.spending)}))
+}
+
+export function expenseTrend(expenses: Expense[], endMonth: string, count: number) {
+  if(!/^\d{4}-(0[1-9]|1[0-2])$/.test(endMonth) || ![1,3,6,12].includes(count)) throw new Error('支出分析期間無效')
+  const [year,month] = endMonth.split('-').map(Number)
+  const months = Array.from({length:count},(_,i)=>{
+    const date = new Date(Date.UTC(year,month-count+i,1))
+    return date.toISOString().slice(0,7)
+  })
+  const summaries = months.map(m=>expenseMonthSummary(expenses,m))
+  const currencies = [...new Set(summaries.flatMap(groups=>groups.map(g=>g.currency)))].sort()
+  return currencies.map(currency=>{
+    const points = months.map((month,i)=>({month,net:summaries[i].find(g=>g.currency===currency)?.net ?? null}))
+    const recorded = points.filter(p=>p.net!==null)
+    const total = recorded.reduce((sum,p)=>sum+p.net!,0)
+    return {currency,points,total,average:total/recorded.length,recordedMonths:recorded.length}
+  })
 }
 
 export function parseExpense(raw: unknown): Expense {

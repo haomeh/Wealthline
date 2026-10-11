@@ -94,8 +94,8 @@ export function ocrMerchantLine(line:string, description:string, confidence:numb
 const datePattern = /^(?:(\d{3,4})[/.-])?(\d{1,2})[/.-](\d{1,2})(?:\s+|$)/
 const nonSpending = /繳款|繳費|轉帳扣款|自動扣繳|匯豐銀行自動扣款|滙豐銀行自動扣款|上期|前期|應繳|最低應繳|總額|小計|合計|PAYMENT|BALANCE|TOTAL/i
 // One worker tries each candidate; passwords never enter persisted import data.
-export function statementPasswordHandler(passwordText:string) {
-  const passwords = [...new Set(passwordText.split(',').map(p=>p.trim()).filter(Boolean))]
+export function statementPasswordHandler(passwordText:string | readonly string[]) {
+  const passwords = [...new Set((typeof passwordText === 'string' ? passwordText.split(',').map(p=>p.trim()) : passwordText).filter(Boolean))]
   let index = 0
   return (update:(value:string|Error)=>void) => update(index < passwords.length ? passwords[index++] : new Error('帳單需要密碼，或提供的密碼均不正確。'))
 }

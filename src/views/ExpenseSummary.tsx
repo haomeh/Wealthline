@@ -1,15 +1,18 @@
 import { useEffect, useRef, useState } from 'react'
-import { expenseMonthSummary, expenseCategory, type Expense, type ExpenseCategoryRule } from '../expenses'
+import { expenseMonthSummary, expenseTrend, expenseCategory, type Expense, type ExpenseCategoryRule } from '../expenses'
 import { fmt } from '../format'
+import { TrendChart } from './TrendChart'
 import { ActionIcon } from './ActionIcon'
 
 export function ExpenseSummary({expenses,now,onGoExpenses,rules = []}: {expenses:Expense[];now:string;onGoExpenses?:()=>void;rules?:ExpenseCategoryRule[]}) {
   const [selectedMonth,setSelectedMonth] = useState('')
+  const [period,setPeriod] = useState(3)
   const date = new Date(now)
   const currentMonth = `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}`
   const month = selectedMonth || currentMonth
   const months = [...new Set([currentMonth,month,...expenses.map(e=>e.date.slice(0,7))])].sort().reverse()
   const groups = expenseMonthSummary(expenses,month,rules)
+  const trend = expenseTrend(expenses,month,period)
   const rows = expenses.filter(e=>e.date.slice(0,7)===month).sort((a,b)=>b.date.localeCompare(a.date))
   const timeline = [...months].reverse()
   const index = timeline.indexOf(month)
@@ -26,6 +29,17 @@ export function ExpenseSummary({expenses,now,onGoExpenses,rules = []}: {expenses
       <div className="expense-month-nodes" ref={timelineRef}>{timeline.map(m=><button key={m} aria-pressed={m===month} onClick={()=>setSelectedMonth(m)}><span aria-hidden="true"/>{m.replace('-', '.')}</button>)}</div>
       <button className="timeline-arrow" aria-label="下一個消費月份" disabled={index===timeline.length-1} onClick={()=>setSelectedMonth(timeline[index+1])}><ActionIcon name="next"/></button>
     </nav>
+    <div className="expense-trend" aria-label="支出趨勢">
+      <div className="panel-head"><div><h4>支出趨勢</h4><span className="muted small">截至 {month.replace('-', ' / ')} · 每月淨支出</span></div><div className="expense-period-picker" aria-label="支出分析期間">{[1,3,6,12].map(n=><button key={n} aria-pressed={period===n} onClick={()=>setPeriod(n)}>近 {n===12?'1 年':`${n} 個月`}</button>)}</div></div>
+      {!trend.length ? <p className="muted small">這段期間尚無消費紀錄。</p> : trend.map(g=>{
+        return <div className="expense-trend-currency" key={g.currency} aria-label={`${g.currency} 支出趨勢`}>
+          <div className="expense-trend-totals"><strong>{g.currency} {fmt(g.total)} <small className="muted">期間淨支出</small></strong><span>月平均 {fmt(g.average)} <small className="muted">（{g.recordedMonths} 個有紀錄月份）</small></span></div>
+          <TrendChart dates={g.points.map(p=>`${p.month}-01`)} series={[{key:g.currency,label:g.currency,color:'var(--accent)',values:g.points.map(p=>p.net)}]} currency={g.currency} label={`${g.currency} 每月支出趨勢圖`} monthly onSelect={date=>setSelectedMonth(date.slice(0,7))}/>
+          <details className="expense-trend-details"><summary>查看每月數值</summary><div className="table-wrap"><table className="data"><thead><tr><th>月份</th><th className="num">淨支出（{g.currency}）</th></tr></thead><tbody>{g.points.map(p=><tr key={p.month}><td><button aria-label={`查看 ${p.month} 消費`} onClick={()=>setSelectedMonth(p.month)}>{p.month.replace('-', ' / ')}</button></td><td className="num">{p.net===null?'無紀錄':fmt(p.net)}</td></tr>)}</tbody></table></div></details>
+        </div>
+      })}
+      <p className="muted small">點選圖表可切換月份。無紀錄月份留空、不納入平均；有紀錄不代表已匯入整月帳單。本月數據可能尚未完整。</p>
+    </div>
     {!groups.length ? <p className="muted">{expenses.length?'這個月尚無消費紀錄，可切換月份查看。':'尚未匯入消費明細。'}</p> : <div className="expense-dashboard-currencies">{groups.map(g=><div className="expense-currency-summary" key={g.currency} aria-label={`${g.currency} 消費統計`}>
       <div className="expense-currency-title"><strong>{g.currency}</strong><span className="muted small">{g.count} 筆交易</span></div>
       <dl className="expense-metrics"><div><dt>消費</dt><dd>{fmt(g.spending)}</dd></div><div><dt>退款</dt><dd>{fmt(g.refunds)}</dd></div><div><dt>淨支出</dt><dd>{fmt(g.net)}</dd></div></dl>

@@ -16,7 +16,7 @@ class LocalBinaryData {
   }
 }
 
-export async function readStatementPdf(bytes: Uint8Array, password:string, signal:AbortSignal, fileName = '', onProgress?:(message:string)=>void): Promise<{lines:string[];title:string;ocrUsed:boolean;ocrError?:string;transactionIndexes?:number[]}> {
+export async function readStatementPdf(bytes: Uint8Array, password:string | readonly string[], signal:AbortSignal, fileName = '', onProgress?:(message:string)=>void): Promise<{lines:string[];title:string;ocrUsed:boolean;ocrError?:string;transactionIndexes?:number[]}> {
   const task = getDocument({data:new Uint8Array(bytes),password:'',BinaryDataFactory:LocalBinaryData,useWorkerFetch:false,useWasm:false,stopAtErrors:true,verbosity:0})
   task.onPassword = statementPasswordHandler(password)
   let ocr:Awaited<ReturnType<typeof import('./statementOcr').createStatementOcr>> | undefined

@@ -426,3 +426,13 @@ test('invalid rules include the data source and recovery advice',()=>{
     ['browser','此瀏覽器保存的資料格式不正確','上傳備份的資料檔'],
   ]) assert.throws(()=>model.parseWealthData(data,source),error=>error.message.includes(prefix)&&error.message.includes(advice)&&error.message.includes('分類規則'))
 })
+
+
+test('configured password candidates retain literal commas and deduplicate without changing values',()=>{
+ const handler=statements.statementPasswordHandler(['synthetic, literal','synthetic, literal',' another '])
+ const attempts=[]
+ handler(value=>attempts.push(value));handler(value=>attempts.push(value));handler(value=>attempts.push(value))
+ assert.deepEqual(attempts.slice(0,2),['synthetic, literal',' another '])
+ assert.ok(attempts[2] instanceof Error)
+ assert.equal(attempts[2].message.includes('synthetic'),false)
+})
