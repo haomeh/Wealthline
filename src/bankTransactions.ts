@@ -122,6 +122,13 @@ export function classifyBankTransaction(transaction: Pick<BankTransaction,'descr
 }
 const signature = (row: BankTransactionRow, accountId:string): string => JSON.stringify([accountId,row.date,normalizeBankKeyword(row.description),row.currency,row.direction,row.amount])
 const hashKey = async (parts: unknown[]): Promise<string> => 'bank-v1:' + await sha256(new TextEncoder().encode(JSON.stringify(['bank-v1',...parts])))
+// Transient, bounded provenance evidence for prepared sources, never serialized.
+// Opaque persisted hashes alone cannot prove that two locations share a document.
+const preparedDocuments = new Map<string,string>()
+const rememberDocument = (sourceKey:string, fileHash:string) => {
+  if (preparedDocuments.size >= 100000) preparedDocuments.delete(preparedDocuments.keys().next().value!)
+  preparedDocuments.set(sourceKey,fileHash)
+}
 
 /**
  * Map a section to an independent account BEFORE preparing. Re-run with original rows/location
@@ -143,21 +150,30 @@ export async function prepareBankTransactions(rows: readonly BankTransactionRow[
   return Promise.all(parsed.map(async (row,index)=> {
     const key = signature(originals[index],accountId), ordinal = (counts.get(key) ?? 0) + 1
     counts.set(key,ordinal)
-    return {id:crypto.randomUUID(),accountId,...row,sourceKey:await hashKey(['source',fileHash,...locations[index],accountId]),importKey:await hashKey(['content',key,ordinal])}
+    const sourceKey = await hashKey(['source',fileHash,...locations[index],accountId])
+    rememberDocument(sourceKey,fileHash)
+    return {id:crypto.randomUUID(),accountId,...row,sourceKey,importKey:await hashKey(['content',key,ordinal])}
   }))
 }
 export interface BankMergeOptions {keepSuspectedDuplicates?:boolean}
 /**
  * Exact file locations are duplicates. Content/quantity matches across different documents are
  * only suspected: return their rows for review, or keep them explicitly. No balance inference.
- * statementRows is the FULL prepared section (including unchecked rows) for occurrence context.
+ * statementRows is the FULL prepared statement context (including unchecked rows and
+ * all mapped sections) for occurrence context. Same-file proof is transient; when
+ * absent or evicted, equal content remains suspected rather than guessed unique.
  */
 export function mergeBankTransactions(existing: readonly BankTransaction[], incoming: readonly BankTransaction[], accounts: readonly BankTransactionAccount[], statementRows: readonly BankTransaction[] = incoming, options: BankMergeOptions = {}) {
   const previous = parseBankTransactions(existing,accounts), rows = parseBankTransactions(incoming,accounts), context = parseBankTransactions(statementRows,accounts)
   const ids = new Set(previous.map(row=>row.id))
   if (rows.some(row=>ids.has(row.id))) return fail()
   const sourceKeys = new Set(previous.flatMap(row=>row.sourceKey ? [row.sourceKey] : []))
-  const importKeys = new Set(previous.flatMap(row=>row.importKey ? [row.importKey] : []))
+  const previousImports = new Map<string,BankTransaction[]>()
+  for (const row of previous) if (row.importKey) {
+    const matches = previousImports.get(row.importKey) ?? []
+    matches.push(row)
+    previousImports.set(row.importKey,matches)
+  }
   const contextSources = new Set(context.flatMap(row=>row.sourceKey ? [row.sourceKey] : []))
   const contextImports = new Set(context.flatMap(row=>row.importKey ? [row.importKey] : []))
   const counts = new Map<string,number>()
@@ -167,10 +183,20 @@ export function mergeBankTransactions(existing: readonly BankTransaction[], inco
     counts.set(key,(counts.get(key) ?? 0)+1)
   }
   const added: BankTransaction[] = [], suspectedDuplicateRows: BankTransaction[] = []
+  const batchImports = new Map<string,Set<string | undefined>>()
   for (const row of rows) {
     if (row.sourceKey && sourceKeys.has(row.sourceKey)) continue
     const key = signature(row,row.accountId)
-    const keyedMatch = !!row.importKey && importKeys.has(row.importKey)
+    const document = row.sourceKey ? preparedDocuments.get(row.sourceKey) : undefined
+    const batchDocuments = row.importKey ? batchImports.get(row.importKey) : undefined
+    // Distinct locations prepared from the same file are genuine occurrences,
+    // even when section-local content ordinals collide. Unknown evidence and
+    // other documents remain suspected. Existing matches remain suspected unless
+    // their distinct same-file sources are explicitly in the full batch context.
+    const batchMatch = !!batchDocuments && (!document || [...batchDocuments].some(value=>value !== document))
+    const existingMatch = !!row.importKey && !!previousImports.get(row.importKey)?.some(value=>
+      value.importKey === row.importKey && !(document && value.sourceKey && contextSources.has(value.sourceKey) && preparedDocuments.get(value.sourceKey) === document))
+    const keyedMatch = existingMatch || batchMatch
     const countMatch = !keyedMatch && (counts.get(key) ?? 0) > 0
     if (countMatch) counts.set(key,counts.get(key)!-1)
     if (keyedMatch || countMatch) {
@@ -179,7 +205,11 @@ export function mergeBankTransactions(existing: readonly BankTransaction[], inco
     }
     added.push(row)
     if (row.sourceKey) sourceKeys.add(row.sourceKey)
-    if (row.importKey) importKeys.add(row.importKey)
+    if (row.importKey) {
+      const documents = batchImports.get(row.importKey) ?? new Set<string | undefined>()
+      documents.add(document)
+      batchImports.set(row.importKey,documents)
+    }
   }
   return {transactions:[...previous,...added],added:added.length,duplicates:rows.length-added.length,suspectedDuplicates:suspectedDuplicateRows.length,suspectedDuplicateRows}
 }

@@ -309,6 +309,10 @@ export function parseBankStatement(pages: readonly BankPage[], metadata: BankSta
                     section = undefined;
                     lastDate = undefined;
                 }
+                // Only a validated new table reopens a closed section. Authenticated
+                // SG continuation retains its unfinished transaction state.
+                if (!continuing || !section)
+                    closed = false;
                 table = candidate;
                 activeLayout = layout === fubon && candidate.currencyX !== undefined ? foreignLayout : layout;
                 account = contextAccount;
@@ -366,7 +370,15 @@ export function parseBankStatement(pages: readonly BankPage[], metadata: BankSta
                 }
                 continue;
             }
-            if (closed || l.y < 100 || (l.items.length === 1 && l.items[0].x > table.creditEdge && currencies(l.text).length === 1))
+            if (l.y < 100) {
+                // Footer geometry is an exclusion, not evidence that no activity was lost.
+                const dateText = l.items.filter(i => i.x >= table!.dateX - 10 * table!.scale && i.x < table!.descriptionX - 8 * table!.scale).map(i => i.text).join(' ');
+                const hasMoney = l.items.some(i => (Math.abs(i.x + i.width - table!.debitEdge) < 18 * table!.scale || Math.abs(i.x + i.width - table!.creditEdge) < 18 * table!.scale) && money(i.text, !!activeLayout.decimalOnly) !== undefined);
+                if (isoDate(dateText, activeLayout.dateKind) && hasMoney)
+                    issue(p.page, 'activity-below-table-boundary');
+                continue;
+            }
+            if (closed || (l.items.length === 1 && l.items[0].x > table.creditEdge && currencies(l.text).length === 1))
                 continue;
             if (/^(?:本期無交易|無交易|No transactions|No activity)$/i.test(l.text)) {
                 if (!section && currency)
@@ -432,6 +444,13 @@ export function parseBankStatement(pages: readonly BankPage[], metadata: BankSta
                 discard('missing-explicit-amount');
                 lastDate = date;
                 pending = { date, description: [], page: p.page, rowKey: `row-${n + 1}`, invalid: !date };
+            }
+            // A narrative-only line after an already completed transaction has no
+            // proven owner: it may trail that row or begin a new undated row.
+            // Never silently prepend it to the next transaction.
+            if (!pending && !dateText && narrative && !debit.length && !credit.length && activeLayout.wrapped && lastDate) {
+                issue(p.page, 'ambiguous-trailing-narration');
+                continue;
             }
             if (!pending && (date || ((debit.length || credit.length || narrative) && activeLayout.wrapped && lastDate))) {
                 pending = { date: date ?? lastDate, description: [], page: p.page, rowKey: `row-${n + 1}`, invalid: false };

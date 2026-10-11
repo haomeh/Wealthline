@@ -46,6 +46,12 @@ test('only clear directed income and card payment semantics get built-in suggest
   assert.deepEqual(bank.classifyBankTransaction(tx({description:'信用卡繳款',direction:'debit'})),{kind:'excluded',reason:'信用卡繳款'})
 })
 
+test('short account labels are not identifiers while complete and transient identifiers remain protected',()=>{
+ for(const text of ['台新帳戶1','數位帳戶2.0回饋','帳戶 12345'])assert.equal(privacy.protectBankText(text),text)
+ for(const text of ['帳號 12345678','帳戶 1234-5678','ACCOUNT NO 123456'])assert.ok(privacy.protectBankText(text).includes('[帳號已遮蔽]'))
+ assert.equal(privacy.protectBankText('Memo 123456',{accountIdentifiers:['123456']}),'Memo [帳號已遮蔽]')
+ assert.equal(privacy.protectBankText('身分證 A123456789'),'身分證 [識別碼已遮蔽]')
+})
 test('deterministic contextual and known-identifier protection retains numeric references', async () => {
   const text='帳號：１２３４－５６７８－９０１２ Order 987654321098 Reference 876543210123 身分證字號 A123456789'
   const masked=privacy.protectBankText(text)

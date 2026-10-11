@@ -3,6 +3,22 @@ import {before,after,test} from 'node:test'
 import {createServer} from 'vite'
 import {hsbc,compact,item,right,page,mast,hsbcHeader,compactHeader} from './fixtures/bank-statements/layouts.mjs'
 import {observedSg,observedFubon,observedEsun} from './fixtures/bank-statements/fragmented.mjs'
+test('closed Fubon TWD reopens validated foreign table on same or next page',()=>{
+ for(const nextPage of [false,true]) {
+  const p=compact('fubon');p[0].items.push(item('期末結餘',170,650));
+  const fx=[...compactHeader('fubon',600,true),item('8800002222',23,580),item('USD',100,580),item('2031/04/09',135,580),item('Foreign payment',191,580),right('20.50',349,580)];
+  if(nextPage)p.push(page(2,fx));else p[0].items.push(...fx);
+  const r=bank.parseBankStatement(p);assert.equal(r.status,'recognized');assert.equal(r.recognizedCount,2);assert.deepEqual(r.sections.map(s=>s.currency),['TWD','USD']);
+ }
+})
+test('HSBC orphan narration after completed amount is warned, not attached to next undated row',()=>{
+ const p=hsbc();p[0].items.push(item('First trailing detail',103,655),item('Second payment',103,640),right('7.00',482,640));
+ const r=bank.parseBankStatement(p);assert.equal(r.status,'partial');assert.equal(r.recognizedCount,2);assert.equal(r.sections[0].rows[1].description,'Second payment');assert.ok(r.sections[0].warnings.some(w=>w.code==='ambiguous-trailing-narration'));
+})
+test('validated activity-shaped footer row is warned rather than silently dropped',()=>{
+ const p=hsbc();p[0].items.push(item('18/06/2031',53,90),item('Low payment',103,90),right('7.00',482,90));
+ const r=bank.parseBankStatement(p);assert.equal(r.recognizedCount,1);assert.equal(r.status,'partial');assert.ok(r.sections[0].warnings.some(w=>w.code==='activity-below-table-boundary'));
+})
 let server,bank
 before(async()=>{server=await createServer({configFile:false,envDir:false,server:{middlewareMode:true,watch:null,hmr:false,ws:false}});bank=await server.ssrLoadModule('/src/bankStatements.ts')})
 after(()=>server?.close())
