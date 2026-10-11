@@ -536,6 +536,7 @@ export default function App() {
             onGoHistory={(date) => go(date ? { tab: 'history', date } : { tab: 'history' })}
             onGoLiabilities={() => go({ tab: 'liabilities' })}
             onGoRates={() => go({ tab: 'rates' })}
+            onGoExpenses={() => go({ tab: 'expenses' })}
             onNewAccount={() => goAccounts({ page: 'new' })}
             onImport={() => goAccounts({ page: 'list', importing: true })}
             onOpenAccount={(id) => goAccounts({ page: 'detail', id })}

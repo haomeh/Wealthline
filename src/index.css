@@ -2515,6 +2515,16 @@ button.timeline-arrow { display: grid; place-items: center; flex: 0 0 36px; widt
 .expense-table { min-width: 650px; }
 .expense-table td { overflow-wrap: anywhere; max-width: 320px; }
 .expense-table td:first-child, .expense-table .num { white-space: nowrap; }
+.expense-summary .panel-head { flex-wrap: wrap; gap: 16px; }
+.expense-summary .panel-head h3 { margin: 4px 0 0; }
+.expense-summary select { width: auto; }
+.expense-currency-summary { border-top: 1px solid var(--hairline); padding-top: 18px; margin-top: 20px; }
+.expense-currency-title { display: flex; align-items: baseline; gap: 12px; }
+.expense-metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin: 18px 0; }
+.expense-metrics dt { color: var(--muted); font-size: .8rem; margin-bottom: 8px; }
+.expense-metrics dd { margin: 0; font-size: clamp(1.1rem, 3vw, 1.75rem); font-weight: 600; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.expense-summary .data td:first-child { overflow-wrap: anywhere; }
+.expense-summary .data .num { white-space: nowrap; }
 .expense-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 16px; border: 0; padding: 0; margin: 0 0 20px; min-width: 0; }
 .expense-fields .field { min-width: 0; margin: 0; }
 .expense-fields input { width: 100%; box-sizing: border-box; min-width: 0; }
@@ -2536,10 +2546,23 @@ button.preview-value:hover, button.preview-value:focus-visible { border-color: v
 .statement-preview-table .num .preview-value { text-align: right; font-variant-numeric: tabular-nums; }
 .statement-preview-table .preview-input { width: 100%; min-width: 0; box-sizing: border-box; padding: 8px 6px; }
 .statement-import > ul { overflow-wrap: anywhere; }
+.statement-upload-fields { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); align-items: center; gap: 24px; border: 0; margin: 24px 0; padding: 0; min-width: 0; }
+.statement-upload-fields .field { margin: 0; min-width: 0; }
+.statement-upload { padding: 22px; border: 1px dashed var(--border); border-radius: 10px; background: var(--surface); }
+.statement-upload input { width: 100%; min-width: 0; box-sizing: border-box; margin-top: 8px; font-size: .8rem; border: 0; background: transparent; padding: 0; }
+.statement-upload input::file-selector-button { border: 1px solid var(--border); border-radius: 6px; padding: 9px 12px; margin-right: 12px; background: var(--surface); color: var(--text); cursor: pointer; }
+.statement-password input { width: 100%; min-width: 0; box-sizing: border-box; }
+.statement-privacy { color: var(--muted); font-size: .8rem; line-height: 1.7; }
+.statement-options { border-top: 1px solid var(--hairline); border-bottom: 1px solid var(--hairline); margin-bottom: 20px; padding: 14px 0; }
+.statement-options summary { cursor: pointer; font-size: .85rem; }
+.statement-options summary span { margin-left: 12px; }
+.statement-options .expense-fields { margin: 20px 0 0; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.statement-help { font-size: .8rem; color: var(--muted); }
+.statement-help summary { cursor: pointer; }
 .statement-import details { margin-top: 16px; overflow-wrap: anywhere; }
 .statement-import > p { margin: 12px 0; }
 @media (max-width: 700px) {
-  .expense-fields { grid-template-columns: minmax(0, 1fr); }
+  .expense-fields, .statement-options .expense-fields, .statement-upload-fields { grid-template-columns: minmax(0, 1fr); }
   .statement-import .panel-head { flex-wrap: wrap; }
 }
 .timeline-controls select { width: 100%; }

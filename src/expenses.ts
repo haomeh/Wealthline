@@ -12,6 +12,23 @@ export interface Expense {
 }
 export type StatementRow = Pick<Expense, 'date' | 'description' | 'amount' | 'currency'>
 
+export function expenseMonthSummary(expenses: Expense[], month: string) {
+  const currencies = new Map<string, {currency:string;count:number;spending:number;refunds:number;net:number;cards:Map<string,{card:string;count:number;net:number}>}>()
+  for(const e of expenses) {
+    if(e.date.slice(0,7)!==month) continue
+    const group = currencies.get(e.currency) ?? {currency:e.currency,count:0,spending:0,refunds:0,net:0,cards:new Map()}
+    group.count++
+    group.spending += Math.max(0,e.amount)
+    group.refunds += Math.max(0,-e.amount)
+    group.net += e.amount
+    const card = group.cards.get(e.card) ?? {card:e.card,count:0,net:0}
+    card.count++;card.net += e.amount
+    group.cards.set(e.card,card)
+    currencies.set(e.currency,group)
+  }
+  return [...currencies.values()].sort((a,b)=>a.currency.localeCompare(b.currency)).map(g=>({...g,cards:[...g.cards.values()].sort((a,b)=>b.net-a.net)}))
+}
+
 export function parseExpense(raw: unknown): Expense {
   const e = raw as Expense
   if (!e || typeof e !== 'object' || typeof e.id !== 'string' || !e.id.trim()) throw new Error('消費識別碼無效')

@@ -22,6 +22,7 @@ import {
 import { colorize } from '../chartColors'
 import { ChangeSinceLast } from './AssetChange'
 import { Allocation, RankBars } from './charts'
+import { ExpenseSummary } from './ExpenseSummary'
 
 interface Props {
   data: WealthData
@@ -31,9 +32,10 @@ interface Props {
   onNewAccount: () => void
   onImport: () => void
   onOpenAccount: (id: string) => void
+  onGoExpenses?: () => void
 }
 
-export function Overview({ data, onGoHistory, onGoRates, onGoLiabilities, onNewAccount, onImport, onOpenAccount }: Props) {
+export function Overview({ data, onGoHistory, onGoRates, onGoLiabilities, onNewAccount, onImport, onOpenAccount, onGoExpenses }: Props) {
   const now = useCalendarNow()
   const estimated = data.liabilities?.some(d => d.schedule)
   const historical = useHistoricalValuations(data)
@@ -49,7 +51,7 @@ export function Overview({ data, onGoHistory, onGoRates, onGoLiabilities, onNewA
   const current = keys[index] === 'current'
   if (data.accounts.length === 0 && !data.liabilities?.length && points.length === 1) {
     return (
-      <section className="panel empty">
+      <div className="overview"><section className="panel empty span-2">
         <div className="empty-mark" aria-hidden>
           ＄
         </div>
@@ -62,7 +64,7 @@ export function Overview({ data, onGoHistory, onGoRates, onGoLiabilities, onNewA
           {onGoLiabilities && <button onClick={onGoLiabilities}>新增負債</button>}
           <button onClick={onImport}>從試算表匯入</button>
         </div>
-      </section>
+      </section><ExpenseSummary expenses={data.expenses ?? []} now={now} onGoExpenses={onGoExpenses}/></div>
     )
   }
 
@@ -100,6 +102,7 @@ export function Overview({ data, onGoHistory, onGoRates, onGoLiabilities, onNewA
         {historical.status && <p className="muted small" aria-live="polite">{historical.status}</p>}
         {historical.error && <p role="alert" className="banner error">{historical.error}</p>}
       </section>
+      <ExpenseSummary expenses={data.expenses ?? []} now={now} onGoExpenses={onGoExpenses}/>
       {!current ? <SnapshotDetails accounts={data.accounts} point={point} day={historical.data.history.valuedQuantityDays?.find(d => d.date === point.date)} /> : <>
       <section className="panel hero">
         <span className="eyebrow">總資產</span>

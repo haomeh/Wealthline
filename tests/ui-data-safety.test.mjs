@@ -196,7 +196,7 @@ test('cancelling import preview never changes the source data', async () => {
 
 // All liability examples below are synthetic, not transcribed from financial documents.
 const syntheticDebt = { id: 'synthetic-debt', name: '合成貸款', kind: 'personal', currency: 'TWD', balance: 800 }
-const field = (label) => [...document.querySelectorAll('label.field')].find((l) => l.querySelector('span')?.textContent === label)?.querySelector('input,select,textarea') ?? [...document.querySelectorAll('input[aria-label]')].find(i => i.getAttribute('aria-label') === label)
+const field = (label) => [...document.querySelectorAll('label.field')].find((l) => l.querySelector('span')?.textContent === label)?.querySelector('input,select,textarea') ?? [...document.querySelectorAll('input[aria-label],select[aria-label]')].find(i => i.getAttribute('aria-label') === label)
 
 test('liability create/edit/cancel/delete are local and payment details do not replace balance', async () => {
   let current
@@ -1625,5 +1625,54 @@ test('statement preview groups duplicate filenames by source and commits or canc
   await click(button('確認匯入 2 筆'))
   assert.match(document.querySelector('.expense-table').textContent,/Edited shop/)
   assert.match(document.querySelector('.expense-table').textContent,/SHOP TWO/)
+  assert.equal(drive.writes,0)
+})
+
+test('overview expense totals separate currencies, refunds and months even without asset accounts',async()=>{
+  const {expenseMonthSummary}=await server.ssrLoadModule('/src/expenses.ts')
+  const expenses=[
+    {id:'a',date:'2026-09-01',card:'Card A',description:'Shop',currency:'TWD',amount:100.25},
+    {id:'b',date:'2026-09-30',card:'Card A',description:'Refund',currency:'TWD',amount:-20.25},
+    {id:'c',date:'2026-09-15',card:'Card B',description:'Shop',currency:'TWD',amount:30},
+    {id:'d',date:'2026-09-02',card:'SG Card',description:'Refund',currency:'SGD',amount:-2},
+    {id:'e',date:'2026-10-01',card:'Card A',description:'Next month',currency:'TWD',amount:2000},
+  ]
+  const original=structuredClone(expenses)
+  assert.deepEqual(expenseMonthSummary(expenses,'2026-09'),[
+    {currency:'SGD',count:1,spending:0,refunds:2,net:-2,cards:[{card:'SG Card',count:1,net:-2}]},
+    {currency:'TWD',count:3,spending:130.25,refunds:20.25,net:110,cards:[{card:'Card A',count:2,net:80},{card:'Card B',count:1,net:30}]},
+  ])
+  assert.deepEqual(expenseMonthSummary(expenses,'2026-08'),[])
+  assert.deepEqual(expenses,original)
+  let opened=0
+  await render(Overview,{data:{...fixture(),version:10,expenses},onGoRates(){},onNewAccount(){},onImport(){},onOpenAccount(){},onGoExpenses(){opened++}})
+  assert.ok(document.querySelector('[aria-label="消費統計"]'))
+  await selectValue('消費統計月份','2026-09')
+  const twd=document.querySelector('[aria-label="TWD 消費統計"]')
+  assert.deepEqual([...twd.querySelectorAll('dd')].map(e=>e.textContent),['130.25','20.25','110'])
+  assert.deepEqual([...document.querySelector('[aria-label="SGD 消費統計"]').querySelectorAll('dd')].map(e=>e.textContent),['0','2','-2'])
+  await selectValue('消費統計月份','2026-10')
+  assert.equal(document.querySelector('[aria-label="SGD 消費統計"]'),null)
+  assert.match(document.querySelector('[aria-label="TWD 消費統計"]').textContent,/2,000/)
+  await click(button('查看消費明細'));assert.equal(opened,1)
+})
+
+test('statement advanced options start collapsed and an empty fallback currency defaults to TWD',async()=>{
+  window.history.replaceState(null,'','/expenses')
+  const drive=setupDrive({...fixture(),version:10,expenses:[]})
+  const pdf=await server.ssrLoadModule('/src/statementPdf.ts')
+  pdf.setResults([{lines:['HSBC','04/01 04/02 SHOP 100'],title:'',ocrUsed:false}])
+  await render(App);await click(button('匯入信用卡帳單'))
+  const options=document.querySelector('.statement-options')
+  assert.equal(options.open,false)
+  await click(options.querySelector('summary'));assert.equal(options.open,true)
+  await setInput(document.querySelector('input[placeholder="TWD"]'),'')
+  const input=document.querySelector('input[type="file"]')
+  Object.defineProperty(input,'files',{value:[{name:'HSBC-2026-04.pdf',size:100,arrayBuffer:async()=>new TextEncoder().encode('%PDF-fixture').buffer}]})
+  await act(async()=>input.dispatchEvent(new Event('change',{bubbles:true})))
+  await act(async()=>document.querySelector('form').dispatchEvent(new Event('submit',{bubbles:true,cancelable:true})))
+  for(let i=0;i<100 && !document.querySelector('.statement-group');i++) await act(async()=>new Promise(resolve=>setTimeout(resolve,10)))
+  assert.equal(button('編輯第 1 筆幣別').textContent,'TWD')
+  assert.ok(button('確認匯入 1 筆'))
   assert.equal(drive.writes,0)
 })
