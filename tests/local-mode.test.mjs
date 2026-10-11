@@ -93,6 +93,20 @@ const uploadFile = async (text) => {
 }
 const noGoogle = () => assert.deepEqual(requests.filter((u) => /google/.test(u)), [])
 
+test('v13 local save roundtrip and stale lock conflict preserve bank collections',async()=>{
+  const data={...fixture(),version:13,bankTransactionAccounts:[{id:'ledger-1',label:'Independent',bank:'Test'}],bankTransactions:[],bankCategoryRules:[]}
+  const raw=await store.saveLocal(data,null)
+  const loaded=store.loadLocal().data
+  assert.equal(loaded.version,13)
+  assert.deepEqual(loaded.bankTransactionAccounts,data.bankTransactionAccounts)
+  const updated={...loaded,bankTransactionAccounts:[{...data.bankTransactionAccounts[0],label:'Renamed'}]}
+  await store.saveLocal(updated,raw)
+  await assert.rejects(store.saveLocal(data,raw),store.LocalConflictError)
+  assert.deepEqual(stored().bankTransactionAccounts,updated.bankTransactionAccounts)
+  assert.equal(stored().version,13)
+  noGoogle()
+})
+
 test('starting without sign-in opens the app and never contacts Google', async () => {
   await render()
   await click(button('不登入，直接在瀏覽器使用'))
