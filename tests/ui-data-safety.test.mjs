@@ -1652,16 +1652,19 @@ test('overview expense totals separate currencies, refunds and months even witho
   assert.deepEqual(expenses,original)
   let opened=0
   await render(Overview,{data:{...fixture(),version:10,expenses},onGoRates(){},onNewAccount(){},onImport(){},onOpenAccount(){},onGoExpenses(){opened++}})
-  assert.equal(document.querySelector('.overview').lastElementChild.getAttribute('aria-label'),'消費統計')
-  assert.equal(document.querySelector('.expense-dashboard-breakdown').open,false)
-  await selectValue('消費統計月份','2026-09')
-  const twd=document.querySelector('[aria-label="TWD 消費統計"]')
-  assert.deepEqual([...twd.querySelectorAll('dd')].map(e=>e.textContent),['130.25','20.25','110'])
-  assert.deepEqual([...document.querySelector('[aria-label="SGD 消費統計"]').querySelectorAll('dd')].map(e=>e.textContent),['0','2','-2'])
-  await selectValue('消費統計月份','2026-10')
-  assert.equal(document.querySelector('[aria-label="SGD 消費統計"]'),null)
-  assert.match(document.querySelector('[aria-label="TWD 消費統計"]').textContent,/2,000/)
-  await click(button('查看消費明細'));assert.equal(opened,1)
+  assert.equal(document.querySelector('.overview').lastElementChild.getAttribute('aria-label'),'統一收支總覽')
+  assert.equal(document.querySelector('.cashflow-sources').open,false)
+  await click(button('近 1 月'))
+  await selectValue('收支截止月份','2026-09')
+  await selectValue('收支幣別','TWD')
+  assert.deepEqual([...document.querySelectorAll('.cashflow-metrics dd')].map(e=>e.textContent),['0','110','-110'])
+  await selectValue('收支幣別','SGD')
+  assert.deepEqual([...document.querySelectorAll('.cashflow-metrics dd')].map(e=>e.textContent),['0','-2','2'])
+  await selectValue('收支截止月份','2026-10')
+  assert.deepEqual([...document.querySelector('[aria-label="收支幣別"]').options].map(e=>e.value),['TWD'])
+  assert.equal(document.querySelector('[data-cashflow-metric="consumption"]').textContent,'2,000')
+  assert.deepEqual(expenses,original)
+  await click(button('信用卡消費'));assert.equal(opened,1)
 })
 
 test('statement advanced options start collapsed and an empty fallback currency defaults to TWD',async()=>{
@@ -1737,10 +1740,17 @@ test('overview without expenses keeps account onboarding first and hides the spe
 test('expense summary follows total assets without linking expense month to asset snapshots',async()=>{
   const data={...fixture(),accounts:[{id:'account',name:'Synthetic bank',kind:'bank',category:'現金',country:'TW',positions:[]}],expenses:[{id:'bus',date:'2026-09-01',description:'BUS/MRT',card:'Card',currency:'TWD',amount:12}],expenseCategoryRules:[{keyword:'BUS/MRT',category:'交通'}]}
   await render(Overview,{data,onGoRates(){},onNewAccount(){},onImport(){},onOpenAccount(){}})
-  assert.equal(document.querySelector('.hero').nextElementSibling.getAttribute('aria-label'),'消費統計')
-  await selectValue('消費統計月份','2026-09')
-  assert.match(document.querySelector('.expense-category-bars').textContent,/交通/)
-  assert.match(document.querySelector('.snapshot-timeline').textContent,/目前資產/)
+  const original=structuredClone(data)
+  assert.equal(document.querySelector('.hero').nextElementSibling.getAttribute('aria-label'),'統一收支總覽')
+  const assetTimeline=document.querySelector('.snapshot-timeline').textContent
+  await selectValue('收支截止月份','2026-09')
+  await click(button('近 1 月'))
+  assert.equal(document.querySelector('[data-cashflow-metric="consumption"]').textContent,'12')
+  await click(button('消費分類'))
+  assert.match(document.querySelector('.cashflow-values').textContent,/交通/)
+  assert.equal(document.querySelector('.snapshot-timeline').textContent,assetTimeline)
+  assert.match(assetTimeline,/目前資產/)
+  assert.deepEqual(data,original)
 })
 
 test('custom rules update existing and preview categories and persist only through save',async()=>{

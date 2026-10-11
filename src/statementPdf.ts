@@ -1,24 +1,9 @@
-import { GlobalWorkerOptions, getDocument, PasswordException } from 'pdfjs-dist/legacy/build/pdf.mjs'
-import workerUrl from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url'
-import { hsbcMerchantRegions, hsbcSgPage, hsbcTransactionBounds, ocrMerchantLine, statementMetadata, statementPasswordHandler, textLines, textRows } from './statements'
-
-GlobalWorkerOptions.workerSrc = workerUrl
-// Bundle CMaps locally: Chinese PDFs must not depend on a CDN or send document data to it.
-const maps = import.meta.glob('/node_modules/pdfjs-dist/cmaps/*.bcmap', {eager:true,query:'?url&no-inline',import:'default'}) as Record<string,string>
-const fonts = import.meta.glob('/node_modules/pdfjs-dist/standard_fonts/*.{pfb,ttf}', {eager:true,query:'?url&no-inline',import:'default'}) as Record<string,string>
-class LocalBinaryData {
-  async fetch({kind,filename}: {kind:string;filename:string}) {
-    const url = kind === 'cMapUrl' ? maps[`/node_modules/pdfjs-dist/cmaps/${filename}`] : kind === 'standardFontDataUrl' ? fonts[`/node_modules/pdfjs-dist/standard_fonts/${filename}`] : undefined
-    if(!url) throw new Error('Unsupported PDF character map')
-    const response = await fetch(url)
-    if(!response.ok) throw new Error('Unable to load character map')
-    return new Uint8Array(await response.arrayBuffer())
-  }
-}
+import { PasswordException } from 'pdfjs-dist/legacy/build/pdf.mjs'
+import { openStatementDocument } from './statementDocument'
+import { hsbcMerchantRegions, hsbcSgPage, hsbcTransactionBounds, ocrMerchantLine, statementMetadata, textLines, textRows } from './statements'
 
 export async function readStatementPdf(bytes: Uint8Array, password:string | readonly string[], signal:AbortSignal, fileName = '', onProgress?:(message:string)=>void): Promise<{lines:string[];title:string;ocrUsed:boolean;ocrError?:string;transactionIndexes?:number[]}> {
-  const task = getDocument({data:new Uint8Array(bytes),password:'',BinaryDataFactory:LocalBinaryData,useWorkerFetch:false,useWasm:false,stopAtErrors:true,verbosity:0})
-  task.onPassword = statementPasswordHandler(password)
+  const task = openStatementDocument('credit-card',bytes,password)
   let ocr:Awaited<ReturnType<typeof import('./statementOcr').createStatementOcr>> | undefined
   const cancel = () => { ocr?.close();void task.destroy() }
   signal.addEventListener('abort',cancel,{once:true})

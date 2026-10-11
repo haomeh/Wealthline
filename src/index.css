@@ -2626,3 +2626,78 @@ dialog.expense-rule-dialog { max-width: 440px; }
 
 .statement-password-summary{display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;margin:1rem 0}.statement-password-summary button{font-size:.8rem}.statement-password-dialog{max-width:520px}.statement-password-list{list-style:none;padding:0}.statement-password-list li{display:flex;align-items:center;justify-content:space-between;gap:.75rem;flex-wrap:wrap;padding:.75rem 0;border-bottom:1px solid var(--border)}.statement-password-list small{display:block}.statement-password-dialog .expense-fields{grid-template-columns:1fr}.statement-password-dialog .form{padding:0}
 .expense-trend-currency .trend{margin:.75rem 0 .25rem}.expense-trend-currency svg{max-width:100%}.expense-trend-details{font-size:.8rem}.expense-trend-details summary{cursor:pointer;color:var(--muted)}.expense-trend-details button{border:0;background:transparent;padding:.25rem 0;color:var(--accent)}
+
+/* Unified Overview only: restrained ledger typography and observed-data charts. */
+.cashflow-summary { min-width: 0; overflow-wrap: anywhere; }
+.cashflow-summary .panel-head, .cashflow-source-links { flex-wrap: wrap; }
+.cashflow-controls { display: flex; flex-wrap: wrap; align-items: end; gap: 16px; margin: 20px 0; }
+.cashflow-controls .field { margin: 0; min-width: 0; }
+.cashflow-controls select { width: 100%; }
+.cashflow-summary .segmented { flex-wrap: wrap; }
+.cashflow-summary .segmented button { min-height: 40px; }
+.cashflow-currency-heading { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px; border-top: 1px solid var(--hairline); padding-top: 20px; }
+.cashflow-currency-heading strong { letter-spacing: .08em; font-size: .9rem; }
+.cashflow-metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin: 16px 0 24px; font-variant-numeric: tabular-nums; }
+.cashflow-metrics dt { color: var(--ink-2); font-size: .8rem; }
+.cashflow-metrics dd { margin: 6px 0 0; font-size: clamp(1.25rem, 2.8vw, 2rem); font-weight: 600; letter-spacing: -.035em; }
+.cashflow-metrics > div:last-child { border-left: 1px solid var(--hairline); padding-left: 16px; }
+.cashflow-chart-block { border-block: 1px solid var(--hairline); padding: 20px 0; margin: 20px 0; }
+.cashflow-trend svg { display: block; width: 100%; height: auto; margin: 12px 0; color: var(--ink-2); }
+.cashflow-trend [data-cashflow-hit] { cursor: pointer; }
+.cashflow-legend { display: flex; flex-wrap: wrap; gap: 16px; font-size: .8rem; margin-top: 16px; }
+.cashflow-month-buttons { display: grid; grid-template-columns: repeat(auto-fit, minmax(76px, 1fr)); gap: 4px; margin: 12px 0 20px; }
+.cashflow-month-buttons button { font-size: .75rem; min-height: 40px; padding: 6px; }
+.cashflow-month-buttons button[aria-pressed="true"] { background: var(--accent-wash); color: var(--accent); border-color: var(--accent); }
+.cashflow-values { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: .8rem; font-variant-numeric: tabular-nums; }
+.cashflow-values caption { text-align: left; margin: 12px 0; color: var(--ink-2); }
+.cashflow-values th, .cashflow-values td { padding: 10px 6px; border-bottom: 1px solid var(--hairline); text-align: right; overflow-wrap: anywhere; }
+.cashflow-values th:first-child { text-align: left; }
+.cashflow-values thead th { font-weight: 500; color: var(--ink-2); }
+.cashflow-values .cashflow-selected { background: var(--accent-wash); }
+.cashflow-values tfoot { font-weight: 600; }
+.cashflow-month-selection { font-size: .8rem; color: var(--ink-2); }
+.cashflow-categories { display: grid; grid-template-columns: minmax(0, 200px) minmax(0, 1fr); align-items: center; gap: 24px; }
+.cashflow-categories figure { margin: 16px 0; }
+.cashflow-categories svg { width: 100%; max-width: 200px; display: block; margin: auto; }
+.cashflow-categories figcaption { font-size: .75rem; color: var(--ink-2); text-align: center; }
+.cashflow-review h4 { font-size: .9rem; margin: 0 0 12px; }
+.cashflow-review-item { display: flex; flex-wrap: wrap; gap: 8px 20px; padding: 10px 0; font-size: .8rem; border-bottom: 1px solid var(--hairline); font-variant-numeric: tabular-nums; }
+.cashflow-review-item strong { min-width: 140px; }
+.cashflow-sources { margin-top: 20px; font-size: .85rem; }
+.cashflow-sources summary { cursor: pointer; color: var(--ink-2); }
+.cashflow-sources > div { border-left: 2px solid var(--hairline); padding-left: 16px; margin: 16px 0; }
+.cashflow-sources h4 { margin-bottom: 8px; }
+.cashflow-no-record { padding: 24px 0; }
+@media (max-width: 600px) {
+  .cashflow-summary .panel-head { align-items: start; flex-direction: column; gap: 12px; }
+  .cashflow-controls { gap: 12px; }
+  .cashflow-categories { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+  .cashflow-metrics { gap: 8px; }
+  .cashflow-metrics > div:last-child { padding-left: 8px; }
+  .cashflow-values { font-size: .72rem; }
+  .cashflow-values th, .cashflow-values td { padding: 8px 2px; }
+}
+@media (max-width: 360px) {
+  .cashflow-metrics { grid-template-columns: minmax(0, 1fr); }
+  .cashflow-metrics > div:last-child { border-left: 0; border-top: 1px solid var(--hairline); padding: 12px 0 0; }
+}
+
+/* Independent bank ledger: compact editorial records, not the card table. */
+.bank-page { display:grid; gap:20px; min-width:0; }
+.bank-page h4 { margin:6px 0; overflow-wrap:anywhere; }
+.bank-fields { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,210px),1fr)); gap:12px; border:0; padding:0; margin:12px 0; min-width:0; }
+.bank-fields > *, .bank-fields input, .bank-fields select { min-width:0; max-width:100%; }
+.bank-account { display:flex; flex-wrap:wrap; align-items:end; gap:8px; padding:12px 0; }
+.bank-accounts ul { padding:0; list-style:none; }
+.bank-account .field { flex:1 1 180px; }
+.bank-records { display:grid; gap:0; }
+.bank-record { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:12px; border-top:1px solid var(--border); padding:18px 0; overflow-wrap:anywhere; }
+.bank-record > .row { grid-column:1/-1; flex-wrap:wrap; }
+.bank-section { border-top:1px solid var(--border); padding-top:18px; margin-top:18px; }
+.bank-preview-row { padding:16px 0; border-bottom:1px solid var(--border); }
+.bank-import li, .bank-rules li { overflow-wrap:anywhere; }
+.bank-rules li { padding:8px 0; }
+.bank-rules li button { margin-left:8px; }
+.bank-rule-dialog { width:min(calc(100% - 32px),640px); max-height:90dvh; overflow:auto; }
+.bank-rule-dialog::backdrop { background:rgb(0 0 0 / .45); }
+@media(max-width:480px) { .bank-record { grid-template-columns:minmax(0,1fr); } .bank-page .page-head,.bank-import .panel-head { flex-wrap:wrap; gap:12px; } .bank-page button { white-space:normal; } }

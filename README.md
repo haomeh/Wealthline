@@ -56,7 +56,8 @@
 
 ### 負債
 - [x] 手動新增、編輯與刪除房貸、信貸、信用卡及其他負債，正值記錄目前未償本金／餘額。
-- [x] 消費明細：信用卡文字 PDF 在前端解密、解析，可預覽修改、補登後匯入並防止重複；原始帳單與密碼不保存。第一版範圍與 v10 資料格式見 [帳單匯入說明](docs/statement-import.md)。
+- [x] 消費明細：信用卡文字 PDF 在前端解密、解析，可預覽修改、補登後匯入並防止重複；原始帳單不保存，臨時密碼只留在記憶體，選擇保存的密碼以瀏覽器金鑰加密。範圍與資料格式見 [帳單匯入說明](docs/statement-import.md)。
+- 銀行流水與統一收支：銀行入出帳使用獨立帳戶標籤，不加入信用卡消費表、不保存銀行餘額、不連動資產或負債。總覽按幣別統計分類收入及實際消費，排除轉帳／繳卡費／待確認；投資回收款含本金，不代表獲利。版型限制與 v13 說明見 [銀行對帳單匯入](docs/bank-statement-import.md)。
 - [x] 填原始貸款總額、年利率、總期數與第一期還款日，依日程預估本息／本金平均攤還的剩餘本金；信用卡及舊貸款保留手動餘額模式。預估不代表銀行實際餘額，也不扣現金。
 - [x] 總覽分列總資產、總負債與淨資產；負債沿用現有匯率換算，缺匯率時不顯示不完整的淨資產。
 - [x] 儲存前確認負債變更並可逐筆復原；每日紀錄另存負債／淨資產，既有資產圖維持資產口徑。
@@ -162,6 +163,9 @@
 | `src/quotes.ts`、`server/yahoo.ts`、`worker/index.ts` | 持倉報價：代號轉換與 Yahoo Finance 查詢 |
 | `src/rates.ts` | 匯率：ExchangeRate-API 與 CoinGecko |
 | `src/liabilities.ts` | 負債資料驗證與資產／負債／淨資產計算 |
+| `src/bankTransactions.ts`、`src/bankTextPrivacy.ts` | 獨立銀行流水、分類規則、去重與已識別文字識別碼遮蔽 |
+| `src/bankStatements.ts`、`src/statementDocument.ts` | 銀行版型解析與區分銀行／信用卡的本機 PDF 讀取 |
+| `src/cashflow.ts`、`src/views/CashflowSummary.tsx` | 不修改來源資料的多幣別收支投影及統一 Overview |
 | `src/views/Liabilities.tsx` | 負債清單及編輯／試算表單 |
 | `src/loanEstimate.ts` | 按月攤還試算與數值驗證 |
 | `src/history.ts` | 歷史：異動紀錄與每日快照 |

@@ -22,6 +22,7 @@ import { fetchRates } from './rates'
 import { Accounts, type AccountsView } from './views/Accounts'
 import { Liabilities } from './views/Liabilities'
 import { Expenses } from './views/Expenses'
+import { BankTransactions } from './views/BankTransactions'
 import { Overview } from './views/Overview'
 import { HistoryView } from './views/History'
 import { Rates } from './views/Rates'
@@ -538,6 +539,7 @@ export default function App() {
             onGoLiabilities={() => go({ tab: 'liabilities' })}
             onGoRates={() => go({ tab: 'rates' })}
             onGoExpenses={() => go({ tab: 'expenses' })}
+            onGoBankTransactions={() => go({ tab: 'bank-transactions' })}
             onNewAccount={() => goAccounts({ page: 'new' })}
             onImport={() => goAccounts({ page: 'list', importing: true })}
             onOpenAccount={(id) => goAccounts({ page: 'detail', id })}
@@ -562,6 +564,7 @@ export default function App() {
         )}
         {data && tab === 'liabilities' && <Liabilities data={data} onChange={update} />}
         {data && tab === 'expenses' && <Expenses key={local?'local':user?.sub} passwordScope={local?'local':user?`google:${user.sub}`:undefined} data={data} onChange={update} busy={busy} />}
+        {data && tab === 'bank-transactions' && <BankTransactions key={local?'local':user?.sub} passwordScope={local?'local':user?`google:${user.sub}`:undefined} data={data} onChange={update} busy={busy} />}
         {data && tab === 'rates' && <Rates data={data} onChange={update} onRefresh={async () => void (await refreshRates(data))} error={ratesError} />}
       </main>
       <SiteFooter />
