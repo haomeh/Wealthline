@@ -1650,7 +1650,8 @@ test('overview expense totals separate currencies, refunds and months even witho
   assert.deepEqual(expenses,original)
   let opened=0
   await render(Overview,{data:{...fixture(),version:10,expenses},onGoRates(){},onNewAccount(){},onImport(){},onOpenAccount(){},onGoExpenses(){opened++}})
-  assert.ok(document.querySelector('[aria-label="消費統計"]'))
+  assert.equal(document.querySelector('.overview').firstElementChild.getAttribute('aria-label'),'消費統計')
+  assert.equal(document.querySelector('.expense-dashboard-breakdown').open,false)
   await selectValue('消費統計月份','2026-09')
   const twd=document.querySelector('[aria-label="TWD 消費統計"]')
   assert.deepEqual([...twd.querySelectorAll('dd')].map(e=>e.textContent),['130.25','20.25','110'])

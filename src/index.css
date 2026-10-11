@@ -2518,11 +2518,16 @@ button.timeline-arrow { display: grid; place-items: center; flex: 0 0 36px; widt
 .expense-summary .panel-head { flex-wrap: wrap; gap: 16px; }
 .expense-summary .panel-head h3 { margin: 4px 0 0; }
 .expense-summary select { width: auto; }
-.expense-currency-summary { border-top: 1px solid var(--hairline); padding-top: 18px; margin-top: 20px; }
+.expense-dashboard-currencies { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 360px), 1fr)); gap: 24px; }
+.expense-currency-summary { border: 1px solid var(--hairline); border-radius: 12px; padding: 20px; min-width: 0; background: var(--surface); }
+.expense-dashboard-breakdown { border-top: 1px solid var(--hairline); padding-top: 14px; }
+.expense-dashboard-breakdown summary { cursor: pointer; font-size: .8rem; color: var(--muted); }
 .expense-currency-title { display: flex; align-items: baseline; gap: 12px; }
-.expense-metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin: 18px 0; }
+.expense-metrics { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin: 18px 0; }
 .expense-metrics dt { color: var(--muted); font-size: .8rem; margin-bottom: 8px; }
 .expense-metrics dd { margin: 0; font-size: clamp(1.1rem, 3vw, 1.75rem); font-weight: 600; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.expense-metrics > div:last-child { grid-column: 1 / -1; grid-row: 1; }
+.expense-metrics > div:last-child dd { color: var(--accent); font-size: clamp(2rem, 4vw, 3rem); }
 .expense-summary .data td:first-child { overflow-wrap: anywhere; }
 .expense-summary .data .num { white-space: nowrap; }
 .expense-timeline { display: flex; align-items: center; gap: 12px; margin: 20px 0; }
