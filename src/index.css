@@ -2611,3 +2611,10 @@ dialog.quantity-editor .quantity-actions { position: sticky; bottom: 0; padding:
 .expense-rule-fields { display: flex; flex-wrap: wrap; align-items: end; gap: 12px; margin: 20px 0 0; padding: 0; border: 0; min-width: 0; }
 .expense-rule-fields .field { flex: 1 1 140px; margin: 0; min-width: 0; }
 .expense-rule-fields input, .expense-rule-fields select { width: 100%; box-sizing: border-box; }
+
+.expense-category-cell { display: flex; align-items: center; gap: 6px; }
+.expense-category-cell .preview-value { min-width: 0; flex: 1; }
+button.add-category-rule { display: inline-flex; justify-content: center; align-items: center; flex-shrink: 0; padding: 6px; min-width: 32px; min-height: 32px; background: transparent; color: var(--muted); }
+dialog.expense-rule-dialog { max-width: 440px; }
+.expense-rule-dialog .expense-rule-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.expense-rule-dialog .field { grid-column: 1 / -1; }
