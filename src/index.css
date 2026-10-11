@@ -2511,13 +2511,15 @@ button.timeline-arrow { display: grid; place-items: center; flex: 0 0 36px; widt
 .timeline-endpoints { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; color: var(--muted); font-size: .7rem; font-variant-numeric: tabular-nums; }
 .timeline-controls .field { flex: 0 1 13rem; min-width: 0; }
 
-.expenses-page { display: grid; gap: 20px; }
+.expenses-page { display: grid; grid-template-columns: minmax(0, 1fr); gap: 20px; }
 .expense-table { min-width: 650px; }
 .expense-table td { overflow-wrap: anywhere; max-width: 320px; }
 .expense-table td:first-child, .expense-table .num { white-space: nowrap; }
 .expense-summary .panel-head { flex-wrap: wrap; gap: 16px; }
 .expense-summary .panel-head h3 { margin: 4px 0 0; }
-.expense-summary select { width: auto; }
+.expense-month-picker { position: relative; display: inline-flex; }
+.expense-month-picker select { appearance: none; -webkit-appearance: none; padding-right: 34px; width: auto; box-sizing: border-box; }
+.expense-month-picker > svg { position: absolute; right: 10px; top: 50%; transform: translateY(-50%) rotate(90deg); pointer-events: none; color: var(--muted); }
 .expense-dashboard-currencies { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 360px), 1fr)); gap: 24px; }
 .expense-currency-summary { border: 1px solid var(--hairline); border-radius: 12px; padding: 20px; min-width: 0; background: var(--surface); }
 .expense-dashboard-breakdown { border-top: 1px solid var(--hairline); padding-top: 14px; }
@@ -2599,3 +2601,13 @@ dialog.quantity-editor .quantity-actions { position: sticky; bottom: 0; padding:
   .timeline-navigation { flex: auto; gap: 8px; }
   .timeline-selection { flex-wrap: wrap; font-size: .75rem; }
 }
+
+.expense-rules summary { cursor: pointer; font-size: .9rem; }
+.expense-rules ul { list-style: none; margin: 16px 0; padding: 0; }
+.expense-rules li { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 10px 0; border-bottom: 1px solid var(--hairline); }
+.expense-rules li > span { overflow-wrap: anywhere; min-width: 0; }
+.expense-rules li .row { flex-shrink: 0; }
+.expense-rules li button { display: inline-flex; padding: 8px; }
+.expense-rule-fields { display: flex; flex-wrap: wrap; align-items: end; gap: 12px; margin: 20px 0 0; padding: 0; border: 0; min-width: 0; }
+.expense-rule-fields .field { flex: 1 1 140px; margin: 0; min-width: 0; }
+.expense-rule-fields input, .expense-rule-fields select { width: 100%; box-sizing: border-box; }

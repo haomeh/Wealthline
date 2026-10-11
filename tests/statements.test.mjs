@@ -380,3 +380,19 @@ test('merchant boundaries distinguish Steam, Grab food and compact convenience s
     ['7ELEVEN','購物'], ['7-ELEVEN','購物'], ['7 ELEVEN','購物'],
   ]) assert.equal(expenses.expenseCategory({description}), category, description)
 })
+
+
+test('custom category rules persist and precede built-ins while manual categories win',()=>{
+  const rules=[{keyword:'bus/mrt',category:'交通'},{keyword:'STEAM',category:'數位服務'}]
+  const data=model.parseWealthData({...model.emptyData(),version:10,expenses:[],expenseCategoryRules:rules})
+  assert.deepEqual(data.expenseCategoryRules,rules)
+  assert.equal(expenses.expenseCategory({description:'BUS/MRT SG'},rules),'交通')
+  assert.equal(expenses.expenseCategory({description:'STEAMGAMES.COM'},rules),'數位服務')
+  assert.equal(expenses.expenseCategory({description:'BUS/MRT',category:'餐飲'},rules),'餐飲')
+  assert.equal(expenses.expenseCategory({description:'BUS/MRT'},[{keyword:'BUS',category:'購物'},...rules]),'購物')
+  assert.equal(expenses.expenseCategory({description:'BUS/MRT'},[{keyword:'.*',category:'購物'}]),'未分類')
+  assert.equal(expenses.expenseMonthSummary([{...row('BUS/MRT'),id:'custom',card:'Card'}],'2026-09',rules)[0].categories[0].category,'交通')
+  for(const invalid of [null,{},[{keyword:' ',category:'交通'}],[{keyword:'***',category:'交通'}],[{keyword:'BUS',category:'invalid'}],[{keyword:3,category:'交通'}],Array(101).fill(rules[0])]) {
+    assert.throws(()=>model.parseWealthData({...model.emptyData(),expenseCategoryRules:invalid}),/分類規則/)
+  }
+})

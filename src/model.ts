@@ -2,7 +2,7 @@
 
 import { parseLiability, type Liability } from './liabilities'
 import { emptyHistory, parseHistory, type History } from './history'
-import { parseExpense, type Expense } from './expenses'
+import { parseExpense, parseExpenseCategoryRules, type ExpenseCategoryRule, type Expense } from './expenses'
 
 export const BASE_CURRENCY = 'TWD'
 
@@ -84,6 +84,7 @@ export interface WealthData {
   accounts: Account[]
   liabilities?: Liability[]
   expenses?: Expense[]
+  expenseCategoryRules?: ExpenseCategoryRule[]
   // Past edits and daily values; see history.ts.
   history: History
 }
@@ -229,6 +230,7 @@ export function parseWealthData(raw: unknown, source: keyof typeof SOURCES = 'dr
     try { return parseExpense(e) } catch(e) {return fail(e instanceof Error ? e.message : '消費明細無效')}
   })
   if(expenses && new Set(expenses.map(e=>e.id)).size !== expenses.length) fail('消費識別碼重複')
+  const expenseCategoryRules = obj.expenseCategoryRules === undefined ? undefined : parseExpenseCategoryRules(obj.expenseCategoryRules)
   return {
     version: expenses !== undefined ? 10 : obj.version as WealthData['version'],
     updatedAt: str(obj.updatedAt) || new Date().toISOString(),
@@ -238,6 +240,7 @@ export function parseWealthData(raw: unknown, source: keyof typeof SOURCES = 'dr
     accounts,
     liabilities,
     ...(expenses !== undefined && {expenses}),
+    ...(expenseCategoryRules !== undefined && {expenseCategoryRules}),
     history: parseHistory(obj.history, fail),
   }
 }
