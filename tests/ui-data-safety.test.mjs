@@ -196,7 +196,7 @@ test('cancelling import preview never changes the source data', async () => {
 
 // All liability examples below are synthetic, not transcribed from financial documents.
 const syntheticDebt = { id: 'synthetic-debt', name: '合成貸款', kind: 'personal', currency: 'TWD', balance: 800 }
-const field = (label) => [...document.querySelectorAll('label.field')].find((l) => l.querySelector('span')?.textContent === label)?.querySelector('input,select,textarea') ?? [...document.querySelectorAll('input[aria-label]')].find(i => i.getAttribute('aria-label') === label)
+const field = (label) => [...document.querySelectorAll('label.field')].find((l) => l.querySelector('span')?.textContent === label)?.querySelector('input,select,textarea') ?? [...document.querySelectorAll('input[aria-label],select[aria-label]')].find(i => i.getAttribute('aria-label') === label)
 
 test('liability create/edit/cancel/delete are local and payment details do not replace balance', async () => {
   let current
@@ -1619,11 +1619,114 @@ test('statement preview groups duplicate filenames by source and commits or canc
   assert.equal(button('編輯第 1 筆商家').textContent,'SHOP ONE')
   await click(button('編輯第 1 筆商家'))
   const changed=document.querySelector('[aria-label="第 1 筆商家"]')
-  await setInput(changed,'Edited shop')
+  await setInput(changed,'STEAMGAMES.COM TEST')
   await act(async()=>changed.dispatchEvent(new window.KeyboardEvent('keydown',{key:'Enter',bubbles:true})))
-  assert.equal(button('編輯第 1 筆商家').textContent,'Edited shop')
+  assert.equal(button('編輯第 1 筆商家').textContent,'STEAMGAMES.COM TEST')
+  assert.equal(button('編輯第 1 筆類別').textContent,'娛樂')
+  await click(button('編輯第 1 筆類別'))
+  await selectValue('第 1 筆類別','醫療')
+  assert.equal(button('編輯第 1 筆類別').textContent,'醫療')
   await click(button('確認匯入 2 筆'))
-  assert.match(document.querySelector('.expense-table').textContent,/Edited shop/)
+  assert.match(document.querySelector('.expense-table').textContent,/STEAMGAMES.COM TEST.*醫療/)
   assert.match(document.querySelector('.expense-table').textContent,/SHOP TWO/)
   assert.equal(drive.writes,0)
+})
+
+test('overview expense totals separate currencies, refunds and months even without asset accounts',async()=>{
+  const {expenseMonthSummary}=await server.ssrLoadModule('/src/expenses.ts')
+  const expenses=[
+    {id:'a',date:'2026-09-01',card:'Card A',description:'Shop',currency:'TWD',amount:100.25},
+    {id:'b',date:'2026-09-30',card:'Card A',description:'Refund',currency:'TWD',amount:-20.25},
+    {id:'c',date:'2026-09-15',card:'Card B',description:'Shop',currency:'TWD',amount:30},
+    {id:'d',date:'2026-09-02',card:'SG Card',description:'Refund',currency:'SGD',amount:-2},
+    {id:'e',date:'2026-10-01',card:'Card A',description:'Next month',currency:'TWD',amount:2000},
+  ]
+  const original=structuredClone(expenses)
+  assert.deepEqual(expenseMonthSummary(expenses,'2026-09'),[
+    {currency:'SGD',count:1,spending:0,refunds:2,net:-2,cards:[{card:'SG Card',count:1,net:-2}],categories:[{category:'未分類',spending:0,refunds:2,net:-2}]},
+    {currency:'TWD',count:3,spending:130.25,refunds:20.25,net:110,cards:[{card:'Card A',count:2,net:80},{card:'Card B',count:1,net:30}],categories:[{category:'未分類',spending:130.25,refunds:20.25,net:110}]},
+  ])
+  assert.deepEqual(expenseMonthSummary(expenses,'2026-08'),[])
+  assert.deepEqual(expenses,original)
+  let opened=0
+  await render(Overview,{data:{...fixture(),version:10,expenses},onGoRates(){},onNewAccount(){},onImport(){},onOpenAccount(){},onGoExpenses(){opened++}})
+  assert.equal(document.querySelector('.overview').firstElementChild.getAttribute('aria-label'),'消費統計')
+  assert.equal(document.querySelector('.expense-dashboard-breakdown').open,false)
+  await selectValue('消費統計月份','2026-09')
+  const twd=document.querySelector('[aria-label="TWD 消費統計"]')
+  assert.deepEqual([...twd.querySelectorAll('dd')].map(e=>e.textContent),['130.25','20.25','110'])
+  assert.deepEqual([...document.querySelector('[aria-label="SGD 消費統計"]').querySelectorAll('dd')].map(e=>e.textContent),['0','2','-2'])
+  await selectValue('消費統計月份','2026-10')
+  assert.equal(document.querySelector('[aria-label="SGD 消費統計"]'),null)
+  assert.match(document.querySelector('[aria-label="TWD 消費統計"]').textContent,/2,000/)
+  await click(button('查看消費明細'));assert.equal(opened,1)
+})
+
+test('statement advanced options start collapsed and an empty fallback currency defaults to TWD',async()=>{
+  window.history.replaceState(null,'','/expenses')
+  const drive=setupDrive({...fixture(),version:10,expenses:[]})
+  const pdf=await server.ssrLoadModule('/src/statementPdf.ts')
+  pdf.setResults([{lines:['HSBC','04/01 04/02 SHOP 100'],title:'',ocrUsed:false}])
+  await render(App);await click(button('匯入信用卡帳單'))
+  const options=document.querySelector('.statement-options')
+  assert.equal(options.open,false)
+  await click(options.querySelector('summary'));assert.equal(options.open,true)
+  await setInput(document.querySelector('input[placeholder="TWD"]'),'')
+  const input=document.querySelector('input[type="file"]')
+  Object.defineProperty(input,'files',{value:[{name:'HSBC-2026-04.pdf',size:100,arrayBuffer:async()=>new TextEncoder().encode('%PDF-fixture').buffer}]})
+  await act(async()=>input.dispatchEvent(new Event('change',{bubbles:true})))
+  await act(async()=>document.querySelector('form').dispatchEvent(new Event('submit',{bubbles:true,cancelable:true})))
+  for(let i=0;i<100 && !document.querySelector('.statement-group');i++) await act(async()=>new Promise(resolve=>setTimeout(resolve,10)))
+  assert.equal(button('編輯第 1 筆幣別').textContent,'TWD')
+  assert.ok(button('確認匯入 1 筆'))
+  assert.equal(drive.writes,0)
+})
+
+test('expense month timeline switches totals, categories and transactions without writes',async()=>{
+  const {ExpenseSummary}=await server.ssrLoadModule('/src/views/ExpenseSummary.tsx')
+  const expenses=[
+    {id:'a',date:'2026-09-30',card:'Synthetic card',description:'STEAMGAMES.COM TEST',currency:'TWD',amount:300},
+    {id:'b',date:'2026-09-29',card:'Synthetic card',description:'STEAMGAMES.COM REFUND',currency:'TWD',amount:-30},
+    {id:'c',date:'2026-10-01',card:'Synthetic card',description:'CLAUDE.AI TEST',currency:'TWD',amount:600},
+    {id:'d',date:'2026-10-02',card:'SG card',description:'UNKNOWN TEST',currency:'SGD',amount:10,category:'餐飲'},
+  ]
+  const original=structuredClone(expenses)
+  await render(ExpenseSummary,{expenses,now:'2026-10-11T12:00:00Z'})
+  assert.match(document.querySelector('[aria-label="TWD 消費統計"] .expense-category-bars').textContent,/數位服務/)
+  await click(button('上一個消費月份'))
+  assert.equal(document.querySelector('[aria-label="消費統計月份"]').value,'2026-09')
+  assert.match(document.querySelector('.expense-category-bars').textContent,/娛樂.*300.*100%/)
+  assert.equal(document.querySelector('[aria-label="SGD 消費統計"]'),null)
+  assert.deepEqual([...document.querySelector('.expense-metrics').querySelectorAll('dd')].map(e=>e.textContent),['300','30','270'])
+  assert.equal(document.querySelector('.expense-period-details tbody').querySelectorAll('tr').length,2)
+  assert.ok(!document.querySelector('.expense-period-details').textContent.includes('CLAUDE'))
+  await click(button('下一個消費月份'))
+  assert.equal(document.querySelector('.expense-period-details tbody').querySelectorAll('tr').length,2)
+  assert.match(document.querySelector('.expense-period-details').textContent,/CLAUDE.*數位服務/)
+  assert.match(document.querySelector('[aria-label="SGD 消費統計"]').textContent,/餐飲/)
+  assert.equal(button('下一個消費月份').disabled,true)
+  assert.deepEqual(expenses,original)
+})
+
+test('manual expense category edits persist only through the existing save flow',async()=>{
+  window.history.replaceState(null,'','/expenses')
+  const expense={id:'category-edit',date:'2026-09-01',card:'Synthetic card',description:'STEAMGAMES.COM TEST',currency:'TWD',amount:300}
+  const drive=setupDrive({...fixture(),version:10,expenses:[expense]})
+  await render(App)
+  assert.match(document.querySelector('.expense-table').textContent,/娛樂/)
+  await click(button('編輯消費 2026-09-01 STEAMGAMES.COM TEST'))
+  await selectValue('消費類別','醫療')
+  await click(button('套用修改'))
+  assert.match(document.querySelector('.expense-table').textContent,/醫療/)
+  assert.equal(drive.writes,0)
+  await click(button('儲存變更'));assert.equal(drive.writes,1)
+  assert.equal(drive.uploaded.expenses[0].category,'醫療')
+  await drive.finish()
+})
+
+
+test('overview without expenses keeps account onboarding first and hides the spending dashboard', async()=>{
+  await render(Overview,{data:fixture(),onGoRates(){},onNewAccount(){},onImport(){},onOpenAccount(){}})
+  assert.equal(document.querySelector('[aria-label="消費統計"]'),null)
+  assert.match(document.querySelector('.overview').firstElementChild.textContent,/開始記錄你的資產/)
 })

@@ -22,6 +22,7 @@ import {
 import { colorize } from '../chartColors'
 import { ChangeSinceLast } from './AssetChange'
 import { Allocation, RankBars } from './charts'
+import { ExpenseSummary } from './ExpenseSummary'
 
 interface Props {
   data: WealthData
@@ -31,9 +32,10 @@ interface Props {
   onNewAccount: () => void
   onImport: () => void
   onOpenAccount: (id: string) => void
+  onGoExpenses?: () => void
 }
 
-export function Overview({ data, onGoHistory, onGoRates, onGoLiabilities, onNewAccount, onImport, onOpenAccount }: Props) {
+export function Overview({ data, onGoHistory, onGoRates, onGoLiabilities, onNewAccount, onImport, onOpenAccount, onGoExpenses }: Props) {
   const now = useCalendarNow()
   const estimated = data.liabilities?.some(d => d.schedule)
   const historical = useHistoricalValuations(data)
@@ -49,7 +51,7 @@ export function Overview({ data, onGoHistory, onGoRates, onGoLiabilities, onNewA
   const current = keys[index] === 'current'
   if (data.accounts.length === 0 && !data.liabilities?.length && points.length === 1) {
     return (
-      <section className="panel empty">
+      <div className="overview">{!!data.expenses?.length && <ExpenseSummary expenses={data.expenses} now={now} onGoExpenses={onGoExpenses}/>}<section className="panel empty span-2">
         <div className="empty-mark" aria-hidden>
           ＄
         </div>
@@ -62,7 +64,7 @@ export function Overview({ data, onGoHistory, onGoRates, onGoLiabilities, onNewA
           {onGoLiabilities && <button onClick={onGoLiabilities}>新增負債</button>}
           <button onClick={onImport}>從試算表匯入</button>
         </div>
-      </section>
+      </section></div>
     )
   }
 
@@ -72,6 +74,7 @@ export function Overview({ data, onGoHistory, onGoRates, onGoLiabilities, onNewA
 
   return (
     <div className="overview">
+      {!!data.expenses?.length && <ExpenseSummary expenses={data.expenses} now={now} onGoExpenses={onGoExpenses}/>}
       <section className="panel span-2 snapshot-timeline" aria-label="資產時間線">
         <div className="panel-head">
           <div><span className="eyebrow">資產時間線</span><h2>{current ? '目前資產' : point.date.replaceAll('-', '/')}</h2></div>

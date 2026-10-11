@@ -2515,6 +2515,35 @@ button.timeline-arrow { display: grid; place-items: center; flex: 0 0 36px; widt
 .expense-table { min-width: 650px; }
 .expense-table td { overflow-wrap: anywhere; max-width: 320px; }
 .expense-table td:first-child, .expense-table .num { white-space: nowrap; }
+.expense-summary .panel-head { flex-wrap: wrap; gap: 16px; }
+.expense-summary .panel-head h3 { margin: 4px 0 0; }
+.expense-summary select { width: auto; }
+.expense-dashboard-currencies { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 360px), 1fr)); gap: 24px; }
+.expense-currency-summary { border: 1px solid var(--hairline); border-radius: 12px; padding: 20px; min-width: 0; background: var(--surface); }
+.expense-dashboard-breakdown { border-top: 1px solid var(--hairline); padding-top: 14px; }
+.expense-dashboard-breakdown summary { cursor: pointer; font-size: .8rem; color: var(--muted); }
+.expense-currency-title { display: flex; align-items: baseline; gap: 12px; }
+.expense-metrics { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin: 18px 0; }
+.expense-metrics dt { color: var(--muted); font-size: .8rem; margin-bottom: 8px; }
+.expense-metrics dd { margin: 0; font-size: clamp(1.1rem, 3vw, 1.75rem); font-weight: 600; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.expense-metrics > div:last-child { grid-column: 1 / -1; grid-row: 1; }
+.expense-metrics > div:last-child dd { color: var(--accent); font-size: clamp(2rem, 4vw, 3rem); }
+.expense-summary .data td:first-child { overflow-wrap: anywhere; }
+.expense-summary .data .num { white-space: nowrap; }
+.expense-timeline { display: flex; align-items: center; gap: 12px; margin: 20px 0; }
+.expense-month-nodes { display: flex; flex: 1; min-width: 0; gap: 4px; overflow-x: auto; padding: 6px 0; }
+.expense-month-nodes button { flex: 0 0 auto; display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: transparent; border-color: transparent; color: var(--muted); font-variant-numeric: tabular-nums; }
+.expense-month-nodes button > span { width: 6px; height: 6px; border-radius: 50%; background: var(--border); }
+.expense-month-nodes button[aria-pressed="true"] { color: var(--text); border-color: var(--border); background: var(--surface); }
+.expense-month-nodes button[aria-pressed="true"] > span { background: var(--accent); }
+.expense-breakdown-title { font-size: .8rem; font-weight: 500; color: var(--muted); margin: 22px 0 12px; }
+.expense-category-bars { list-style: none; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 24px; }
+.expense-category-bars li > div:first-child { display: flex; justify-content: space-between; gap: 12px; font-size: .85rem; font-variant-numeric: tabular-nums; }
+.expense-category-track { height: 4px; border-radius: 4px; background: var(--border); margin-top: 8px; overflow: hidden; }
+.expense-category-track > span { display: block; height: 100%; border-radius: inherit; background: var(--accent); }
+.expense-period-details { border-top: 1px solid var(--hairline); padding-top: 16px; margin-top: 20px; }
+.expense-period-details summary { cursor: pointer; font-size: .85rem; }
+.expense-period-details .table-wrap { margin-top: 12px; }
 .expense-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 16px; border: 0; padding: 0; margin: 0 0 20px; min-width: 0; }
 .expense-fields .field { min-width: 0; margin: 0; }
 .expense-fields input { width: 100%; box-sizing: border-box; min-width: 0; }
@@ -2523,11 +2552,11 @@ button.timeline-arrow { display: grid; place-items: center; flex: 0 0 36px; widt
 .statement-group > header { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; padding: 12px 16px; background: var(--surface); }
 .statement-group > header strong { overflow-wrap: anywhere; }
 .statement-group > p { padding: 0 16px; }
-.statement-preview-table { width: 100%; min-width: 850px; table-layout: fixed; }
+.statement-preview-table { width: 100%; min-width: 960px; table-layout: fixed; }
 .statement-preview-table th:first-child { width: 110px; }
 .statement-preview-table th:nth-child(2) { width: 150px; }
 .statement-preview-table th:nth-child(3) { width: 140px; }
-.statement-preview-table th:nth-child(5) { width: 110px; }
+.statement-preview-table th:nth-child(5), .statement-preview-table th:nth-child(6) { width: 110px; }
 .statement-preview-table th:last-child { width: 70px; }
 .statement-preview-table td { height: 44px; padding-top: 4px; padding-bottom: 4px; }
 .statement-preview-table .expense-select { display: flex; align-items: center; gap: 8px; white-space: nowrap; }
@@ -2536,10 +2565,24 @@ button.preview-value:hover, button.preview-value:focus-visible { border-color: v
 .statement-preview-table .num .preview-value { text-align: right; font-variant-numeric: tabular-nums; }
 .statement-preview-table .preview-input { width: 100%; min-width: 0; box-sizing: border-box; padding: 8px 6px; }
 .statement-import > ul { overflow-wrap: anywhere; }
+.statement-upload-fields { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); align-items: center; gap: 24px; border: 0; margin: 24px 0; padding: 0; min-width: 0; }
+.statement-upload-fields .field { margin: 0; min-width: 0; }
+.statement-upload { padding: 22px; border: 1px dashed var(--border); border-radius: 10px; background: var(--surface); }
+.statement-upload input { width: 100%; min-width: 0; box-sizing: border-box; margin-top: 8px; font-size: .8rem; border: 0; background: transparent; padding: 0; }
+.statement-upload input::file-selector-button { border: 1px solid var(--border); border-radius: 6px; padding: 9px 12px; margin-right: 12px; background: var(--surface); color: var(--text); cursor: pointer; }
+.statement-password input { width: 100%; min-width: 0; box-sizing: border-box; }
+.statement-privacy { color: var(--muted); font-size: .8rem; line-height: 1.7; }
+.statement-options { border-top: 1px solid var(--hairline); border-bottom: 1px solid var(--hairline); margin-bottom: 20px; padding: 14px 0; }
+.statement-options summary { cursor: pointer; font-size: .85rem; }
+.statement-options summary span { margin-left: 12px; }
+.statement-options .expense-fields { margin: 20px 0 0; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.statement-help { font-size: .8rem; color: var(--muted); }
+.statement-help summary { cursor: pointer; }
 .statement-import details { margin-top: 16px; overflow-wrap: anywhere; }
 .statement-import > p { margin: 12px 0; }
 @media (max-width: 700px) {
-  .expense-fields { grid-template-columns: minmax(0, 1fr); }
+  .expense-category-bars { grid-template-columns: minmax(0, 1fr); }
+  .expense-fields, .statement-options .expense-fields, .statement-upload-fields { grid-template-columns: minmax(0, 1fr); }
   .statement-import .panel-head { flex-wrap: wrap; }
 }
 .timeline-controls select { width: 100%; }
