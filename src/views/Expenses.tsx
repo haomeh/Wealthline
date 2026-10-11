@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
-import { mergeExpenses, isUnrecognizedMerchant, parseExpense, prepareExpenses, sha256, type Expense } from '../expenses'
+import { mergeExpenses, isUnrecognizedMerchant, parseExpense, prepareExpenses, sha256, expenseCategory, EXPENSE_CATEGORIES, type ExpenseCategory, type Expense } from '../expenses'
 import { assertCreditCardFile, parseStatement, statementMetadata } from '../statements'
 import { fmt } from '../format'
 import type { WealthData } from '../model'
@@ -28,8 +28,8 @@ export function Expenses({data,onChange,busy}: {data:WealthData;onChange:(next:W
     {message && <p role="status" className="notice">{message}</p>}
     {!expenses.length ? <section className="panel empty"><p>還沒有消費紀錄。選擇文字 PDF 帳單，預覽確認後即可匯入。</p></section> : <section className="panel">
       <h3>{expenses.length} 筆交易</h3>
-      <div className="table-wrap"><table className="data expense-table"><thead><tr><th>日期</th><th>銀行／卡片</th><th>商家／說明</th><th className="num">金額</th><th>操作</th></tr></thead><tbody>
-        {[...expenses].sort((a,b)=>b.date.localeCompare(a.date)).map(e=><tr key={e.id}><td>{e.date}</td><td>{e.card}</td><td>{e.description}</td><td className="num">{e.currency} {fmt(e.amount)}</td><td><button disabled={busy} aria-label={`編輯消費 ${e.date} ${e.description}`} onClick={()=>setEditing(e)}>編輯</button></td></tr>)}
+      <div className="table-wrap"><table className="data expense-table"><thead><tr><th>日期</th><th>銀行／卡片</th><th>商家／說明</th><th>類別</th><th className="num">金額</th><th>操作</th></tr></thead><tbody>
+        {[...expenses].sort((a,b)=>b.date.localeCompare(a.date)).map(e=><tr key={e.id}><td>{e.date}</td><td>{e.card}</td><td>{e.description}</td><td>{expenseCategory(e)}</td><td className="num">{e.currency} {fmt(e.amount)}</td><td><button disabled={busy} aria-label={`編輯消費 ${e.date} ${e.description}`} onClick={()=>setEditing(e)}>編輯</button></td></tr>)}
       </tbody></table></div>
     </section>}
   </div>
@@ -46,6 +46,7 @@ function ExpenseEditor({expense,busy,onSave,onCancel,onRemove}: {expense:Expense
       <label className="field"><span>銀行／卡片名稱</span><input required maxLength={100} value={draft.card} onChange={e=>setDraft({...draft,card:e.target.value})}/></label>
       <label className="field"><span>商家／說明</span><input required maxLength={500} value={draft.description} onChange={e=>setDraft({...draft,description:e.target.value})}/></label>
       <label className="field"><span>金額（退款填負數）</span><input required type="number" step="0.01" value={amount} onChange={e=>setAmount(e.target.value)}/></label>
+      <label className="field"><span>消費類別</span><select value={draft.category ?? ''} onChange={e=>setDraft({...draft,category:e.target.value ? e.target.value as ExpenseCategory : undefined})}><option value="">自動判斷（{expenseCategory({description:draft.description})}）</option>{EXPENSE_CATEGORIES.map(c=><option key={c} value={c}>{c}</option>)}</select></label>
       <label className="field"><span>幣別</span><input required pattern="[A-Z]{3}" value={draft.currency} onChange={e=>setDraft({...draft,currency:e.target.value.toUpperCase()})}/></label>
     </fieldset>
     {error && <p role="alert" className="banner error">{error}</p>}
@@ -153,7 +154,7 @@ function StatementImport({existing,busy,onCancel,onImport}: {existing:Expense[];
       <div className="expense-preview">{[...reports.map((report,index)=>({report,index})).filter(({report})=>!report.error),...(drafts.some(r=>r.sourceFile===undefined)?[{report:{name:'手動補登'},index:undefined}]:[])].map(({report,index})=>
         <section className="statement-group" key={index ?? 'manual'} aria-label={`來源：${report.name}`}>
           <header><strong>{report.name}</strong><span className="muted small">{drafts.filter(r=>r.sourceFile===index).length} 筆</span></header>
-          <div className="table-wrap"><table className="data statement-preview-table"><thead><tr><th>選取</th><th>銀行／卡片</th><th>日期</th><th>商家／說明</th><th className="num">金額</th><th>幣別</th></tr></thead><tbody>
+          <div className="table-wrap"><table className="data statement-preview-table"><thead><tr><th>選取</th><th>銀行／卡片</th><th>日期</th><th>商家／說明</th><th>類別</th><th className="num">金額</th><th>幣別</th></tr></thead><tbody>
           {drafts.map((r,i)=>{
             if(r.sourceFile!==index) return null
             const duplicate = (r.sourceKey && existingSourceKeys.has(r.sourceKey)) || (r.importKey && existingImportKeys.has(r.importKey))
@@ -162,6 +163,7 @@ function StatementImport({existing,busy,onCancel,onImport}: {existing:Expense[];
               <td><PreviewField label={`第 ${i+1} 筆卡片`} value={r.card} maxLength={100} disabled={busy} onChange={card=>patch(r.id,{card})}/></td>
               <td><PreviewField label={`第 ${i+1} 筆日期`} type="date" value={r.date} disabled={busy} onChange={date=>patch(r.id,{date})}/></td>
               <td><PreviewField label={`第 ${i+1} 筆商家`} value={r.description} maxLength={500} disabled={busy} onChange={description=>patch(r.id,{description})}/></td>
+              <td><PreviewCategory expense={r} label={`第 ${i+1} 筆類別`} disabled={busy} onChange={category=>patch(r.id,{category})}/></td>
               <td className="num"><PreviewField label={`第 ${i+1} 筆金額`} type="number" value={r.amountText} disabled={busy} onChange={amountText=>patch(r.id,{amountText})}/></td>
               <td><PreviewField label={`第 ${i+1} 筆幣別`} value={r.currency} maxLength={3} disabled={busy} onChange={currency=>patch(r.id,{currency:currency.toUpperCase()})}/></td>
             </tr>
@@ -187,4 +189,10 @@ function PreviewField({label,value,type='text',maxLength,disabled,onChange}: {la
     if(e.key==='Escape') {e.preventDefault();setEditing(null)}
   }}/>
   return <button type="button" className="preview-value" disabled={disabled} aria-label={`編輯${label}`} title={value || '點擊填寫'} onClick={()=>setEditing(value)}>{value || <span className="muted">待填寫</span>}</button>
+}
+
+function PreviewCategory({expense,label,disabled,onChange}: {expense:Expense;label:string;disabled:boolean;onChange:(category:ExpenseCategory|undefined)=>void}) {
+  const [editing,setEditing] = useState(false)
+  if(editing) return <select className="preview-input" autoFocus aria-label={label} disabled={disabled} value={expense.category ?? ''} onBlur={()=>setEditing(false)} onChange={e=>{onChange(e.target.value ? e.target.value as ExpenseCategory : undefined);setEditing(false)}} onKeyDown={e=>{if(e.key==='Escape')setEditing(false)}}><option value="">自動判斷（{expenseCategory({description:expense.description})}）</option>{EXPENSE_CATEGORIES.map(c=><option key={c} value={c}>{c}</option>)}</select>
+  return <button type="button" className="preview-value" disabled={disabled} aria-label={`編輯${label}`} title={expense.category?'手動分類':'自動判斷；點擊修改'} onClick={()=>setEditing(true)}>{expenseCategory(expense)}</button>
 }

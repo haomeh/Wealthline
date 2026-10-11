@@ -352,3 +352,22 @@ test('HSBC trims only merchant edge borders, preserving letters, inner separator
   const placeholder=await prepare([row('|商家未能辨識|')])
   assert.throws(()=>expenses.mergeExpenses([],placeholder),/商家/)
 })
+
+test('merchant categories use conservative local rules and explicit overrides',()=>{
+  for(const [description,category] of [
+    ['CLAUDE.AISUBSCRIPTI','數位服務'],['APPLE.COM/BILL TEST','數位服務'],['STEAMGAMES.COM TEST','娛樂'],
+    ['內政部移民署 TEST','政府規費'],['Uber*Eats TEST','餐飲'],['UBER TRIP','交通'],['GRAB*FOOD TEST','餐飲'],
+    ['AMAZON WEB SERVICES TEST','數位服務'],['AMAZON TEST SHOP','購物'],['7-ELEVEN TEST','購物'],
+    ['UNKNOWN TEST SHOP','未分類'],['APPLE TEST SHOP','未分類'],['SMART TEST','未分類'],
+  ]) assert.equal(expenses.expenseCategory({description}),category,description)
+  assert.equal(expenses.expenseCategory({description:'STEAMGAMES.COM',category:'未分類'}),'未分類')
+})
+
+test('manual categories survive JSON roundtrip without changing import duplicate keys',async()=>{
+  const prepared=await prepare([row('STEAMGAMES.COM TEST')])
+  const categorized=expenses.mergeExpenses([],[{...prepared[0],category:'數位服務'}]).expenses
+  assert.equal(expenses.mergeExpenses(categorized,prepared).added,0)
+  assert.equal(model.parseWealthData({...model.emptyData(),version:10,expenses:categorized}).expenses[0].category,'數位服務')
+  assert.deepEqual(expenses.parseExpense(prepared[0]),prepared[0])
+  for(const category of ['invalid',null,3]) assert.throws(()=>expenses.parseExpense({...prepared[0],category}),/類別/)
+})
