@@ -2618,3 +2618,11 @@ button.add-category-rule { display: inline-flex; justify-content: center; align-
 dialog.expense-rule-dialog { max-width: 440px; }
 .expense-rule-dialog .expense-rule-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .expense-rule-dialog .field { grid-column: 1 / -1; }
+
+.expense-trend{margin:1.25rem 0;padding:1.1rem 0;border-top:1px solid var(--border);border-bottom:1px solid var(--border)}
+.expense-trend h4{margin:0 0 .25rem}.expense-period-picker{display:flex;gap:.25rem;flex-wrap:wrap}.expense-period-picker button{padding:.4rem .65rem;font-size:.8rem}.expense-period-picker button[aria-pressed="true"]{background:var(--accent);color:white}
+.expense-trend-currency+.expense-trend-currency{margin-top:1rem}.expense-trend-totals{display:flex;justify-content:space-between;gap:.5rem;flex-wrap:wrap;font-variant-numeric:tabular-nums}.expense-trend-totals strong{font-size:1.05rem}.expense-trend-totals small{font-weight:normal}
+@media(max-width:600px){.expense-trend .panel-head{align-items:flex-start;gap:.75rem;flex-direction:column}}
+
+.statement-password-summary{display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;margin:1rem 0}.statement-password-summary button{font-size:.8rem}.statement-password-dialog{max-width:520px}.statement-password-list{list-style:none;padding:0}.statement-password-list li{display:flex;align-items:center;justify-content:space-between;gap:.75rem;flex-wrap:wrap;padding:.75rem 0;border-bottom:1px solid var(--border)}.statement-password-list small{display:block}.statement-password-dialog .expense-fields{grid-template-columns:1fr}.statement-password-dialog .form{padding:0}
+.expense-trend-currency .trend{margin:.75rem 0 .25rem}.expense-trend-currency svg{max-width:100%}.expense-trend-details{font-size:.8rem}.expense-trend-details summary{cursor:pointer;color:var(--muted)}.expense-trend-details button{border:0;background:transparent;padding:.25rem 0;color:var(--accent)}

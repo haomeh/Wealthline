@@ -65,6 +65,23 @@ export function expenseMonthSummary(expenses: Expense[], month: string, rules: E
   return [...currencies.values()].sort((a,b)=>a.currency.localeCompare(b.currency)).map(g=>({...g,cards:[...g.cards.values()].sort((a,b)=>b.net-a.net),categories:[...g.categories.values()].sort((a,b)=>b.spending-a.spending)}))
 }
 
+export function expenseTrend(expenses: Expense[], endMonth: string, count: number) {
+  if(!/^\d{4}-(0[1-9]|1[0-2])$/.test(endMonth) || ![1,3,6,12].includes(count)) throw new Error('支出分析期間無效')
+  const [year,month] = endMonth.split('-').map(Number)
+  const months = Array.from({length:count},(_,i)=>{
+    const date = new Date(Date.UTC(year,month-count+i,1))
+    return date.toISOString().slice(0,7)
+  })
+  const summaries = months.map(m=>expenseMonthSummary(expenses,m))
+  const currencies = [...new Set(summaries.flatMap(groups=>groups.map(g=>g.currency)))].sort()
+  return currencies.map(currency=>{
+    const points = months.map((month,i)=>({month,net:summaries[i].find(g=>g.currency===currency)?.net ?? null}))
+    const recorded = points.filter(p=>p.net!==null)
+    const total = recorded.reduce((sum,p)=>sum+p.net!,0)
+    return {currency,points,total,average:total/recorded.length,recordedMonths:recorded.length}
+  })
+}
+
 export function parseExpense(raw: unknown): Expense {
   const e = raw as Expense
   if (!e || typeof e !== 'object' || typeof e.id !== 'string' || !e.id.trim()) throw new Error('消費識別碼無效')

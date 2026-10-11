@@ -53,7 +53,7 @@ const shortDate = (d: string, withYear: boolean) => {
 }
 
 // Values over time on one shared axis, with a crosshair that lists every series on hover.
-export function TrendChart({ dates, series, area = false }: { dates: string[]; series: Series[]; area?: boolean }) {
+export function TrendChart({ dates, series, area = false, label = '資產走勢圖', currency = 'NT$', monthly = false, onSelect }: { dates: string[]; series: Series[]; area?: boolean; label?:string; currency?:string; monthly?:boolean; onSelect?:(date:string)=>void }) {
   const [ref, width] = useWidth<HTMLDivElement>()
   const [hoverIndex, setHover] = useState<number | null>(null)
   const hover = hoverIndex !== null && hoverIndex < dates.length ? hoverIndex : null
@@ -84,12 +84,12 @@ export function TrendChart({ dates, series, area = false }: { dates: string[]; s
     if (xLabels.length === 0 || x(i) - x(xLabels[xLabels.length - 1]) > 70) xLabels.push(i)
   }
 
-  function onMove(e: React.PointerEvent<SVGRectElement>) {
+  function nearest(e: React.MouseEvent<SVGRectElement>) {
     const box = e.currentTarget.getBoundingClientRect()
     const px = e.clientX - box.left + PAD.left
     let best = 0
     for (let i = 1; i < dates.length; i++) if (Math.abs(x(i) - px) < Math.abs(x(best) - px)) best = i
-    setHover(best)
+    return best
   }
 
   const showDots = dates.length <= 40
@@ -98,7 +98,7 @@ export function TrendChart({ dates, series, area = false }: { dates: string[]; s
   return (
     <div className="trend" ref={ref}>
       {width > 0 && (
-        <svg width={width} height={HEIGHT} role="img" aria-label="資產走勢圖">
+        <svg width={width} height={HEIGHT} role="img" aria-label={label}>
           {ticks.map((t) => (
             <g key={t}>
               <line className="grid" x1={PAD.left} x2={width - PAD.right} y1={y(t)} y2={y(t)} />
@@ -115,7 +115,7 @@ export function TrendChart({ dates, series, area = false }: { dates: string[]; s
               y={HEIGHT - 8}
               textAnchor={dates.length === 1 ? 'middle' : i === 0 ? 'start' : i === dates.length - 1 ? 'end' : 'middle'}
             >
-              {shortDate(dates[i], multiYear)}
+              {monthly ? multiYear ? dates[i].slice(0,7).replace('-', '/') : `${Number(dates[i].slice(5,7))}月` : shortDate(dates[i], multiYear)}
             </text>
           ))}
           {area && series.length === 1 && dates.length > 1 && series[0].values.every(v => v !== null) && (
@@ -145,7 +145,8 @@ export function TrendChart({ dates, series, area = false }: { dates: string[]; s
             width={innerW + 20}
             height={HEIGHT}
             fill="transparent"
-            onPointerMove={onMove}
+            onPointerMove={e=>setHover(nearest(e))}
+            onClick={e=>onSelect?.(dates[nearest(e)])}
             onPointerLeave={() => setHover(null)}
           />
         </svg>
@@ -155,14 +156,14 @@ export function TrendChart({ dates, series, area = false }: { dates: string[]; s
           className="tip trend-tip"
           style={tipLeft ? { right: width - x(hover) + 12 } : { left: x(hover) + 12 }}
         >
-          <strong>{shortDate(dates[hover], true)}</strong>
+          <strong>{monthly ? dates[hover].slice(0,7).replace('-', ' / ') : shortDate(dates[hover], true)}</strong>
           {[...series]
             .sort((a, b) => (b.values[hover] ?? -Infinity) - (a.values[hover] ?? -Infinity))
             .map((s) => (
               <span key={s.key} className="tip-row">
                 {series.length > 1 && <i style={{ background: s.color }} />}
                 {series.length > 1 && <span className="label">{s.label}</span>}
-                <span className="value">{s.values[hover] === null ? '資料不完整' : `NT$ ${fmt(s.values[hover], 0)}`}</span>
+                <span className="value">{s.values[hover] === null ? monthly ? '無紀錄' : '資料不完整' : `${currency} ${fmt(s.values[hover], monthly ? 2 : 0)}`}</span>
               </span>
             ))}
         </div>

@@ -123,7 +123,7 @@ function Privacy() {
             <strong>你輸入的資產資料</strong>：帳戶名稱、類型、國家、各幣別餘額、持有標的代號與數量、匯率、每日資產快照、歷史數量與持倉期間、修改紀錄，以及負債名稱、金額、幣別、利率與還款排程。用途：計算與呈現你的資產統計。
           </li>
         </ul>
-        <p>匯入信用卡帳單時，你選擇的 PDF 與解密密碼只在瀏覽器記憶體中處理，不上傳、不保存原始檔或密碼。匯豐圖片商家欄使用本機 OCR；辨識圖片只留在記憶體，英文／繁中語言包由本站提供，無第三方辨識服務。預覽文字可能包含帳單上的個人資訊，離開匯入頁面後不保存。確認後僅將交易日期、商家／說明、金額、幣別、自訂銀行／卡片名稱，以及用於防止重複匯入的雜湊識別碼加入資料檔；在本機模式儲存在此瀏覽器，Google 模式則在你儲存變更後存入自己的 Drive。本服務不要求金融機構登入密碼、完整卡號或身分證字號。</p>
+        <p>匯入信用卡帳單時，你選擇的 PDF 與解密密碼只在瀏覽器中處理，不上傳、不保存原始檔。臨時輸入的密碼只留在記憶體；若選擇帳單密碼設定，密碼以 AES-GCM 加密後隨個人資料檔存於本機或自己的 Google Drive，匯出備份也包含密文。解密金鑰不可匯出，只存於此瀏覽器的 IndexedDB，依 Google 帳號或本機模式分開。新裝置、清除網站資料或遺失金鑰後需重新輸入帳單密碼；移除設定並儲存後會刪除目前檔案中的密文，舊備份不會同步刪除。登出不刪除此瀏覽器的金鑰；共享裝置請清除網站資料。加密不能防止已控制瀏覽器或本站執行環境的攻擊者使用金鑰。匯豐圖片商家欄使用本機 OCR；辨識圖片只留在記憶體，英文／繁中語言包由本站提供，無第三方辨識服務。預覽文字可能包含帳單上的個人資訊，離開匯入頁面後不保存。確認後僅將交易日期、商家／說明、金額、幣別、自訂銀行／卡片名稱，以及用於防止重複匯入的雜湊識別碼加入資料檔；在本機模式儲存在此瀏覽器，Google 模式則在你儲存變更後存入自己的 Drive。本服務不要求金融機構登入密碼、完整卡號或身分證字號。</p>
       </Section>
 
       <Section title="四、資料如何使用">
@@ -188,7 +188,7 @@ function Privacy() {
             <strong>保存期限與刪除</strong>：資料會保留到你在選單中按「刪除此瀏覽器中的資料」，或清除瀏覽器的網站資料為止。「離開本機模式」會保留資料，供下次繼續使用。換瀏覽器、換裝置或使用無痕視窗時看不到這些資料，營運者也無法替你復原，請定期下載備份。
           </li>
           <li>
-            <strong>安全</strong>：localStorage 中的資料沒有加密，能使用這個瀏覽器設定檔的人都可能讀取。共用裝置請勿使用本機模式，或在使用後刪除資料。
+            <strong>安全</strong>：localStorage 中的資產與交易資料沒有加密（已設定的帳單密碼僅保存密文），能使用這個瀏覽器設定檔的人都可能讀取。共用裝置請勿使用本機模式，或在使用後刪除資料。
           </li>
         </ul>
       </Section>
@@ -227,7 +227,7 @@ function Privacy() {
 
       <Section title="十一、安全">
         <p>
-          正式網站連線使用 HTTPS。資料檔是一般 JSON，本服務沒有對它加上額外的端對端加密；HTTPS 保護傳輸，Google Drive 的帳號權限保護檔案存取。請勿將資料檔公開分享，請為你的 Google 帳號啟用兩步驟驗證。本服務的程式碼完全公開在{' '}
+          正式網站連線使用 HTTPS。資產與交易資料是一般 JSON，沒有額外的端對端加密；已設定的帳單密碼則個別加密，金鑰只留在此瀏覽器。HTTPS 保護傳輸，Google Drive 的帳號權限保護檔案存取。請勿將資料檔公開分享，請為你的 Google 帳號啟用兩步驟驗證。本服務的程式碼完全公開在{' '}
           <a href={REPO_URL}>GitHub</a>，任何人都可以檢查上述說明是否屬實。
         </p>
       </Section>
@@ -295,7 +295,7 @@ function PrivacyEnglish() {
         <li>a short-lived <strong>OAuth access token</strong> (about one hour) used to call the Google Drive API on your behalf.</li>
       </ul>
       <p>Wealthline does not access Gmail, Contacts, Calendar or any other file in your Google Drive.</p>
-      <p>When you import a credit card statement, the selected PDF and its decryption password are processed only in browser memory. The original file and password are never uploaded or stored. HSBC image merchant columns use local OCR. Cropped images stay in memory; English and Traditional Chinese models are served by this site without a third-party recognition service. Preview text may contain personal information printed on the statement and is discarded when you leave the import page. Only confirmed transaction dates, descriptions, amounts, currencies, your bank/card label and hashed identifiers for duplicate detection are added to your data file. Saving keeps these records in this browser in local mode, or in your own Google Drive in Google mode. Bank login credentials, full card numbers and government identifiers are not required.</p>
+      <p>When you import a credit card statement, the selected PDF and its decryption password are processed only in browser memory. The original file is never uploaded or stored. Temporary passwords stay in memory. If you choose to save a password setting, its AES-GCM ciphertext is saved with your personal data in this browser or your own Google Drive and included in exported backups. The non-extractable decryption key stays only in this browser’s IndexedDB, separately for each Google account or local mode. On a new device, after clearing site data, or after losing the key, re-enter your statement passwords. Removing a setting and saving removes its ciphertext from the current file, but not older backups. Signing out retains the device key; clear site data on shared devices. This encryption cannot protect against an attacker who controls the browser or the site’s execution environment. HSBC image merchant columns use local OCR. Cropped images stay in memory; English and Traditional Chinese models are served by this site without a third-party recognition service. Preview text may contain personal information printed on the statement and is discarded when you leave the import page. Only confirmed transaction dates, descriptions, amounts, currencies, your bank/card label and hashed identifiers for duplicate detection are added to your data file. Saving keeps these records in this browser in local mode, or in your own Google Drive in Google mode. Bank login credentials, full card numbers and government identifiers are not required.</p>
 
       <h3>2. How we use Google user data</h3>
       <p>Google user data is used only to provide the features you see in the app:</p>
@@ -317,7 +317,7 @@ function PrivacyEnglish() {
 
       <h3>4. How we store and protect Google user data</h3>
       <ul>
-        <li>Your asset data is stored in your own Google Drive and protected by your Google account's permissions. The file is ordinary JSON without additional end-to-end encryption by Wealthline; do not share it publicly. Records are also processed in browser memory while the app runs, and downloaded backups remain wherever you save them. The operator keeps no complete financial file on its servers.</li>
+        <li>Your asset data is stored in your own Google Drive and protected by your Google account's permissions. The financial records are ordinary JSON without additional end-to-end encryption by Wealthline; optional saved statement passwords are separately encrypted with a browser-only key; do not share it publicly. Records are also processed in browser memory while the app runs, and downloaded backups remain wherever you save them. The operator keeps no complete financial file on its servers.</li>
         <li>
           The access token is kept only in the current tab's sessionStorage: it survives a reload and is normally cleared when a tab closes, but browser session restoration may retain it. Always sign out on a shared device. Your account identifier, email, name and picture URL
           are kept in localStorage as a hint for your next sign-in, along with the version of this policy you last saw.
@@ -368,7 +368,7 @@ function PrivacyEnglish() {
           backups regularly.
         </li>
         <li>
-          localStorage is not encrypted: anyone who can use this browser profile may read the data. Do not use local mode on a shared device, or delete the
+          Financial records in localStorage are not encrypted (saved statement passwords contain only ciphertext): anyone who can use this browser profile may read the data. Do not use local mode on a shared device, or delete the
           data when you are done.
         </li>
       </ul>

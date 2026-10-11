@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { after, before, beforeEach, afterEach, test } from 'node:test'
 import { JSDOM } from 'jsdom'
+import {statementKeyStore} from './helpers/statement-key-store.mjs'
 import { createServer } from 'vite'
 import { act, createElement, useState, useEffect } from 'react'
 
@@ -17,7 +18,7 @@ before(async () => {
   globalThis.requestAnimationFrame = callback => setTimeout(callback,0)
   window.HTMLDialogElement.prototype.showModal = function () { this.open = true }
   ;({ createRoot } = await import('react-dom/client'))
-  server = await createServer({ configFile: false, envDir: false, plugins:[{name:'statement-pdf-test',enforce:'pre',load(id){if(id.endsWith('/src/statementPdf.ts')) return `let results=[];export function setResults(next){results=next} export async function readStatementPdf(){return results.shift()}`}}], server: { middlewareMode: true, watch: null, hmr: false, ws: false } })
+  server = await createServer({ configFile: false, envDir: false, plugins:[{name:'statement-pdf-test',enforce:'pre',load(id){if(id.endsWith('/src/statementPdf.ts')) return `let results=[];export function setResults(next){results=next} let passwords;export function lastPasswords(){return passwords} export async function readStatementPdf(bytes,secret){passwords=secret;return results.shift()}`}}], server: { middlewareMode: true, watch: null, hmr: false, ws: false } })
   App = (await server.ssrLoadModule('/src/App.tsx')).default
   ;({ Accounts } = await server.ssrLoadModule('/src/views/Accounts.tsx'))
   ;({ Liabilities } = await server.ssrLoadModule('/src/views/Liabilities.tsx'))
@@ -27,7 +28,7 @@ before(async () => {
   model = await server.ssrLoadModule('/src/model.ts')
   auth = await server.ssrLoadModule('/src/google/auth.ts')
 })
-beforeEach(()=>{globalThis.confirm=()=>true})
+beforeEach(()=>{globalThis.confirm=()=>true;globalThis.indexedDB=statementKeyStore()})
 afterEach(async () => {
   const {clearHistoryCache}=await server.ssrLoadModule('/src/priceHistory.ts');clearHistoryCache()
   if (root) await act(() => root.unmount())
@@ -35,6 +36,7 @@ afterEach(async () => {
   globalThis.fetch = originalFetch
   localStorage.clear()
   sessionStorage.clear()
+  delete globalThis.indexedDB
   delete globalThis.confirm
   window.history.replaceState(null, '', '/rates')
 })
@@ -1856,5 +1858,85 @@ test('preview creates a rule without losing file rows, edited descriptions or se
   assert.equal(drive.uploaded.expenses.length,1)
   assert.equal(drive.uploaded.expenses[0].category,undefined)
   assert.deepEqual(drive.uploaded.expenseCategoryRules,[{keyword:'BUS/MRT',category:'交通'}])
+  await drive.finish()
+})
+
+
+test('expense trends cross years, separate currencies and keep missing months distinct from zero',async()=>{
+  const {expenseTrend}=await server.ssrLoadModule('/src/expenses.ts')
+  const expenses=[
+    {id:'a',date:'2025-12-03',currency:'TWD',amount:100,card:'Test',description:'Test'},
+    {id:'b',date:'2025-12-04',currency:'TWD',amount:-20,card:'Test',description:'Refund'},
+    {id:'c',date:'2026-02-03',currency:'TWD',amount:0,card:'Test',description:'Zero'},
+    {id:'d',date:'2026-02-03',currency:'SGD',amount:-10,card:'Test',description:'Refund'},
+    {id:'e',date:'2026-03-03',currency:'TWD',amount:900,card:'Test',description:'Outside'},
+  ]
+  const original=structuredClone(expenses)
+  assert.deepEqual(expenseTrend(expenses,'2026-02',3),[
+    {currency:'SGD',points:[{month:'2025-12',net:null},{month:'2026-01',net:null},{month:'2026-02',net:-10}],total:-10,average:-10,recordedMonths:1},
+    {currency:'TWD',points:[{month:'2025-12',net:80},{month:'2026-01',net:null},{month:'2026-02',net:0}],total:80,average:40,recordedMonths:2},
+  ])
+  assert.equal(expenseTrend(expenses,'2026-02',12)[1].points.length,12)
+  assert.deepEqual(expenseTrend(expenses,'2026-01',1),[])
+  assert.throws(()=>expenseTrend(expenses,'2026-13',3))
+  assert.throws(()=>expenseTrend(expenses,'2026-02',2))
+  assert.deepEqual(expenses,original)
+  const {ExpenseSummary}=await server.ssrLoadModule('/src/views/ExpenseSummary.tsx')
+  const originalObserver=globalThis.ResizeObserver
+  globalThis.ResizeObserver=class {constructor(callback){this.callback=callback} observe(){this.callback([{contentRect:{width:500}}])} disconnect(){}}
+  try {await render(ExpenseSummary,{expenses,now:'2026-02-11T12:00:00Z'})} finally {globalThis.ResizeObserver=originalObserver}
+  const chart=document.querySelector('[aria-label="TWD 每月支出趨勢圖"]')
+  assert.ok(chart)
+  assert.equal(chart.querySelectorAll('.dot').length,2)
+  assert.equal((chart.querySelector('.line').getAttribute('d').match(/M/g)??[]).length,2)
+  assert.ok(!chart.textContent.includes('NaN'))
+  await act(async()=>chart.querySelector('rect').dispatchEvent(new MouseEvent('click',{bubbles:true,clientX:60})))
+  assert.equal(document.querySelector('[aria-label="消費統計月份"]').value,'2025-12')
+  await selectValue('消費統計月份','2026-02')
+  assert.equal(document.querySelector('[aria-label="TWD 支出趨勢"] .expense-trend-details tbody').children.length,3)
+  await click(button('近 1 年'))
+  assert.equal(document.querySelector('[aria-label="TWD 支出趨勢"] .expense-trend-details tbody').children.length,12)
+  await click(button('查看 2025-12 消費'))
+  assert.equal(document.querySelector('[aria-label="消費統計月份"]').value,'2025-12')
+  assert.match(document.querySelector('[aria-label="TWD 消費統計"]').textContent,/80/)
+})
+
+
+test('personal password settings stay masked, auto-apply to import and save only ciphertext in version 12',async()=>{
+  window.history.replaceState(null,'','/expenses')
+  const drive=setupDrive(fixture())
+  await render(App)
+  await click(button('管理帳單密碼'))
+  await setInput(document.querySelector('dialog input:not([type="password"])'),'Synthetic card')
+  await setInput(document.querySelector('dialog input[type="password"]'),'synthetic, literal password')
+  await act(async()=>document.querySelector('dialog form').dispatchEvent(new Event('submit',{bubbles:true,cancelable:true})))
+  for(let i=0;i<100 && !document.querySelector('.statement-password-list');i++)await act(async()=>new Promise(r=>setTimeout(r,5)))
+  assert.ok(document.querySelector('.statement-password-list'))
+  assert.equal(document.querySelector('dialog input[type="password"]').value,'')
+  assert.equal(document.querySelector('dialog').textContent.includes('synthetic, literal password'),false)
+  assert.equal(drive.writes,0)
+  await click(button('關閉'))
+  await click(button('匯入信用卡帳單'))
+  const pdf=await server.ssrLoadModule('/src/statementPdf.ts')
+  pdf.setResults([{lines:['HSBC','04/01 04/02 SHOP 100'],title:'',ocrUsed:false}])
+  const input=document.querySelector('input[type="file"]')
+  Object.defineProperty(input,'files',{value:[{name:'HSBC-2026-04.pdf',size:100,arrayBuffer:async()=>new TextEncoder().encode('%PDF-fixture').buffer}]})
+  await act(async()=>input.dispatchEvent(new Event('change',{bubbles:true})))
+  await act(async()=>document.querySelector('form').dispatchEvent(new Event('submit',{bubbles:true,cancelable:true})))
+  for(let i=0;i<100 && !document.querySelector('.statement-group');i++)await act(async()=>new Promise(r=>setTimeout(r,5)))
+  assert.deepEqual(pdf.lastPasswords(),['synthetic, literal password'])
+  await click(button('確認匯入 1 筆'))
+  await click(button('儲存變更'))
+  assert.equal(drive.uploaded.version,12)
+  assert.equal(drive.uploaded.statementPasswords.length,1)
+  assert.equal(JSON.stringify(drive.uploaded).includes('synthetic, literal password'),false)
+  assert.ok(drive.uploaded.statementPasswords[0].ciphertext)
+  await drive.finish()
+  await click(button('管理帳單密碼'))
+  await click(button('移除 Synthetic card 密碼'))
+  await click(button('關閉'))
+  await click(button('儲存變更'))
+  assert.equal(drive.uploaded.version,12)
+  assert.deepEqual(drive.uploaded.statementPasswords,[])
   await drive.finish()
 })
