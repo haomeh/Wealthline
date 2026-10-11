@@ -18,6 +18,10 @@ export function Expenses({data,onChange,busy}: {data:WealthData;onChange:(next:W
   if(editing) return <ExpenseEditor expense={editing} busy={busy} onCancel={()=>setEditing(null)} onSave={expense=>{
     onChange({...data,version:10,expenses:expenses.map(e=>e.id===expense.id?expense:e)})
     setEditing(null)
+  }} onRemove={()=>{
+    onChange({...data,version:10,expenses:expenses.filter(e=>e.id!==editing.id)})
+    setEditing(null)
+    setMessage('已移除這筆消費，請按「儲存變更」保存。')
   }}/>
   return <div className="expenses-page">
     <div className="page-head"><div><h2>消費明細</h2><p className="muted">從信用卡帳單匯入並整理交易。修改後請按「儲存變更」保存；這些紀錄不會自動扣除資產或變更信用卡負債。</p></div><button className="primary" disabled={busy} onClick={()=>{setMessage('');setImporting(true)}}>匯入信用卡帳單</button></div>
@@ -31,7 +35,7 @@ export function Expenses({data,onChange,busy}: {data:WealthData;onChange:(next:W
   </div>
 }
 
-function ExpenseEditor({expense,busy,onSave,onCancel}: {expense:Expense;busy:boolean;onSave:(e:Expense)=>void;onCancel:()=>void}) {
+function ExpenseEditor({expense,busy,onSave,onCancel,onRemove}: {expense:Expense;busy:boolean;onSave:(e:Expense)=>void;onCancel:()=>void;onRemove:()=>void}) {
   const [draft,setDraft] = useState(expense)
   const [amount,setAmount] = useState(String(expense.amount))
   const [error,setError] = useState('')
@@ -45,14 +49,14 @@ function ExpenseEditor({expense,busy,onSave,onCancel}: {expense:Expense;busy:boo
       <label className="field"><span>幣別</span><input required pattern="[A-Z]{3}" value={draft.currency} onChange={e=>setDraft({...draft,currency:e.target.value.toUpperCase()})}/></label>
     </fieldset>
     {error && <p role="alert" className="banner error">{error}</p>}
-    <div className="row"><button className="primary" disabled={busy}>套用修改</button><button type="button" onClick={onCancel}>取消</button></div>
+    <div className="row"><button className="primary" disabled={busy}>套用修改</button><button type="button" onClick={onCancel}>取消</button><button type="button" className="danger" disabled={busy} onClick={()=>{if(confirm(`移除「${expense.description}」這筆消費？按「儲存變更」後才會保存。`)) onRemove()}}>移除這筆消費</button></div>
   </form>
 }
 
 type Draft = Expense & {selected:boolean;amountText:string;needsReview?:boolean}
 function StatementImport({existing,busy,onCancel,onImport}: {existing:Expense[];busy:boolean;onCancel:()=>void;onImport:(rows:Expense[],context:Expense[])=>void}) {
   const [files,setFiles] = useState<File[]>([])
-  const [reports,setReports] = useState<{name:string;bank?:string;month?:string;source?:string;count?:number;error?:string;ocr?:boolean;warning?:string}[]>([])
+  const [reports,setReports] = useState<{name:string;bank?:string;month?:string;source?:string;currency?:string;count?:number;error?:string;ocr?:boolean;warning?:string}[]>([])
   const [password,setPassword] = useState('')
   const [card,setCard] = useState('')
   const [month,setMonth] = useState('')
@@ -107,12 +111,12 @@ function StatementImport({existing,busy,onCancel,onImport}: {existing:Expense[];
           if(!statementMonth) throw new Error('無法辨識帳單月份，請填寫備用月份後重試')
           if(!statementCard.trim()) throw new Error('無法辨識銀行，請填寫備用銀行／卡片名稱後重試')
           const parsed = parseStatement(pdf.lines,statementMonth,info.currency || currency,info.bank || file.name,pdf.transactionIndexes)
-          if(!parsed.rows.length) throw new Error('沒有辨識到交易。此帳單的排版暫不支援，尚未匯入任何資料。')
+          if(!parsed.rows.length && !(info.bank === '匯豐' && parsed.skipped.length)) throw new Error(pdf.ocrError || '沒有辨識到交易。此帳單的排版暫不支援，尚未匯入任何資料。')
           const rows = await prepareExpenses(parsed.rows,statementCard,fileHash,info.bank === '匯豐' ? parsed.sourceIndexes : undefined)
           if(abort.signal.aborted) return
-          previews.push(...rows.map((r,i)=>({...r,selected:!pdf.ocrUsed && !parsed.review.includes(i),needsReview:pdf.ocrUsed || parsed.review.includes(i),amountText:String(r.amount)})))
+          previews.push(...rows.map(r=>({...r,selected:!pdf.ocrUsed,needsReview:pdf.ocrUsed,amountText:String(r.amount)})))
           ignored.push(...parsed.skipped.map(line=>`${file.name}：${line}`))
-          outcomes.push({name:file.name,bank:statementCard,month:statementMonth,source:info.monthSource || '手動備用',count:rows.length,ocr:pdf.ocrUsed,warning:pdf.ocrError})
+          outcomes.push({name:file.name,bank:statementCard,month:statementMonth,source:info.monthSource || '手動備用',currency:info.currency || currency,count:rows.length,ocr:pdf.ocrUsed,warning:pdf.ocrError || (!rows.length ? '沒有辨識到可匯入的交易，請核對下方未匯入文字列並手動補登。' : undefined)})
         } catch(e) {
           if(abort.signal.aborted) return
           outcomes.push({name:file.name,error:e instanceof Error?e.message:'無法解析帳單'})
@@ -120,7 +124,7 @@ function StatementImport({existing,busy,onCancel,onImport}: {existing:Expense[];
       }
       if(abort.signal.aborted) return
       setReports(outcomes)
-      if(previews.length) {setDrafts(previews);setSkipped(ignored);setFiles([])}
+      if(outcomes.some(r=>!r.error)) {setDrafts(previews);setSkipped(ignored);setFiles([])}
       else setError('所有檔案都未匯入，請查看各檔案的原因後重試。')
     } finally {if(!abort.signal.aborted) setParsing(false)}
   }
@@ -156,8 +160,9 @@ function StatementImport({existing,busy,onCancel,onImport}: {existing:Expense[];
           </div>
         </fieldset>
       })}</div>
-      <button disabled={busy} onClick={()=>setDrafts(rows=>[...(rows??[]),{id:crypto.randomUUID(),date:`${month || reports.find(r=>r.month)?.month || new Date().toISOString().slice(0,7)}-01`,description:'',amount:0,amountText:'',currency,card:card || reports.find(r=>r.bank)?.bank || '',selected:true}])}>＋ 補上一筆交易</button>
-      {!!skipped.length && <details className="notice"><summary>未匯入的文字列（{skipped.length}）：含總計、繳款與無法辨識內容</summary><p className="small">只在本次預覽顯示，離開後不保存。未辨識商家及單獨的 I／分隔線不列為消費。請核對是否有漏掉的交易，確認後可用「補上一筆交易」手動補登。</p><ul>{skipped.map((line,i)=><li key={i}>{line}</li>)}</ul></details>}
+      <button disabled={busy} onClick={()=>{setDrafts(null);setSkipped([]);setReports([]);setError('')}}>重新選擇帳單</button>
+      <button disabled={busy} onClick={()=>setDrafts(rows=>[...(rows??[]),{id:crypto.randomUUID(),date:`${month || reports.find(r=>r.month)?.month || new Date().toISOString().slice(0,7)}-01`,description:'',amount:0,amountText:'',currency:reports.find(r=>r.month)?.currency || currency,card:card || reports.find(r=>r.bank)?.bank || '',selected:true}])}>＋ 補上一筆交易</button>
+      {!!skipped.length && <details className="notice"><summary>未匯入的文字列（{skipped.length}）：含總計、繳款與無法辨識內容</summary><p className="small">只在本次預覽顯示，離開後不保存。未辨識商家及單獨的 I、l／分隔線不列為消費。請核對是否有漏掉的交易，確認後可用「補上一筆交易」手動補登。</p><ul>{skipped.map((line,i)=><li key={i}>{line}</li>)}</ul></details>}
       {validation && <p role="alert" className="banner error">{validation}</p>}
       <p role="status">選取 {selected.length} 筆 · 可新增 {result?.added ?? 0} 筆 · 略過重複 {result?.duplicates ?? 0} 筆</p>
       <button className="primary" disabled={busy || !!validation || !result?.added} onClick={()=>{try{onImport(selected.map(r=>({...r,amount:Number(r.amountText)})),drafts)}catch(e){setError(e instanceof Error?e.message:'匯入失敗')}}}>確認匯入 {result?.added ?? 0} 筆</button>

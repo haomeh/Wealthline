@@ -140,11 +140,10 @@ test('HSBC unknown merchants and OCR I separators stay in skipped rows, not spen
   assert.deepEqual(result.rows,[{date:'2026-04-11',description:'APPLE.COM/BILLITUNE',amount:80,currency:'TWD'}])
   assert.deepEqual(result.sourceIndexes,[5])
   assert.deepEqual(result.skipped,lines.slice(0,5))
-  assert.deepEqual(result.review,[])
 })
 
 test('unrecognized merchant labels cannot be confirmed even without a review flag',async()=>{
-  for(const description of ['I','｜','商家未能辨識（請對照帳單填寫；可能包含繳款）']) {
+  for(const description of ['I','l','｜','商家未能辨識（請對照帳單填寫；可能包含繳款）']) {
     const draft=await prepare([row(description)])
     assert.throws(()=>expenses.mergeExpenses([],draft),/商家/)
     assert.doesNotThrow(()=>model.parseWealthData({...model.emptyData(),version:10,expenses:draft}))
@@ -215,6 +214,7 @@ test('merchant OCR preserves original date and billed amount, excludes repayment
   assert.equal(statements.ocrMerchantLine(line,'unclear',20),line)
   assert.equal(statements.ocrMerchantLine(line,'123',99),line)
   assert.equal(statements.ocrMerchantLine(line,'I',99),line)
+  assert.equal(statements.ocrMerchantLine(line,'l',99),line)
   assert.equal(statements.ocrMerchantLine(line,'｜',99),line)
   assert.equal(statements.ocrMerchantLine(line,'word',NaN),line)
   assert.equal(statements.parseStatement([statements.ocrMerchantLine('04/01 04/02 -2,000','自動转帳繳款',90)],'2026-04','TWD','HSBC').rows.length,0)

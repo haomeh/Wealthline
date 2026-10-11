@@ -142,7 +142,7 @@ export function statementMetadata(lines:string[], title = '', fileName = ''): {b
 export function assertCreditCardFile(name:string) {
   if(/證券|证券|綜合月對帳單|综合月对账单/.test(name)) throw new Error('證券對帳單不支援：請選擇信用卡帳單')
 }
-export function parseStatement(lines:string[], month:string, currency:string, fileName = '', transactionIndexes?:number[]): {rows:StatementRow[];skipped:string[];review:number[];sourceIndexes:number[]} {
+export function parseStatement(lines:string[], month:string, currency:string, fileName = '', transactionIndexes?:number[]): {rows:StatementRow[];skipped:string[];sourceIndexes:number[]} {
   assertCreditCardFile(fileName)
   const text = lines.join(' ').replace(/\s/g,'')
   if(/綜合月對帳單|综合月对账单/.test(text) || (/成交日期/.test(text) && /買賣別|證券帳號/.test(text))) throw new Error('證券對帳單不支援：請選擇信用卡帳單')
@@ -150,7 +150,7 @@ export function parseStatement(lines:string[], month:string, currency:string, fi
   const bank = detected === '富邦' ? 'fubon' : detected === '玉山' ? 'esun' : detected === '匯豐' ? 'hsbc' : null
   if(!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) throw new Error('請填寫有效的帳單月份')
   if(!/^[A-Z]{3}$/.test(currency)) throw new Error('請填寫三碼幣別')
-  const rows:StatementRow[] = [], skipped:string[] = [], review:number[] = [], sourceIndexes:number[] = []
+  const rows:StatementRow[] = [], skipped:string[] = [], sourceIndexes:number[] = []
   const allowed=transactionIndexes ? new Set(transactionIndexes) : undefined
   for (const [sourceIndex,original] of lines.entries()) {
     if(allowed && !allowed.has(sourceIndex)) continue
@@ -191,5 +191,5 @@ export function parseStatement(lines:string[], month:string, currency:string, fi
     sourceIndexes.push(sourceIndex)
     rows.push({date,description,amount,currency:bank === 'fubon' || bank === 'esun' ? 'TWD' : currency})
   }
-  return {rows,skipped,review,sourceIndexes}
+  return {rows,skipped,sourceIndexes}
 }

@@ -17,7 +17,7 @@ before(async () => {
   globalThis.requestAnimationFrame = callback => setTimeout(callback,0)
   window.HTMLDialogElement.prototype.showModal = function () { this.open = true }
   ;({ createRoot } = await import('react-dom/client'))
-  server = await createServer({ configFile: false, envDir: false, server: { middlewareMode: true, watch: null, hmr: false, ws: false } })
+  server = await createServer({ configFile: false, envDir: false, plugins:[{name:'statement-pdf-test',enforce:'pre',load(id){if(id.endsWith('/src/statementPdf.ts')) return `let results=[];export function setResults(next){results=next} export async function readStatementPdf(){return results.shift()}`}}], server: { middlewareMode: true, watch: null, hmr: false, ws: false } })
   App = (await server.ssrLoadModule('/src/App.tsx')).default
   ;({ Accounts } = await server.ssrLoadModule('/src/views/Accounts.tsx'))
   ;({ Liabilities } = await server.ssrLoadModule('/src/views/Liabilities.tsx'))
@@ -1536,4 +1536,56 @@ test('multiple file import isolates failures and leaves financial data untouched
   assert.match(results.textContent,/有效的 PDF/)
   assert.equal(document.querySelector('input[type="password"]').value,'')
   assert.equal(drive.writes,0)
+})
+
+for(const {ocrError,currency} of [{currency:'TWD'},{currency:'TWD',ocrError:'OCR 等待逾時，請重試或手動補上商家'},{currency:'SGD'}]) {
+  test(`zero recognized HSBC rows allow inspection and manual recovery (${currency} ${ocrError ?? 'unreadable'})`,async()=>{
+    window.history.replaceState(null,'','/expenses')
+    const drive=setupDrive({...fixture(),version:10,expenses:[]})
+    const pdf=await server.ssrLoadModule('/src/statementPdf.ts')
+    pdf.setResults([{lines:[currency==='SGD'?'HSBC AMOUNT(SGD)':'HSBC','04/01 04/02 1200','04/03 04/04 I 320'],title:'',ocrUsed:true,ocrError,transactionIndexes:[1,2]}])
+    await render(App)
+    await click(button('匯入信用卡帳單'))
+    const input=document.querySelector('input[type="file"]')
+    Object.defineProperty(input,'files',{value:[{name:'HSBC-2026-04.pdf',size:100,arrayBuffer:async()=>new TextEncoder().encode('%PDF-fixture').buffer}]})
+    await act(async()=>input.dispatchEvent(new Event('change',{bubbles:true})))
+    await act(async()=>document.querySelector('form').dispatchEvent(new Event('submit',{bubbles:true,cancelable:true})))
+    for(let i=0;i<100 && !document.querySelector('[aria-label="各帳單解析結果"]');i++) await act(async()=>new Promise(resolve=>setTimeout(resolve,10)))
+    assert.ok(button('＋ 補上一筆交易'),document.querySelector('[aria-label="各帳單解析結果"]')?.textContent)
+    assert.match(document.querySelector('.statement-import details').textContent,/04\/01 04\/02 1200/)
+    assert.equal(document.querySelector('[aria-label="交易 1"]'),null)
+    const report=document.querySelector('[aria-label="各帳單解析結果"]').textContent
+    assert.match(report,ocrError ? /OCR 等待逾時/ : /沒有辨識到可匯入的交易/)
+    assert.ok(!report.includes('排版暫不支援'))
+    assert.equal(drive.writes,0)
+    await click(button('＋ 補上一筆交易'))
+    assert.equal(document.querySelector('[aria-label="第 1 筆幣別"]').value,currency)
+    await setInput(document.querySelector('[aria-label="第 1 筆商家"]'),'Verified shop')
+    await setInput(document.querySelector('[aria-label="第 1 筆金額"]'),'1200')
+    await click(button('確認匯入 1 筆'))
+    assert.match(document.querySelector('table').textContent,/Verified shop/)
+    assert.equal(drive.writes,0)
+  })
+}
+
+test('removing a legacy repayment supports cancellation and existing save flow without changing assets',async()=>{
+  const expense={id:'repayment',date:'2026-09-01',description:'商家未能辨識（可能包含繳款）',amount:100,currency:'TWD',card:'HSBC'}
+  const data={...fixture(),version:10,expenses:[expense]}
+  window.history.replaceState(null,'','/expenses')
+  const drive=setupDrive(data)
+  await render(App)
+  await click(button(`編輯消費 2026-09-01 ${expense.description}`))
+  globalThis.confirm=()=>false
+  await click(button('移除這筆消費'))
+  assert.ok(button('套用修改'))
+  assert.equal(drive.writes,0)
+  globalThis.confirm=()=>true
+  await click(button('移除這筆消費'))
+  assert.match(document.body.textContent,/還沒有消費紀錄/)
+  assert.equal(drive.writes,0)
+  await click(button('儲存變更'))
+  assert.deepEqual(drive.uploaded.expenses,[])
+  assert.deepEqual(drive.uploaded.accounts,data.accounts)
+  assert.deepEqual(drive.uploaded.liabilities,data.liabilities)
+  await drive.finish()
 })
