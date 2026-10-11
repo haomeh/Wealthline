@@ -1,5 +1,5 @@
 import { validDate } from './quantityHistory'
-import { isUnrecognizedMerchant, type StatementRow } from './expenses'
+import { isUnrecognizedMerchant, stripMerchantBorders, type StatementRow } from './expenses'
 
 interface TextItem { str:string; transform:number[];width?:number;height?:number }
 export function textRows(items: unknown[]) {
@@ -84,7 +84,7 @@ export function hsbcTransactionBounds(tsv:string, transactionTops:number[]):{top
 }
 
 export function ocrMerchantLine(line:string, description:string, confidence:number):string {
-  const merchant=description.normalize('NFKC').replace(/\s+/g,' ').trim()
+  const merchant=stripMerchantBorders(description.normalize('NFKC').replace(/\s+/g,' '))
   const dates=line.match(/^(\d{1,2}[/.-]\d{1,2}\s+\d{1,2}[/.-]\d{1,2})\s+/)?.[1]
   const amount=line.match(/(?:^|\s)(\(?[+-]?\d[\d,]*(?:\.\d{1,2})?\)?(?:\s*(?:CR|DR))?)$/i)?.[1]
   if(isUnrecognizedMerchant(merchant) || !dates || !amount || confidence < 65 || !Number.isFinite(confidence) || !/[\p{L}]/u.test(merchant) || merchant.length > 500) return line
@@ -180,6 +180,7 @@ export function parseStatement(lines:string[], month:string, currency:string, fi
       description = description.split(/\s(?:TWD|NTD|USD|SGD|HKD|JPY|EUR)\s+[+-]?\d/i)[0].trim()
       description = description.replace(/\s\d{1,2}[/.-]\d{1,2}$/, '').trim()
     }
+    if(bank === 'hsbc') description=stripMerchantBorders(description)
     if(isUnrecognizedMerchant(description) || (bank === 'hsbc' && (!description || !/[\p{L}]/u.test(description) || /^[A-Z]{3}$/i.test(description)))) {
       skipped.push(original);continue
     }

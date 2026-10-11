@@ -25,9 +25,10 @@ export function parseExpense(raw: unknown): Expense {
 }
 
 const normalized = (s: string) => s.normalize('NFKC').trim().replace(/\s+/g,' ').toUpperCase()
+export const stripMerchantBorders = (text:string) => text.replace(/^[|｜│丨\s]+|[|｜│丨\s]+$/g,'')
 export function isUnrecognizedMerchant(description:string):boolean {
-  const value=normalized(description)
-  return value.startsWith('商家未能辨識') || /^[IL|丨]+$/.test(value.replace(/\s/g,''))
+  const value=normalized(stripMerchantBorders(description))
+  return !value || value.startsWith('商家未能辨識') || /^[IL|丨]+$/.test(value.replace(/\s/g,''))
 }
 const signature = (e: StatementRow & {card:string}) => JSON.stringify([normalized(e.card),e.date,normalized(e.description),e.currency,e.amount])
 export async function sha256(bytes: Uint8Array): Promise<string> {

@@ -334,3 +334,21 @@ test('SG HSBC PDF skips its cover and combines only billed SGD transactions',asy
     assert.equal(expenses.mergeExpenses(rows,rows).added,0)
   } finally {await task.destroy()}
 })
+
+test('HSBC trims only merchant edge borders, preserving letters, inner separators and source keys',async()=>{
+  const source='04/03 04/05 1000'
+  for(const merchant of ['|SYNTHETIC TaipeiTWN | | |','｜SYNTHETIC TaipeiTWN｜｜','│SYNTHETIC TaipeiTWN 丨']) {
+    const enriched=statements.ocrMerchantLine(source,merchant,99)
+    const parsed=statements.parseStatement([enriched],'2026-04','TWD','HSBC')
+    assert.deepEqual(parsed.rows,[{date:'2026-04-03',description:'SYNTHETIC TaipeiTWN',amount:1000,currency:'TWD'}])
+    assert.equal(statements.parseStatement([`04/03 04/05 ${merchant} 1000`],'2026-04','TWD','HSBC').rows[0].description,'SYNTHETIC TaipeiTWN')
+    const first=await expenses.prepareExpenses(parsed.rows,'HSBC','a'.repeat(64),parsed.sourceIndexes)
+    const again=await expenses.prepareExpenses(statements.parseStatement([source.replace('1000','SYNTHETIC TaipeiTWN 1000')],'2026-04','TWD','HSBC').rows,'HSBC','a'.repeat(64),[0])
+    assert.equal(first[0].sourceKey,again[0].sourceKey)
+    assert.equal(expenses.mergeExpenses(first,again).added,0)
+  }
+  for(const merchant of ['IKEA','ILLUSTRATION','APPLE.COM/BILLITUNE','SHOP | BRANCH']) assert.equal(statements.ocrMerchantLine(source,merchant,99),`04/03 04/05 ${merchant} 1000`)
+  assert.equal(statements.ocrMerchantLine(source,'| | │',99),source)
+  const placeholder=await prepare([row('|商家未能辨識|')])
+  assert.throws(()=>expenses.mergeExpenses([],placeholder),/商家/)
+})
