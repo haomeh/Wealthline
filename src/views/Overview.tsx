@@ -51,7 +51,7 @@ export function Overview({ data, onGoHistory, onGoRates, onGoLiabilities, onNewA
   const current = keys[index] === 'current'
   if (data.accounts.length === 0 && !data.liabilities?.length && points.length === 1) {
     return (
-      <div className="overview">{!!data.expenses?.length && <ExpenseSummary expenses={data.expenses} now={now} onGoExpenses={onGoExpenses}/>}<section className="panel empty span-2">
+      <div className="overview"><section className="panel empty span-2">
         <div className="empty-mark" aria-hidden>
           ＄
         </div>
@@ -64,7 +64,7 @@ export function Overview({ data, onGoHistory, onGoRates, onGoLiabilities, onNewA
           {onGoLiabilities && <button onClick={onGoLiabilities}>新增負債</button>}
           <button onClick={onImport}>從試算表匯入</button>
         </div>
-      </section></div>
+      </section>{!!data.expenses?.length && <ExpenseSummary expenses={data.expenses} now={now} onGoExpenses={onGoExpenses} rules={data.expenseCategoryRules}/>}</div>
     )
   }
 
@@ -74,7 +74,6 @@ export function Overview({ data, onGoHistory, onGoRates, onGoLiabilities, onNewA
 
   return (
     <div className="overview">
-      {!!data.expenses?.length && <ExpenseSummary expenses={data.expenses} now={now} onGoExpenses={onGoExpenses}/>}
       <section className="panel span-2 snapshot-timeline" aria-label="資產時間線">
         <div className="panel-head">
           <div><span className="eyebrow">資產時間線</span><h2>{current ? '目前資產' : point.date.replaceAll('-', '/')}</h2></div>
@@ -103,7 +102,7 @@ export function Overview({ data, onGoHistory, onGoRates, onGoLiabilities, onNewA
         {historical.status && <p className="muted small" aria-live="polite">{historical.status}</p>}
         {historical.error && <p role="alert" className="banner error">{historical.error}</p>}
       </section>
-      {!current ? <SnapshotDetails accounts={data.accounts} point={point} day={historical.data.history.valuedQuantityDays?.find(d => d.date === point.date)} /> : <>
+      {!current ? <SnapshotDetails accounts={data.accounts} point={point} day={historical.data.history.valuedQuantityDays?.find(d => d.date === point.date)} /> :
       <section className="panel hero">
         <span className="eyebrow">總資產</span>
         <div className="hero-figure">
@@ -123,8 +122,9 @@ export function Overview({ data, onGoHistory, onGoRates, onGoLiabilities, onNewA
             </button>
           </p>
         )}
-      </section>
-
+      </section>}
+      {!!data.expenses?.length && <ExpenseSummary expenses={data.expenses} now={now} onGoExpenses={onGoExpenses} rules={data.expenseCategoryRules}/>}
+      {current && <>
       <section className="panel stat" aria-label="總負債">
         <span className="eyebrow">{estimated ? '總負債（含預估）' : '總負債'}</span><strong>{totals.liabilities === null ? '尚無法換算' : `NT$ ${fmt(totals.liabilities, 0)}`}</strong>
         <span className="muted small">{data.liabilities?.length ?? 0} 筆{estimated ? ' · 假設按期還款；不代表銀行餘額，不會扣除現金' : '手動記錄'}</span>

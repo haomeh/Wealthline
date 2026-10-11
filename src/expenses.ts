@@ -2,6 +2,15 @@ import { validDate } from './quantityHistory'
 
 export const EXPENSE_CATEGORIES = ['餐飲','交通','購物','旅遊住宿','娛樂','數位服務','生活繳費','醫療','政府規費','未分類'] as const
 export type ExpenseCategory = typeof EXPENSE_CATEGORIES[number]
+export interface ExpenseCategoryRule { keyword: string; category: ExpenseCategory }
+export function parseExpenseCategoryRules(raw: unknown): ExpenseCategoryRule[] {
+  if(!Array.isArray(raw) || raw.length > 100) throw new Error('分類規則必須是陣列，最多 100 筆')
+  return raw.map(rule=>{
+    if(!rule || typeof rule.keyword !== 'string' || !categoryText(rule.keyword) || rule.keyword.length > 100 || !EXPENSE_CATEGORIES.includes(rule.category)) throw new Error('分類規則需填寫關鍵字（最多 100 字）與有效類別')
+    return {keyword:rule.keyword.trim(),category:rule.category}
+  })
+}
+const categoryText = (text: string) => text.normalize('NFKC').toUpperCase().replace(/[*_-]+/g,' ').replace(/\s+/g,' ').trim()
 const CATEGORY_RULES: [ExpenseCategory,RegExp][] = [
   ['政府規費',/移民署|監理|稅捐|IMMIGRATION/],
   ['數位服務',/CLAUDE\.?AI|ANTHROPIC|OPENAI|CHATGPT|APPLE\.COM\/BILL|MICROSOFT|ADOBE|AMAZON WEB SERVICES|\bAWS\b|GOOGLE.*\b(?:ONE|STORAGE)\b/],
@@ -14,9 +23,11 @@ const CATEGORY_RULES: [ExpenseCategory,RegExp][] = [
   ['購物',/AMAZON|SHOPEE|LAZADA|PCHOME|\bIKEA\b|\bWALMART\b|蝦皮|百貨|全聯|家樂福|便利商店|7 ?ELEVEN|FAMILY\s*MART/],
 ]
 
-export function expenseCategory(e: Pick<Expense,'description'|'category'>): ExpenseCategory {
+export function expenseCategory(e: Pick<Expense,'description'|'category'>, rules: ExpenseCategoryRule[] = []): ExpenseCategory {
   if(e.category) return e.category
-  const merchant = e.description.normalize('NFKC').toUpperCase().replace(/[*_-]+/g,' ')
+  const merchant = categoryText(e.description)
+  const custom = rules.find(rule=>merchant.includes(categoryText(rule.keyword)))
+  if(custom) return custom.category
   return CATEGORY_RULES.find(([,rule])=>rule.test(merchant))?.[0] ?? '未分類'
 }
 
@@ -33,7 +44,7 @@ export interface Expense {
 }
 export type StatementRow = Pick<Expense, 'date' | 'description' | 'amount' | 'currency'>
 
-export function expenseMonthSummary(expenses: Expense[], month: string) {
+export function expenseMonthSummary(expenses: Expense[], month: string, rules: ExpenseCategoryRule[] = []) {
   const currencies = new Map<string, {currency:string;count:number;spending:number;refunds:number;net:number;cards:Map<string,{card:string;count:number;net:number}>;categories:Map<ExpenseCategory,{category:ExpenseCategory;spending:number;refunds:number;net:number}>}>()
   for(const e of expenses) {
     if(e.date.slice(0,7)!==month) continue
@@ -45,7 +56,7 @@ export function expenseMonthSummary(expenses: Expense[], month: string) {
     const card = group.cards.get(e.card) ?? {card:e.card,count:0,net:0}
     card.count++;card.net += e.amount
     group.cards.set(e.card,card)
-    const category = expenseCategory(e)
+    const category = expenseCategory(e,rules)
     const totals = group.categories.get(category) ?? {category,spending:0,refunds:0,net:0}
     totals.spending += Math.max(0,e.amount);totals.refunds += Math.max(0,-e.amount);totals.net += e.amount
     group.categories.set(category,totals)
