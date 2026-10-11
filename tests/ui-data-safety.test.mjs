@@ -1752,6 +1752,7 @@ test('custom rules update existing and preview categories and persist only throu
   assert.match(document.querySelector('.expense-table').textContent,/交通/)
   assert.equal(drive.writes,0)
   await click(button('儲存變更'));assert.equal(drive.writes,1)
+  assert.equal(drive.uploaded.version,11)
   assert.deepEqual(drive.uploaded.expenseCategoryRules,[{keyword:'bus/mrt',category:'交通'}])
   assert.equal(drive.uploaded.expenses[0].category,undefined)
   await drive.finish()
@@ -1772,4 +1773,19 @@ test('custom rules update existing and preview categories and persist only throu
   await click(button('刪除分類規則 bus/mrt'))
   assert.match(document.querySelector('.expense-table').textContent,/未分類/)
   assert.equal(drive.writes,1)
+})
+
+
+test('saving only category rules writes v11 without requiring expense records',async()=>{
+  window.history.replaceState(null,'','/expenses')
+  const drive=setupDrive(fixture())
+  await render(App)
+  await click(document.querySelector('.expense-rules summary'))
+  await setInput(field('分類關鍵字'),'BUS/MRT')
+  await click(button('新增規則'))
+  await click(button('儲存變更'))
+  assert.equal(drive.uploaded.version,11)
+  assert.deepEqual(drive.uploaded.expenseCategoryRules,[{keyword:'BUS/MRT',category:'交通'}])
+  assert.equal(drive.uploaded.expenses,undefined)
+  await drive.finish()
 })

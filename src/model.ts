@@ -73,7 +73,7 @@ export interface Account {
 }
 
 export interface WealthData {
-  version: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10
+  version: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11
   updatedAt: string
   // How many TWD one unit of each currency is worth.
   fxRates: Record<string, number>
@@ -171,7 +171,7 @@ export function parseWealthData(raw: unknown, source: keyof typeof SOURCES = 'dr
     throw new Error(`${SOURCES[source][0]}格式不正確：${why}。${SOURCES[source][1]}`)
   }
   const obj = (typeof raw === 'object' && raw !== null ? raw : fail('不是 JSON 物件')) as Record<string, unknown>
-  if (obj.version !== 1 && obj.version !== 2 && obj.version !== 3 && obj.version !== 4 && obj.version !== 5 && obj.version !== 6 && obj.version !== 7 && obj.version !== 8 && obj.version !== 9 && obj.version !== 10) fail(`不支援的版本 ${String(obj.version)}`)
+  if (obj.version !== 1 && obj.version !== 2 && obj.version !== 3 && obj.version !== 4 && obj.version !== 5 && obj.version !== 6 && obj.version !== 7 && obj.version !== 8 && obj.version !== 9 && obj.version !== 10 && obj.version !== 11) fail(`不支援的版本 ${String(obj.version)}`)
   if (!Array.isArray(obj.accounts)) fail('缺少 accounts 陣列')
 
   const str = (v: unknown, fallback = '') => (typeof v === 'string' ? v.trim() : fallback)
@@ -230,9 +230,12 @@ export function parseWealthData(raw: unknown, source: keyof typeof SOURCES = 'dr
     try { return parseExpense(e) } catch(e) {return fail(e instanceof Error ? e.message : '消費明細無效')}
   })
   if(expenses && new Set(expenses.map(e=>e.id)).size !== expenses.length) fail('消費識別碼重複')
-  const expenseCategoryRules = obj.expenseCategoryRules === undefined ? undefined : parseExpenseCategoryRules(obj.expenseCategoryRules)
+  let expenseCategoryRules: ExpenseCategoryRule[] | undefined
+  if(obj.expenseCategoryRules !== undefined) {
+    try { expenseCategoryRules = parseExpenseCategoryRules(obj.expenseCategoryRules) } catch(e) {fail(e instanceof Error ? e.message : '分類規則無效')}
+  }
   return {
-    version: expenses !== undefined ? 10 : obj.version as WealthData['version'],
+    version: obj.version === 11 || expenseCategoryRules !== undefined ? 11 : expenses !== undefined ? 10 : obj.version as WealthData['version'],
     updatedAt: str(obj.updatedAt) || new Date().toISOString(),
     fxRates,
     fxManual,

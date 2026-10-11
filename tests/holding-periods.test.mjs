@@ -239,3 +239,13 @@ test('yellow review: uncovered dates stay omitted while quotes load or fail',asy
  assert.deepEqual(totals(await q.valueDays(raw,async()=>null)),expected)
  assert.deepEqual(totals(await q.valueDays(raw,async()=>{throw new Error('offline')})),expected)
 })
+
+
+test('holding period edits preserve v11 category rules',()=>{
+ const rules=[{keyword:'BUS/MRT',category:'交通'}]
+ for(const data of [{...fixture(),version:11,expenseCategoryRules:rules},{...fixture(),expenseCategoryRules:rules}]) {
+   const next=p.applyHoldingPeriod(data,period(),p.periodRevision(data),true,now)
+   assert.equal(next.version,11)
+   assert.deepEqual(next.expenseCategoryRules,rules)
+ }
+})

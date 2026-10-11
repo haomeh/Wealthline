@@ -396,3 +396,33 @@ test('custom category rules persist and precede built-ins while manual categorie
     assert.throws(()=>model.parseWealthData({...model.emptyData(),expenseCategoryRules:invalid}),/分類規則/)
   }
 })
+
+
+test('category rules require v11 across parsing, saving and concurrent edits even without expenses',async()=>{
+  const rules=[{keyword:'BUS/MRT',category:'交通'}]
+  for(const original of [{...model.emptyData(),expenseCategoryRules:rules},{...model.emptyData(),version:10,expenses:[],expenseCategoryRules:rules},{...model.emptyData(),version:11,expenseCategoryRules:[]}]) {
+    const data=model.parseWealthData(original)
+    assert.equal(data.version,11)
+    assert.deepEqual(data.expenseCategoryRules,original.expenseCategoryRules)
+    const persisted=history.recordSave(null,data)
+    assert.equal(persisted.version,11)
+    assert.deepEqual(model.parseWealthData(JSON.parse(JSON.stringify(persisted))).expenseCategoryRules,original.expenseCategoryRules)
+    const current={...data,expenseCategoryRules:[{keyword:'BUS',category:'購物'}]}
+    const saved=saveState.finishSave(current,data,persisted)
+    assert.equal(saved.version,11)
+    assert.deepEqual(saved.expenseCategoryRules,current.expenseCategoryRules)
+    const quantity=await server.ssrLoadModule('/src/quantityHistory.ts')
+    assert.equal(quantity.applyQuantityDay(data,{date:'2025-09-01',updatedAt:'2025-09-01T12:00:00Z',entries:[]}).version,11)
+  }
+  assert.equal(history.recordSave(null,{...model.emptyData(),expenseCategoryRules:rules}).version,11)
+  assert.equal(model.parseWealthData({...model.emptyData(),version:11,expenses:[]}).version,11)
+})
+
+test('invalid rules include the data source and recovery advice',()=>{
+  const data={...model.emptyData(),expenseCategoryRules:[{keyword:'',category:'交通'}]}
+  for(const [source,prefix,advice] of [
+    ['drive','Drive 中的資料檔格式不正確','請修正或刪除該檔案後重新登入'],
+    ['file','上傳的資料檔格式不正確','Wealthline 的 JSON 資料檔'],
+    ['browser','此瀏覽器保存的資料格式不正確','上傳備份的資料檔'],
+  ]) assert.throws(()=>model.parseWealthData(data,source),error=>error.message.includes(prefix)&&error.message.includes(advice)&&error.message.includes('分類規則'))
+})
