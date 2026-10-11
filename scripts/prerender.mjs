@@ -24,7 +24,7 @@ const jsonLd = {
   isAccessibleForFree: true,
   offers: { '@type': 'Offer', price: '0', priceCurrency: 'TWD' },
   image: new URL('/icon-512.png', routes[0].url).href,
-  sameAs: ['https://github.com/howmay/Wealthline'],
+  sameAs: ['https://github.com/haomeh/Wealthline'],
 }
 
 for (const r of routes) {

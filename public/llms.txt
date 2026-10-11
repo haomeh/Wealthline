@@ -9,7 +9,7 @@ Key facts:
 - Features: define bank and investment accounts, record cash balances per currency, record holdings by ticker and quantity only (prices from Yahoo Finance, crypto from CoinGecko), automatic exchange rates to TWD (ExchangeRate-API), allocation charts, daily total snapshots, a change log, per-holding value history, liabilities and repayment estimates.
 - Cost: free. No registration or installation needed.
 - License: PolyForm Noncommercial 1.0.0. Commercial use requires written permission.
-- Operator: the GitHub organization howmay. Source code: https://github.com/howmay/Wealthline
+- Operator: the GitHub organization haomeh. Source code: https://github.com/haomeh/Wealthline
 - Quotes, exchange rates and totals are for reference only and are not investment advice.
 
 Signed-in overview: `/app`; public notices do not require login. The JSON file has no additional end-to-end encryption by Wealthline; production traffic uses HTTPS.
@@ -23,5 +23,5 @@ Signed-in overview: `/app`; public notices do not require login. The JSON file h
 
 ## Optional
 
-- [Source code and README](https://github.com/howmay/Wealthline): full feature list, planned features and local development
-- [Report an issue](https://github.com/howmay/Wealthline/issues)
+- [Source code and README](https://github.com/haomeh/Wealthline): full feature list, planned features and local development
+- [Report an issue](https://github.com/haomeh/Wealthline/issues)

@@ -176,7 +176,7 @@ export function Landing({ returning, hasLocal, busy, message, onSignIn, onResume
           <div>
             <h2>程式碼完全公開，歡迎審查</h2>
             <p className="muted">
-              處理你財務資料的程式，應該讓任何人都能檢查。完整原始碼放在 GitHub，個人學習、研究與教育用途可以自由使用與修改；商業用途需取得作者書面授權。Wealthline 由 GitHub 組織 howmay 營運。
+              處理你財務資料的程式，應該讓任何人都能檢查。完整原始碼放在 GitHub，個人學習、研究與教育用途可以自由使用與修改；商業用途需取得作者書面授權。Wealthline 由 GitHub 組織 haomeh 營運。
             </p>
           </div>
           <div className="row">

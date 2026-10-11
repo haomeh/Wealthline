@@ -2,7 +2,7 @@
 
 Copyright (c) 2026 Harvey Chen（GitHub：[@zhChenOuO](https://github.com/zhChenOuO)）
 網站：<https://wealthline.haomeh.com>
-原始碼：<https://github.com/howmay/Wealthline>
+原始碼：<https://github.com/haomeh/Wealthline>
 
 本專案以 **[PolyForm Noncommercial License 1.0.0](LICENSE)**（以下稱「英文授權條款」）公開授權，並由作者附加本文件第七節至第十節的補充約定。本文件說明英文授權條款的內容，以及作者依中華民國（臺灣）《著作權法》對授權範圍的理解。
 
@@ -67,7 +67,7 @@ Copyright (c) 2026 Harvey Chen（GitHub：[@zhChenOuO](https://github.com/zhChen
 
 如需商業使用，請透過下列方式聯絡作者，說明使用目的、型態、規模與期間：
 
-- 在 [GitHub Issues](https://github.com/howmay/Wealthline/issues) 開一個標題含「商業授權」的 issue（請勿張貼機密資訊，作者會改以私下方式聯絡），或
+- 在 [GitHub Issues](https://github.com/haomeh/Wealthline/issues) 開一個標題含「商業授權」的 issue（請勿張貼機密資訊，作者會改以私下方式聯絡），或
 - 透過作者的 GitHub 個人頁面 [@zhChenOuO](https://github.com/zhChenOuO) 聯絡。
 
 商業授權須以**書面**（包括經雙方確認之電子文件）為之，並載明授權範圍、期間、地域與對價。任何口頭承諾、issue 留言中的回覆或未經作者確認的文件，均不構成商業授權。

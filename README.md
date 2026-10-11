@@ -84,7 +84,7 @@
 
 ## 規劃中的功能
 
-以下為預計方向，尚未排定時程，順序不代表優先度。歡迎在 [Issues](https://github.com/howmay/Wealthline/issues) 提出建議。
+以下為預計方向，尚未排定時程，順序不代表優先度。歡迎在 [Issues](https://github.com/haomeh/Wealthline/issues) 提出建議。
 
 - [ ] **長期登入**：以伺服器端 refresh token 流程延長登入時間，不必每小時重新授權。
 - [ ] **匯出報表**：匯出 CSV／Excel，或產生月度資產報告。
@@ -185,12 +185,12 @@
 
 ## 審查與回報
 
-- 一般問題與建議：[GitHub Issues](https://github.com/howmay/Wealthline/issues)。
-- 安全漏洞：請勿公開細節，改用 GitHub 的[私下回報安全漏洞](https://github.com/howmay/Wealthline/security/advisories/new)功能。
+- 一般問題與建議：[GitHub Issues](https://github.com/haomeh/Wealthline/issues)。
+- 安全漏洞：請勿公開細節，改用 GitHub 的[私下回報安全漏洞](https://github.com/haomeh/Wealthline/security/advisories/new)功能。
 
 ## 營運者
 
-Wealthline 由 GitHub 組織 [howmay](https://github.com/howmay) 營運，網站為 <https://wealthline.haomeh.com>。
+Wealthline 由 GitHub 組織 [haomeh](https://github.com/haomeh) 營運，網站為 <https://wealthline.haomeh.com>。
 
 ## 授權
 
