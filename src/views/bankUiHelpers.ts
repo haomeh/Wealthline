@@ -1,3 +1,4 @@
+import type { BankStatementResult } from '../bankStatements'
 import { classifyBankTransaction, type BankTransaction, type BankCategoryRule } from '../bankTransactions'
 export const BANK_TEXT_NOTICE = '請勿輸入完整帳號、戶名或身分資料；只會遮蔽已識別或明確標記的識別碼。'
 export function classificationLabel(row:Pick<BankTransaction,'description'|'direction'|'classification'>,rules:readonly BankCategoryRule[]) {
@@ -21,6 +22,17 @@ const BANK_WARNINGS: Record<string,[WarningKind,string]> = {
  'unproven-page-continuity':['scope','無法確認交易區段完整結束或續頁屬於同一帳戶，可能有未匯入的內容；請核對原帳單及續頁，必要時手動補登'],
  'unsupported-dbs-sg-account':['scope','新加坡星展區段缺少相符的 My Account 帳戶、完整收支表頭或 SGD 幣別標示，該區段未匯入；請核對原帳單'],
  'unsupported-dbs-activity-layout':['scope','未辨識到支援的星展收支交易表；若文件只有帳戶摘要，請另下載交易明細。未匯入任何交易'],
+}
+/**
+ * One report line per parsed file. rejectedCount counts diagnostic events, not missing rows,
+ * so name it as places to check and say nothing about it when it is zero.
+ */
+export function bankFileSummary(file:string,result:Pick<BankStatementResult,'bank'|'status'|'sections'|'recognizedCount'|'rejectedCount'>) {
+ const head=`${file} · ${result.bank??'未辨識銀行'}`
+ if(result.status==='unsupported')return `${head} · 不支援／未辨識 · 未匯入任何交易`
+ const scope=result.sections.some(s=>s.partial)?' · 僅部分明細':''
+ const issues=result.rejectedCount?` · ${result.rejectedCount} 處需核對（處數不等於漏列筆數）`:''
+ return `${head} · 已辨識 ${result.recognizedCount} 筆${scope}${issues}`
 }
 /** Actionable text that always keeps the diagnostic code recognizable, including unknown codes. */
 export const bankWarningText = (code:string) => `${BANK_WARNINGS[code]?.[1] ?? '尚無中文說明的解析問題，請對照原帳單核對'}〔${code}〕`

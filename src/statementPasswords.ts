@@ -12,6 +12,11 @@ export function parseStatementPasswords(raw:unknown):StatementPassword[] {
   if(new Set(rows.map(p=>p.id)).size!==rows.length) throw new Error('帳單密碼設定識別碼重複')
   return rows
 }
+/** Comma-separated, like the one-time password field on the import forms. */
+export const splitStatementPasswords = (value:string) => [...new Set(value.split(',').map(p=>p.trim()).filter(Boolean))]
+/** Replace rows with the same id, append the rest in order. */
+export const mergeStatementPasswords = (stored:readonly StatementPassword[],rows:readonly StatementPassword[]) =>
+  [...stored.map(s=>rows.find(r=>r.id===s.id)??s),...rows.filter(r=>!stored.some(s=>s.id===r.id))]
 const encode = (bytes:Uint8Array) => btoa(String.fromCharCode(...bytes))
 const decode = (value:string) => Uint8Array.from(atob(value),c=>c.charCodeAt(0))
 const aad = (scope:string,id:string) => new TextEncoder().encode(JSON.stringify(['wealthline-statement-password-v1',scope,id]))
@@ -65,7 +70,7 @@ async function deviceKey(scope:string,create=false):Promise<DeviceKey|null> {
 
 export async function saveStatementPassword(scope:string,label:string,password:string,id:string=crypto.randomUUID()) {
   try {return await sealStatementPassword(scope,id,label,password,(await deviceKey(scope,true))!)}
-  catch {throw new Error('密碼設定未保存。請確認名稱、密碼與瀏覽器儲存權限，或改用手動輸入。')}
+  catch {throw new Error('密碼設定未保存。請確認密碼與瀏覽器儲存權限，或改用手動輸入。')}
 }
 
 export async function statementPasswordStatus(scope:string,passwords:StatementPassword[]) {
