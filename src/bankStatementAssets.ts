@@ -1,4 +1,4 @@
-import type { WealthData } from './model'
+import { accountLabel, type Account, type WealthData } from './model'
 import type { BankTransactionAccount } from './bankTransactions'
 import { historyCatalog, instrumentKey, parseQuantityDays, validDate, validatePastDate, type QuantityEntry, type QuantityDay } from './quantityHistory'
 const CASH_CURRENCIES=new Set(['TWD','USD','SGD','JPY','EUR','GBP','AUD','CAD','HKD','CHF','NZD','CNY'])
@@ -17,9 +17,19 @@ const institutions:Record<string,{name:string;country:string;aliases:string[]}> 
 }
 export function bankStatementIdentity(bank:string) {
  const identity=Object.hasOwn(institutions,bank)?institutions[bank]:undefined
- return identity ? {...identity,label:`${identity.name} (${identity.country})`} : undefined
+ return identity ? {...identity,label:accountLabel(identity)} : undefined
 }
 const normalized=(text:string)=>text.trim().toUpperCase().replace(/[ .]/g,'')
+export function matchingStatementAssets(bank:string,accounts:readonly Account[]) {
+ const identity=bankStatementIdentity(bank);if(!identity)return []
+ return accounts.filter(a=>a.country.trim().toUpperCase()===identity.country&&identity.aliases.some(name=>normalized(name)===normalized(a.name.trim().replace(new RegExp(`\\s+(?:${identity.country}|\\(${identity.country}\\))$`,'i'),''))))
+}
+export function statementAccountLabel(bank:string,accounts:readonly Account[]) {
+ const identity=bankStatementIdentity(bank);if(!identity)return bank
+ const matched=matchingStatementAssets(bank,accounts)
+ return accountLabel(matched.length===1?matched[0]:identity)
+}
+
 export function statementLedgerAccount(bank:string,accounts:readonly BankTransactionAccount[]) {
  const identity=bankStatementIdentity(bank);if(!identity)return undefined
  const candidates=accounts.filter(a=>bankStatementIdentity(a.bank)?.label===identity.label)
@@ -52,7 +62,7 @@ export function importStatementBalances(data:WealthData,candidates:readonly Stat
   const identity=bankStatementIdentity(candidate.bank);if(!identity)return fail()
   validatePastDate(candidate.date,now)
   const source=sourceKey(candidate);if(sources.has(source)){skipped++;continue}
-  const assets=data.accounts.filter(a=>a.kind==='bank'&&a.country.toUpperCase()===identity.country&&identity.aliases.some(name=>normalized(name)===normalized(a.name.trim().replace(new RegExp(`\\s+(?:${identity.country}|\\(${identity.country}\\))$`,'i'),''))))
+  const assets=matchingStatementAssets(candidate.bank,data.accounts)
   if(assets.length>1)throw new Error('同銀行與國家有多個資產帳戶，請先整併帳戶後再匯入餘額。')
   const asset=assets[0]
   const previousRecords=records.filter(b=>bankStatementIdentity(b.bank)?.label===identity.label)

@@ -255,3 +255,23 @@ test('automatic same-bank sections share a ledger even when the first section is
 test('a closing balance can be imported without fabricating a transaction',async()=>{
  const r=parsed([]);r.bank='DBS Singapore';r.sections[0].bank='DBS Singapore';r.sections[0].currency='SGD';r.sections[0].noTransactions=false;r.balances=[{bank:'DBS Singapore',date:'2025-09-30',currency:'SGD',quantity:0}];pdf.reset([r]);const latest=await render({...model.emptyData(),bankTransactionAccounts:[],bankTransactions:[],bankCategoryRules:[]});await click('匯入銀行帳單');await files();await submitImport();await click('檢查匯入');assert.match(box('銀行重複核對').textContent,/期末餘額可補入 1 筆/);await click('確認銀行匯入');assert.equal(latest().bankTransactions.length,0);assert.equal(latest().history.quantityDays[0].entries[0].quantity,0);assert.equal(latest().bankTransactionAccounts.length,1);
 })
+
+
+test('statement preview and ledger reuse the original asset name plus country without changing identifiers',async()=>{
+ for(const existing of [false,true]){
+  const r=parsed();r.bank='DBS Singapore';r.sections[0].bank=r.bank;r.sections[0].currency='SGD';r.sections[0].rows[0]={...draft,currency:'SGD'};r.balances=[{bank:r.bank,date:'2025-09-30',currency:'SGD',quantity:888.5}];pdf.reset([r,r]);
+  const asset={id:'asset-sg',name:'星展',country:'SG',kind:'investment',category:'現金與外幣活存',positions:[{id:'current-cash',type:'cash',currency:'SGD',symbol:'',quantity:999,price:1},{id:'current-holding',type:'holding',currency:'SGD',symbol:'D05.SI',quantity:25,price:40}]};const tw={...asset,id:'asset-tw',country:'TW',kind:'bank'};const legacy={id:'legacy-dbs',label:'My old label',bank:r.bank};const latest=await render({...model.emptyData(),accounts:[tw,asset],bankTransactionAccounts:existing?[legacy]:[],bankTransactions:[]});const label=model.accountLabel(asset);
+  await click('匯入銀行帳單');await files();await submitImport();assert.ok(!box('區段 1 帳戶'));assert.ok(document.querySelector('.bank-section').textContent.includes(label));assert.ok(box('帳單期末餘額').textContent.includes(label));
+  await click('檢查匯入');await click('確認銀行匯入');const saved=latest();assert.equal(saved.bankTransactionAccounts.length,1);assert.equal(saved.bankTransactionAccounts[0].label,existing?legacy.label:label);assert.ok(document.querySelector('.bank-record').textContent.includes(label));if(existing)assert.equal(saved.bankTransactionAccounts[0].id,legacy.id);assert.deepEqual(saved.accounts,[tw,asset]);const entry=saved.history.quantityDays[0].entries[0];assert.equal(entry.accountId,asset.id);assert.equal(entry.account,asset.name);assert.equal(entry.country,asset.country);
+  const source=saved.bankTransactions[0].sourceKey;await click('匯入銀行帳單');await files();await submitImport();await click('檢查匯入');assert.match(box('銀行重複核對').textContent,/可新增 0 筆.*略過 1 筆/);assert.equal(latest().bankTransactions[0].sourceKey,source);await click('取消匯入');
+ }
+})
+
+
+test('asset display naming preserves legacy canonical mapping and duplicate keys across multiple ledgers',async()=>{
+ const r=parsed();r.bank='DBS Singapore';r.sections[0].bank=r.bank;r.sections[0].currency='SGD';r.sections[0].rows[0]={...draft,currency:'SGD'};pdf.reset([r,r]);
+ const asset={id:'asset-sg',name:'星展',country:'SG',kind:'bank',category:'現金與外幣活存',positions:[]},a={id:'canonical',label:'DBS (SG)',bank:r.bank},b={id:'legacy-other',label:'Savings',bank:r.bank};const latest=await render({...model.emptyData(),accounts:[asset],bankTransactionAccounts:[a,b],bankTransactions:[]});
+ const options=[...box('流水帳戶篩選').options].map(o=>o.textContent);assert.ok(options.includes('星展 (SG) · DBS (SG)'));assert.ok(options.includes('星展 (SG) · Savings'));
+ await click('匯入銀行帳單');await files();await submitImport();assert.ok(!box('區段 1 帳戶'));await click('檢查匯入');await click('確認銀行匯入');assert.deepEqual(latest().bankTransactionAccounts,[a,b]);assert.equal(latest().bankTransactions[0].accountId,a.id);const source=latest().bankTransactions[0].sourceKey;
+ await click('匯入銀行帳單');await files();await submitImport();assert.ok(!box('區段 1 帳戶'));await click('檢查匯入');assert.match(box('銀行重複核對').textContent,/可新增 0 筆.*略過 1 筆/);assert.equal(latest().bankTransactions[0].sourceKey,source);
+})

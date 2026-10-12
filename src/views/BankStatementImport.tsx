@@ -1,4 +1,4 @@
-import { bankStatementIdentity, statementLedgerAccount, importStatementBalances, statementBalanceRevision, type StatementBalanceCandidate } from '../bankStatementAssets'
+import { bankStatementIdentity, statementAccountLabel, statementLedgerAccount, importStatementBalances, statementBalanceRevision, type StatementBalanceCandidate } from '../bankStatementAssets'
 import type { WealthData } from '../model'
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { BANK_PDF_ERRORS, bankStatementErrorMessage, type BankImportStage } from '../bankStatementErrors'
@@ -53,7 +53,7 @@ export function BankStatementImport({data,accounts,existing,rules,passwords,pass
  const identity=bankStatementIdentity(s.bank),available=[...latest.current.accounts,...[...next,...fileSections].filter(p=>p.accountId==='new').map(p=>({id:p.newId,label:p.label,bank:p.bank}))],matched=statementLedgerAccount(s.bank,available)
  const automatic=!!identity&&(!!matched||!available.some(a=>bankStatementIdentity(a.bank)?.label===identity.label))
  const id=crypto.randomUUID();fileReports.push(`檔案 ${index+1} · ${s.currency} 帳戶區段 ${next.length+fileSections.length+1} · ${s.noTransactions?'已證明無交易':`${s.rows.length} 筆已辨識`} ${s.partial?'· 僅局部轉出明細，不是完整月流水':''}`)
- fileSections.push({automatic,id,bank:s.bank,currency:s.currency,hash,accountId:automatic?(matched?.id??'new'):'',newId:crypto.randomUUID(),label:identity?.label??'',noTransactions:s.noTransactions,partial:s.partial,warnings:summarizeBankWarnings(s.warnings),rows:s.rows.map(r=>({draft:{id:crypto.randomUUID(),accountId:'',date:r.date,description:protectBankText(r.description),currency:r.currency,direction:r.direction,amount:r.amount},original:{date:r.date,description:protectBankText(r.description)||BANK_SUMMARY_PENDING,currency:r.currency,direction:r.direction,amount:r.amount},provenance:{page:r.page,sectionKey:r.sectionKey,rowKey:r.rowKey},selected:true,
+ fileSections.push({automatic,id,bank:s.bank,currency:s.currency,hash,accountId:automatic?(matched?.id??'new'):'',newId:crypto.randomUUID(),label:identity?statementAccountLabel(s.bank,latest.current.data.accounts):'',noTransactions:s.noTransactions,partial:s.partial,warnings:summarizeBankWarnings(s.warnings),rows:s.rows.map(r=>({draft:{id:crypto.randomUUID(),accountId:'',date:r.date,description:protectBankText(r.description),currency:r.currency,direction:r.direction,amount:r.amount},original:{date:r.date,description:protectBankText(r.description)||BANK_SUMMARY_PENDING,currency:r.currency,direction:r.direction,amount:r.amount},provenance:{page:r.page,sectionKey:r.sectionKey,rowKey:r.rowKey},selected:true,
  // Candidates stay preview-only metadata under the same protection as summaries.
  ...(r.ambiguousNarration && {narration:{leading:r.ambiguousNarration.leading.map(t=>protectBankText(t)),trailing:r.ambiguousNarration.trailing.map(t=>protectBankText(t))}})}))})
  })
@@ -117,9 +117,9 @@ export function BankStatementImport({data,accounts,existing,rules,passwords,pass
    <summary><span>解析報告</span><span className="muted">{previewCount} 筆 · {sections.length} 個區段</span></summary>
    <ul aria-label="銀行解析結果">{reports.map((r,i)=><li key={i}>{r}</li>)}</ul>
   </details>}
-  {balances.length>0 && <section className="notice bank-closing-balances" aria-label="帳單期末餘額"><h3>補入資產歷史</h3><p className="muted small">只補入帳單日期的現金餘額；目前持倉不變，其他資產不推算。</p>{balances.map((b,i)=><p key={i}><strong>{bankStatementIdentity(b.bank)?.label}</strong> · {b.date} · {b.currency==='TWD'?'NT$':b.currency} {fmt(b.quantity,2)}</p>)}</section>}
+  {balances.length>0 && <section className="notice bank-closing-balances" aria-label="帳單期末餘額"><h3>補入資產歷史</h3><p className="muted small">只補入帳單日期的現金餘額；目前持倉不變，其他資產不推算。</p>{balances.map((b,i)=><p key={i}><strong>{statementAccountLabel(b.bank,data.accounts)}</strong> · {b.date} · {b.currency==='TWD'?'NT$':b.currency} {fmt(b.quantity,2)}</p>)}</section>}
   {sections.map((s,index)=><section key={s.id} className="bank-section" aria-label={`帳戶區段 ${index+1}`}>
-   <div className="bank-section-head"><h3>{bankStatementIdentity(s.bank)?.label??s.bank}</h3><span className="muted small">{s.currency} · 區段 {index+1} · {s.rows.length} 筆</span></div>
+   <div className="bank-section-head"><h3>{statementAccountLabel(s.bank,data.accounts)}</h3><span className="muted small">{s.currency} · 區段 {index+1} · {s.rows.length} 筆</span></div>
    {s.partial && <p role="status" className="bank-section-note">僅局部紀錄／轉出明細；不是完整月流水。</p>}
    {s.noTransactions && <p>此區段已有無交易證據；不捏造零金額交易。</p>}
    {s.warnings.length>0 && <div role="status" aria-label={`區段 ${index+1} 解析警告`} className="bank-review-flag bank-section-warning">
@@ -129,7 +129,7 @@ export function BankStatementImport({data,accounts,existing,rules,passwords,pass
      <ul>{s.warnings.map(w=><li key={w.code}>{w.text} · {w.count} 個事件</li>)}</ul>
     </details>
    </div>}
-   {s.automatic ? <p className="bank-section-note">自動記入 {bankStatementIdentity(s.bank)?.label}，同銀行與國家沿用既有流水。</p> : <div className="bank-fields bank-account-mapping">
+   {s.automatic ? <p className="bank-section-note">自動記入 {statementAccountLabel(s.bank,data.accounts)}，同銀行與國家沿用既有流水。</p> : <div className="bank-fields bank-account-mapping">
     {s.rows.every(r=>r.manual) && <label className="field"><span>銀行名稱</span><input aria-label={`區段 ${index+1} 銀行`} disabled={locked} maxLength={100} value={s.bank} onChange={e=>patch(s.id,{bank:e.target.value})}/></label>}
     <label className="field"><span>選擇獨立流水帳戶</span><select aria-label={`區段 ${index+1} 帳戶`} disabled={locked} value={s.accountId} onChange={e=>patch(s.id,{accountId:e.target.value})}><option value="">請選擇流水帳戶</option>{accounts.map(a=><option key={a.id} value={a.id}>{a.label} · {a.bank}</option>)}<option value="new">新增獨立帳戶標籤</option></select></label>
     {s.accountId==='new' && <label className="field"><span>新帳戶標籤</span><input aria-label={`區段 ${index+1} 新標籤`} disabled={locked} maxLength={100} value={s.label} onChange={e=>patch(s.id,{label:e.target.value})}/></label>}
