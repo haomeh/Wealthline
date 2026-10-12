@@ -2709,7 +2709,7 @@ dialog.expense-rule-dialog { max-width: 440px; }
 .bank-fields .field { margin: 0; min-width: 0; }
 .bank-fields input, .bank-fields select { width: 100%; box-sizing: border-box; }
 .bank-fields select { appearance: none; -webkit-appearance: none; padding-right: 32px; }
-.bank-fields .field:has(> select) { position: relative; }
+.bank-fields .field:has(> select) { position: relative; align-self: start; }
 .bank-fields .field:has(> select)::after { content: ''; position: absolute; right: 13px; bottom: 18px; width: 7px; height: 7px; border-right: 1.5px solid var(--ink-2); border-bottom: 1.5px solid var(--ink-2); transform: rotate(45deg); pointer-events: none; }
 .bank-import-intro { margin: 8px 0 12px; font-size: .85rem; }
 .bank-help { min-width: 0; margin: 10px 0; font-size: .82rem; color: var(--ink-2); }
@@ -2736,9 +2736,11 @@ dialog.expense-rule-dialog { max-width: 440px; }
 .bank-preview-select input, .bank-summary-check input { width: 20px; height: 20px; margin: 0; flex: none; }
 .bank-preview-copy { min-width: 0; }
 .bank-preview-copy > strong { display: block; margin-top: 3px; font-size: .92rem; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-.bank-preview-tags { display: flex; gap: 4px 8px; flex-wrap: wrap; margin-top: 7px; font-size: .72rem; color: var(--ink-2); }
+.bank-preview-tags { display: flex; align-items: center; gap: 4px 8px; flex-wrap: wrap; margin-top: 7px; font-size: .72rem; color: var(--ink-2); }
+.bank-preview-category { display: inline-flex; align-items: center; gap: 5px; min-width: 0; max-width: 100%; min-height: 32px; padding: 4px 8px; border: 0; border-radius: 6px; background: var(--accent-wash); color: var(--accent); font-size: .75rem; }
+.bank-preview-category > span { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.bank-preview-category svg { flex: none; width: 14px; height: 14px; }
 .bank-summary-pending { background: var(--warn-wash); color: var(--ink); border-radius: 5px; padding: 1px 6px; }
-.bank-summary-confirmed { color: var(--good); }
 .bank-preview-amount { display: grid; justify-items: end; text-align: right; gap: 2px; max-width: 135px; }
 .bank-preview-amount strong { font-size: 1rem; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .bank-row-details > summary { display: flex; align-items: center; justify-content: flex-end; gap: 7px; min-height: 44px; cursor: pointer; list-style: none; font-size: .82rem; color: var(--accent); }
@@ -2755,7 +2757,7 @@ dialog.expense-rule-dialog { max-width: 440px; }
 .bank-narration ul { padding: 0; list-style: none; margin: 12px 0; }
 .bank-narration li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 10px 0; border-top: 1px solid var(--border); }
 .bank-candidate-text { display: block; overflow-wrap: anywhere; }
-.bank-narration li button, .bank-rule-action { display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-height: 44px; white-space: nowrap; }
+.bank-narration li button { display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-height: 44px; white-space: nowrap; }
 .bank-narration li button { padding: 6px 9px; font-size: .8rem; }
 .bank-summary-check { display: flex; align-items: start; gap: 10px; min-height: 44px; padding-top: 10px; cursor: pointer; }
 .bank-summary-check input { margin-top: 2px; }
@@ -2772,6 +2774,7 @@ dialog.expense-rule-dialog { max-width: 440px; }
   .bank-preview-overview { grid-template-columns: 24px minmax(0, 1fr) minmax(64px, auto); gap: 8px; }
   .bank-preview-amount { max-width: 105px; }
   .bank-fields input, .bank-fields select { min-height: 44px; font-size: 16px; }
+  .bank-row-editor .bank-date-field { grid-column: 1 / -1; }
   .bank-fields input[type="date"], .bank-fields input[type="month"] { display: block; min-width: 0; max-width: 100%; }
   .bank-fields input[type="date"]::-webkit-date-and-time-value, .bank-fields input[type="month"]::-webkit-date-and-time-value { text-align: left; }
   .bank-import-actions > span { flex-basis: 100%; }
