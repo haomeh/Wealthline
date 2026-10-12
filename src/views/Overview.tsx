@@ -22,7 +22,7 @@ import {
 import { colorize } from '../chartColors'
 import { ChangeSinceLast } from './AssetChange'
 import { Allocation, RankBars } from './charts'
-import { ExpenseSummary } from './ExpenseSummary'
+import { CashflowSummary } from './CashflowSummary'
 
 interface Props {
   data: WealthData
@@ -33,9 +33,10 @@ interface Props {
   onImport: () => void
   onOpenAccount: (id: string) => void
   onGoExpenses?: () => void
+  onGoBankTransactions?: () => void
 }
 
-export function Overview({ data, onGoHistory, onGoRates, onGoLiabilities, onNewAccount, onImport, onOpenAccount, onGoExpenses }: Props) {
+export function Overview({ data, onGoHistory, onGoRates, onGoLiabilities, onNewAccount, onImport, onOpenAccount, onGoExpenses, onGoBankTransactions }: Props) {
   const now = useCalendarNow()
   const estimated = data.liabilities?.some(d => d.schedule)
   const historical = useHistoricalValuations(data)
@@ -64,7 +65,7 @@ export function Overview({ data, onGoHistory, onGoRates, onGoLiabilities, onNewA
           {onGoLiabilities && <button onClick={onGoLiabilities}>新增負債</button>}
           <button onClick={onImport}>從試算表匯入</button>
         </div>
-      </section>{!!data.expenses?.length && <ExpenseSummary expenses={data.expenses} now={now} onGoExpenses={onGoExpenses} rules={data.expenseCategoryRules}/>}</div>
+      </section>{!!(data.expenses?.length || data.bankTransactions?.length) && <CashflowSummary expenses={data.expenses} expenseRules={data.expenseCategoryRules} bankTransactions={data.bankTransactions} bankRules={data.bankCategoryRules} now={now} onGoExpenses={onGoExpenses} onGoBankTransactions={onGoBankTransactions}/>}</div>
     )
   }
 
@@ -123,7 +124,7 @@ export function Overview({ data, onGoHistory, onGoRates, onGoLiabilities, onNewA
           </p>
         )}
       </section>}
-      {!!data.expenses?.length && <ExpenseSummary expenses={data.expenses} now={now} onGoExpenses={onGoExpenses} rules={data.expenseCategoryRules}/>}
+      {!!(data.expenses?.length || data.bankTransactions?.length) && <CashflowSummary expenses={data.expenses} expenseRules={data.expenseCategoryRules} bankTransactions={data.bankTransactions} bankRules={data.bankCategoryRules} now={now} onGoExpenses={onGoExpenses} onGoBankTransactions={onGoBankTransactions}/>}
       {current && <>
       <section className="panel stat" aria-label="總負債">
         <span className="eyebrow">{estimated ? '總負債（含預估）' : '總負債'}</span><strong>{totals.liabilities === null ? '尚無法換算' : `NT$ ${fmt(totals.liabilities, 0)}`}</strong>

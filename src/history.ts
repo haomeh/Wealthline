@@ -1,6 +1,8 @@
 // History kept inside the data file: every edit to a balance or holding, and one
 // value snapshot per day, so the user can see how their assets change over time.
 
+import { dataVersion } from './dataVersion'
+import { validateBankLedger } from './bankTransactions'
 import { expandPeriodDays, parseHoldingPeriods, type HoldingPeriod } from './holdingPeriods'
 import { isUnrecordedPartialDay, parseQuantityDays, quantityPoint, validDate, type QuantityDay, type HistoricalPoint } from './quantityHistory'
 import { balanceSheet, parseLiability, type Liability } from './liabilities'
@@ -211,6 +213,16 @@ export function changeRatio(c: Change): number {
 // Adds this save to the history: the edits since the last saved version, and today's snapshot.
 // `saved` is the version currently in Drive (null before the first save).
 export function recordSave(saved: WealthData | null, next: WealthData): WealthData {
+  // Validate and allowlist the independent ledger again at the persistence boundary.
+  // Do not introduce optional fields into legacy files or touch asset/history inputs.
+  if (next.bankTransactionAccounts !== undefined || next.bankTransactions !== undefined || next.bankCategoryRules !== undefined) {
+    const ledger = validateBankLedger(next.bankTransactionAccounts === undefined ? [] : next.bankTransactionAccounts, next.bankTransactions === undefined ? [] : next.bankTransactions, next.bankCategoryRules === undefined ? [] : next.bankCategoryRules)
+    next = { ...next,
+      ...(next.bankTransactionAccounts !== undefined && { bankTransactionAccounts: ledger.accounts }),
+      ...(next.bankTransactions !== undefined && { bankTransactions: ledger.transactions }),
+      ...(next.bankCategoryRules !== undefined && { bankCategoryRules: ledger.rules }),
+    }
+  }
   const at = next.updatedAt
   let snapshots = next.history.snapshots
   // Files saved before history existed: keep their last state as the starting point.
@@ -218,7 +230,7 @@ export function recordSave(saved: WealthData | null, next: WealthData): WealthDa
     snapshots = [snapshotOf(saved, saved.updatedAt)]
   }
   const changes = [...next.history.changes, ...diffPositions(saved ?? { ...next, accounts: [] }, next, at)]
-  const stamped: WealthData = { ...next, version: next.version === 12 || next.statementPasswords !== undefined ? 12 : next.version === 11 || next.expenseCategoryRules !== undefined ? 11 : next.version === 10 || next.expenses !== undefined ? 10 : next.version === 9 ? 9 : next.version === 8 ? 8 : next.version === 7 ? 7 : next.version === 6 ? 6 : next.version === 5 || next.history.holdingPeriods !== undefined ? 5 : next.version === 4 || next.liabilities?.some(d => d.schedule || d.basisHistory) ? 4 : next.version === 3 || next.history.quantityDays !== undefined ? 3 : 2, liabilities: next.liabilities ?? [], accounts: stampAdded(saved, next, changes, at) }
+  const stamped: WealthData = { ...next, version: dataVersion(next, { minimumVersion: 2 }), liabilities: next.liabilities ?? [], accounts: stampAdded(saved, next, changes, at) }
   return {
     ...stamped,
     history: {

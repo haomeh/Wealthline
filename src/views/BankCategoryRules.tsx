@@ -1,0 +1,14 @@
+import { useEffect, useRef, useState } from 'react'
+import { parseBankCategoryRules, type BankCategoryRule } from '../bankTransactions'
+import { ClassificationField } from './BankTransactionEditor'
+import { BANK_TEXT_NOTICE } from './bankUiHelpers'
+export function BankRuleDialog({rule,busy,onSave,onCancel}: {rule?:BankCategoryRule;busy:boolean;onSave:(rule:BankCategoryRule)=>void;onCancel:()=>void}) {
+ const ref=useRef<HTMLDialogElement>(null)
+ const [draft,setDraft]=useState<BankCategoryRule>(rule??{keyword:'',target:{kind:'pending'}}),[error,setError]=useState('')
+ useEffect(()=>{if(ref.current?.showModal)ref.current.showModal();else ref.current?.setAttribute('open','')},[])
+ useEffect(()=>{const listener=(e:KeyboardEvent)=>{if(e.key==='Escape')onCancel()};window.addEventListener('keydown',listener);return()=>window.removeEventListener('keydown',listener)},[onCancel])
+ return <dialog ref={ref} className="bank-rule-dialog panel" role="dialog" aria-modal="true" aria-label="銀行分類規則" onClose={onCancel} onCancel={e=>{e.preventDefault();onCancel()}}> <form onSubmit={e=>{e.preventDefault();if(busy)return;try{onSave(parseBankCategoryRules([draft])[0])}catch{setError('請填寫有效關鍵字及分類；勿輸入個人識別資料。')}}}><h3>{rule?'編輯':'新增'}銀行分類規則</h3><p>{BANK_TEXT_NOTICE}</p><fieldset disabled={busy} className="bank-fields"><label className="field"><span>摘要關鍵字</span><input aria-label="規則關鍵字" required autoFocus maxLength={100} value={draft.keyword} onChange={e=>setDraft({...draft,keyword:e.target.value})}/></label><label className="field"><span>方向限定</span><select aria-label="規則方向" value={draft.direction??''} onChange={e=>setDraft({...draft,direction:e.target.value?e.target.value as 'debit'|'credit':undefined})}><option value="">不限</option><option value="debit">支出</option><option value="credit">入帳</option></select></label><ClassificationField label="規則分類" value={draft.target} onChange={target=>setDraft({...draft,target:target??{kind:'pending'}})}/></fieldset>{error && <p role="alert">{error}</p>}<div className="row"><button disabled={busy} className="primary">儲存規則</button><button type="button" onClick={onCancel}>取消規則</button></div></form></dialog>
+}
+export function BankCategoryRules({rules,busy,onEdit,onRemove}: {rules:BankCategoryRule[];busy:boolean;onEdit:(index?:number)=>void;onRemove:(index:number)=>void}) {
+ return <section className="panel bank-rules"><div className="panel-head"><h3>銀行分類規則</h3><button disabled={busy} onClick={()=>onEdit()}>新增銀行規則</button></div><p className="muted small">手動分類優先，其次第一條符合關鍵字及方向的規則，最後才是高信心建議；一般轉帳維持待確認。</p><ol>{rules.map((r,i)=><li key={i}><span>{r.keyword} · {r.direction??'不限方向'} → {r.target.kind==='income'||r.target.kind==='expense'?r.target.category:r.target.kind==='excluded'?r.target.reason:'待確認'}</span><button disabled={busy} onClick={()=>onEdit(i)}>編輯規則 {i+1}</button><button disabled={busy} onClick={()=>onRemove(i)}>刪除規則 {i+1}</button></li>)}</ol></section>
+}

@@ -1,3 +1,4 @@
+import { dataVersion } from '../dataVersion'
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { mergeExpenses, isUnrecognizedMerchant, parseExpense, prepareExpenses, sha256, expenseCategory, parseExpenseCategoryRules, EXPENSE_CATEGORIES, type ExpenseCategoryRule, type ExpenseCategory, type Expense } from '../expenses'
 import { assertCreditCardFile, parseStatement, statementMetadata } from '../statements'
@@ -16,23 +17,23 @@ export function Expenses({data,onChange,busy,passwordScope}: {passwordScope?:str
   const expenses = data.expenses ?? []
   const rules = data.expenseCategoryRules ?? []
   const passwords = data.statementPasswords ?? []
-  const passwordDialog = managingPasswords && passwordScope && <StatementPasswordSettings scope={passwordScope} passwords={passwords} busy={busy} onClose={()=>setManagingPasswords(false)} onSave={p=>onChange({...data,version:12,statementPasswords:parseStatementPasswords(passwords.some(x=>x.id===p.id)?passwords.map(x=>x.id===p.id?p:x):[...passwords,p])})} onRemove={id=>onChange({...data,version:12,statementPasswords:passwords.filter(p=>p.id!==id)})}/>
+  const passwordDialog = managingPasswords && passwordScope && <StatementPasswordSettings scope={passwordScope} passwords={passwords} busy={busy} onClose={()=>setManagingPasswords(false)} onSave={p=>onChange({...data,version:dataVersion(data, {minimumVersion:12}),statementPasswords:parseStatementPasswords(passwords.some(x=>x.id===p.id)?passwords.map(x=>x.id===p.id?p:x):[...passwords,p])})} onRemove={id=>onChange({...data,version:dataVersion(data, {minimumVersion:12}),statementPasswords:passwords.filter(p=>p.id!==id)})}/>
 
   const ruleDialog = ruleExpense && <CategoryRuleDialog expense={ruleExpense.expense} rule={ruleExpense.index===undefined?undefined:rules[ruleExpense.index]} busy={busy} onCancel={()=>setRuleExpense(null)} onSave={rule=>{
-    onChange({...data,version:data.version===12 || data.statementPasswords!==undefined ? 12 : 11,expenseCategoryRules:parseExpenseCategoryRules(ruleExpense.index===undefined?[...rules,rule]:rules.map((r,i)=>i===ruleExpense.index?rule:r))})
+    onChange({...data,version:dataVersion(data, {minimumVersion:11}),expenseCategoryRules:parseExpenseCategoryRules(ruleExpense.index===undefined?[...rules,rule]:rules.map((r,i)=>i===ruleExpense.index?rule:r))})
     setRuleExpense(null)
   }}/>
   if(importing) return <>{ruleDialog}{passwordDialog}<StatementImport passwords={passwords} passwordScope={passwordScope} onManagePasswords={()=>setManagingPasswords(true)} onAddRule={(expense,index)=>setRuleExpense({expense,index})} rules={rules} existing={expenses} busy={busy} onCancel={()=>setImporting(false)} onImport={(rows,context)=>{
     const result = mergeExpenses(expenses,rows,context)
-    if(result.added) onChange({...data,version:data.version===12 || data.statementPasswords!==undefined ? 12 : data.version===11 || data.expenseCategoryRules!==undefined ? 11 : 10,expenses:result.expenses})
+    if(result.added) onChange({...data,version:dataVersion(data, {minimumVersion:10}),expenses:result.expenses})
     setMessage(`已加入 ${result.added} 筆，略過 ${result.duplicates} 筆重複。`)
     setImporting(false)
   }}/></>
   if(editing) return <ExpenseEditor rules={rules} expense={editing} busy={busy} onCancel={()=>setEditing(null)} onSave={expense=>{
-    onChange({...data,version:data.version===12 || data.statementPasswords!==undefined ? 12 : data.version===11 || data.expenseCategoryRules!==undefined ? 11 : 10,expenses:expenses.map(e=>e.id===expense.id?expense:e)})
+    onChange({...data,version:dataVersion(data, {minimumVersion:10}),expenses:expenses.map(e=>e.id===expense.id?expense:e)})
     setEditing(null)
   }} onRemove={()=>{
-    onChange({...data,version:data.version===12 || data.statementPasswords!==undefined ? 12 : data.version===11 || data.expenseCategoryRules!==undefined ? 11 : 10,expenses:expenses.filter(e=>e.id!==editing.id)})
+    onChange({...data,version:dataVersion(data, {minimumVersion:10}),expenses:expenses.filter(e=>e.id!==editing.id)})
     setEditing(null)
     setMessage('已移除這筆消費，請按「儲存變更」保存。')
   }}/>
@@ -40,7 +41,7 @@ export function Expenses({data,onChange,busy,passwordScope}: {passwordScope?:str
     {ruleDialog}{passwordDialog}
     <div className="page-head"><div><h2>消費明細</h2><p className="muted">從信用卡帳單匯入並整理交易。修改後請按「儲存變更」保存；這些紀錄不會自動扣除資產或變更信用卡負債。</p></div><button className="primary" disabled={busy} onClick={()=>{setMessage('');setImporting(true)}}>匯入信用卡帳單</button></div>
     {passwordScope && <div className="statement-password-summary"><span className="muted small">帳單密碼 · {passwords.length?`${passwords.length} 組設定`:'可設定後自動套用'}</span><button disabled={busy} onClick={()=>setManagingPasswords(true)}>管理帳單密碼</button></div>}
-    <ExpenseCategoryRules rules={rules} busy={busy} onChange={expenseCategoryRules=>onChange({...data,version:data.version===12 || data.statementPasswords!==undefined ? 12 : 11,expenseCategoryRules})}/>
+    <ExpenseCategoryRules rules={rules} busy={busy} onChange={expenseCategoryRules=>onChange({...data,version:dataVersion(data, {minimumVersion:11}),expenseCategoryRules})}/>
     {message && <p role="status" className="notice">{message}</p>}
     {!expenses.length ? <section className="panel empty"><p>還沒有消費紀錄。選擇文字 PDF 帳單，預覽確認後即可匯入。</p></section> : <section className="panel">
       <h3>{expenses.length} 筆交易</h3>
