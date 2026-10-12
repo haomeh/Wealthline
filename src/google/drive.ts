@@ -2,6 +2,7 @@
 // The file lives in a visible "We Wealth" folder so the user can see, download or delete it.
 
 import type { AccessToken } from './auth'
+import { assertWritable, serializeData } from '../storageLimits'
 
 const API = 'https://www.googleapis.com/drive/v3/files'
 // v2 exposes the file ETag in JSON (v3 removed this field). Keep v3 discovery
@@ -115,8 +116,10 @@ export async function loadData<T>(token: AccessToken, parse: (raw: unknown) => T
 }
 
 // Creates the file on first save; afterwards overwrites the same file.
+// Refuses, before any request, a file over the size limit (storageLimits.ts).
 export async function saveData<T>(token: AccessToken, data: T, version?: DriveVersion): Promise<DriveVersion> {
-  const content = JSON.stringify(data, null, 2)
+  const content = serializeData(data)
+  assertWritable(content)
   if (version) {
     versionOf({ id: version.fileId, etag: version.etag })
     // A concurrent first creation may have appeared after this session loaded.

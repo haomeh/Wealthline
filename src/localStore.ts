@@ -4,6 +4,7 @@
 
 import { localDate } from './history'
 import { parseWealthData, type WealthData } from './model'
+import { serializeData } from './storageLimits'
 
 const DATA_KEY = 'wealthline.local.data'
 // Set while the user is in local mode, so a reload of an app page reopens it.
@@ -14,7 +15,7 @@ const ACTIVE_KEY = 'wealthline.local.active'
 // Google token left in the tab (one whose loading failed). index.html reads this key too.
 const TAB_KEY = 'wealthline.local.tab'
 
-const MAX_UPLOAD_BYTES = 20 * 1024 * 1024
+const MAX_UPLOAD_BYTES = 100 * 1024 * 1024
 
 export class LocalConflictError extends Error {
   constructor() {
@@ -138,7 +139,7 @@ export async function readDataFile(file: File): Promise<WealthData> {
 
 // Saves `data` as a JSON file, formatted like the Drive data file.
 export function downloadDataFile(data: WealthData, name = `wealthline-data-${localDate(new Date().toISOString())}.json`) {
-  const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }))
+  const url = URL.createObjectURL(new Blob([serializeData(data)], { type: 'application/json' }))
   const link = document.createElement('a')
   link.href = url
   link.download = name

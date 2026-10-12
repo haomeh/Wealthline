@@ -34,6 +34,8 @@ import { PAGES, goBack, navigate, usePage, usePath } from './site'
 import { TABS, parseRoute, routePath, tabPath, type Route, type Tab } from './routes'
 import { Link, Logo, PrivacyNotice, SiteFooter } from './views/Site'
 import { DeviceIcon, UploadButton } from './views/LocalData'
+import { StorageMeter, StorageNotice } from './views/StorageMeter'
+import { byteSize, serializeData } from './storageLimits'
 
 type Status = { kind: 'idle' } | { kind: 'busy'; text: string } | { kind: 'error'; text: string }
 
@@ -57,6 +59,8 @@ export default function App() {
   // The home page reads whether local data exists on render; this re-renders it after a delete.
   const [, rerender] = useReducer((n: number) => n + 1, 0)
   const [data, setData] = useState<WealthData | null>(null)
+  // Size of the stored data file (0: nothing stored yet), for the size limit notices.
+  const [storedBytes, setStoredBytes] = useState(0)
   const [dirty, setDirty] = useState(false)
   const dirtyRef = useRef(false)
   dirtyRef.current = dirty
@@ -141,6 +145,7 @@ export default function App() {
   function startSession(file: WealthData | null) {
     const version = ++sessionVersion.current
     saved.current = file
+    setStoredBytes(storedSize(file))
     const loaded = file ?? emptyData()
     setData(loaded)
     setDirty(false)
@@ -212,16 +217,28 @@ export default function App() {
     }
   }
 
+  // Bytes `file` takes where it is stored: the text kept in this browser, or the Drive file.
+  function storedSize(file: WealthData | null): number {
+    if (!file) return 0
+    return byteSize(localMode.current && localRaw.current !== null ? localRaw.current : serializeData(file))
+  }
+
   // Writes the data file to Drive, or to this browser in local mode.
   async function write(next: WealthData) {
     const session = sessionVersion.current
     if (localMode.current) {
       const raw = await saveLocal(next, localRaw.current)
-      if (session === sessionVersion.current) localRaw.current = raw
+      if (session === sessionVersion.current) {
+        localRaw.current = raw
+        setStoredBytes(byteSize(raw))
+      }
       return
     }
     const result = await saveData(await validToken(), next, driveVersion.current)
-    if (session === sessionVersion.current) driveVersion.current = result
+    if (session === sessionVersion.current) {
+      driveVersion.current = result
+      setStoredBytes(storedSize(next))
+    }
   }
 
   // Restore the session after a reload while this tab's token is still valid,
@@ -474,6 +491,7 @@ export default function App() {
                 <span className="muted small">
                   資料檔：我的雲端硬碟 / {FOLDER_NAME} / {DATA_FILE_NAME}
                 </span>
+                {storedBytes > 0 && <StorageMeter bytes={storedBytes} />}
                 <Link to={PAGES.privacy.path} className="small">
                   隱私權政策 Privacy Policy
                 </Link>
@@ -488,6 +506,7 @@ export default function App() {
               <div className="menu">
                 <strong>本機模式（未登入）</strong>
                 <span className="muted small">資料只存在這個瀏覽器。清除網站資料、換瀏覽器或換裝置都看不到，請定期下載資料檔備份。</span>
+                {storedBytes > 0 && <StorageMeter bytes={storedBytes} />}
                 <button onClick={() => saved.current && downloadDataFile(saved.current)} disabled={busy || dirty || !saved.current}>
                   下載資料檔
                 </button>
@@ -531,6 +550,7 @@ export default function App() {
           <p>{status.text}</p>
           {data && <button onClick={() => downloadDataFile(data, 'we-wealth-local-backup.json')}>下載本機資料備份</button>}
         </div>}
+        {(tab === 'overview' || tab === 'expenses' || tab === 'bank-transactions') && <StorageNotice bytes={storedBytes} local={local} />}
 
         {data && tab === 'overview' && (
           <Overview

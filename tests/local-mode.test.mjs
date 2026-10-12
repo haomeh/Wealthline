@@ -405,3 +405,23 @@ test('a tab that chose local mode keeps it on reload after another tab left loca
   assert.equal(localStorage.getItem(ACTIVE_KEY), '1')
   noGoogle()
 })
+
+test('the menu shows the data file size, and a notice appears near the size limit', async () => {
+  localStorage.setItem(DATA_KEY, JSON.stringify(fixture()))
+  localStorage.setItem(ACTIVE_KEY, '1')
+  window.history.replaceState(null, '', '/app')
+  await render()
+  await settle()
+  assert.match(document.querySelector('.menu .storage-meter').textContent, /資料檔大小：\d+ B \/ 上限 4\.5 MB/)
+  assert.equal(document.querySelector('.storage-notice'), null)
+
+  const description = 'X'.repeat(400)
+  const expenses = Array.from({ length: 7200 }, (_, i) => ({ id: `e-${i}`, date: '2026-10-01', description, amount: 1, currency: 'TWD', card: 'Card' }))
+  localStorage.setItem(DATA_KEY, JSON.stringify({ ...fixture(), version: 10, expenses }))
+  await render()
+  await settle()
+  assert.match(document.querySelector('.menu .storage-meter').textContent, /資料檔大小：3\.\d MB/)
+  assert.ok(document.querySelector('.storage-meter.warn'))
+  assert.match(document.querySelector('.storage-notice.warn').textContent, /接近單一檔案 4\.5 MB 的上限.*請定期下載資料檔備份/)
+  noGoogle()
+})

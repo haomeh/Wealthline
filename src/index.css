@@ -270,6 +270,54 @@ textarea {
   word-break: break-word;
 }
 
+.storage-notice.warn {
+  background: var(--warn-wash);
+}
+
+.storage-notice.block {
+  background: var(--critical-wash);
+  color: var(--critical);
+}
+
+.storage-notice p {
+  margin: 0;
+}
+
+.storage-meter {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 6px;
+  color: var(--ink-2);
+}
+
+.storage-meter-bar {
+  display: block;
+  height: 4px;
+  border-radius: 4px;
+  background: var(--hairline);
+  overflow: hidden;
+}
+
+.storage-meter-bar > span {
+  display: block;
+  height: 100%;
+  width: var(--storage-share);
+  background: var(--accent);
+}
+
+.storage-meter.warn .storage-meter-bar > span {
+  background: var(--s4);
+}
+
+.storage-meter.block {
+  color: var(--critical);
+}
+
+.storage-meter.block .storage-meter-bar > span {
+  background: var(--critical);
+}
+
 .notice {
   margin-top: 12px;
   padding: 8px 12px;
