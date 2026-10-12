@@ -177,7 +177,7 @@ function Privacy() {
         <p>你可以在首頁選擇「不登入，直接在瀏覽器使用」。本機模式的運作方式如下：</p>
         <ul>
           <li>
-            <strong>存放位置</strong>：你輸入的資產資料（種類與第三節相同）以 JSON 格式存放在這個瀏覽器的 localStorage，並另外記錄你正在使用本機模式。資料不會傳送給營運者，也不會上傳到 Google Drive 或任何伺服器；本服務的報價轉發程式也不會收到這些資料。
+            <strong>存放位置</strong>：你輸入的資產資料（種類與第三節相同）以 JSON 格式存放在這個瀏覽器的 IndexedDB（瀏覽器內建的網站儲存空間），並在 localStorage 記錄你正在使用本機模式。舊版存在 localStorage 的資料會在下次開啟時自動搬到 IndexedDB，原本的內容在 localStorage 另外保留 30 天作為備份，之後自動刪除。不支援 IndexedDB 的瀏覽器仍存放在 localStorage。資料不會傳送給營運者，也不會上傳到 Google Drive 或任何伺服器；本服務的報價轉發程式也不會收到這些資料。
           </li>
           <li>
             <strong>離開瀏覽器的資料</strong>：只有查詢報價與匯率時，瀏覽器會送出股票代號、幣別或幣種名稱，以及查歷史價格時的起始日期，內容同第六節，不包含數量、金額或帳戶名稱。
@@ -189,7 +189,7 @@ function Privacy() {
             <strong>保存期限與刪除</strong>：資料會保留到你在選單中按「刪除此瀏覽器中的資料」，或清除瀏覽器的網站資料為止。「離開本機模式」會保留資料，供下次繼續使用。換瀏覽器、換裝置或使用無痕視窗時看不到這些資料，營運者也無法替你復原，請定期下載備份。
           </li>
           <li>
-            <strong>安全</strong>：localStorage 中的資產與交易資料沒有加密（已設定的帳單密碼僅保存密文），能使用這個瀏覽器設定檔的人都可能讀取。共用裝置請勿使用本機模式，或在使用後刪除資料。
+            <strong>安全</strong>：瀏覽器中保存的資產與交易資料沒有加密（已設定的帳單密碼僅保存密文），能使用這個瀏覽器設定檔的人都可能讀取。共用裝置請勿使用本機模式，或在使用後刪除資料。
           </li>
         </ul>
       </Section>
@@ -223,7 +223,7 @@ function Privacy() {
       </Section>
 
       <Section title="十、Cookie 與追蹤">
-        <p>本服務本身不設定追蹤 Cookie、不加入分析工具或廣告。Google 登入及第三方服務可能依各自政策使用 Cookie 或連線資訊。localStorage 與 sessionStorage 只用來保存上述登入資訊、本機模式的資料與使用狀態，以及你最後看過的隱私權政策版本。</p>
+        <p>本服務本身不設定追蹤 Cookie、不加入分析工具或廣告。Google 登入及第三方服務可能依各自政策使用 Cookie 或連線資訊。localStorage、sessionStorage 與 IndexedDB 只用來保存上述登入資訊、本機模式的資料與使用狀態，以及你最後看過的隱私權政策版本。</p>
       </Section>
 
       <Section title="十一、安全">
@@ -353,8 +353,9 @@ function PrivacyEnglish() {
       <ul>
         <li>No Google sign-in is involved: Wealthline requests no Google scopes and receives no Google user data, and your browser does not contact Google.</li>
         <li>
-          The asset data you enter (the same kinds of records listed in section 1) is stored as JSON in this browser's localStorage, together with a flag that
-          you are using local mode. It is not sent to the operator, to Google Drive or to any server, including Wealthline's quote relay.
+          The asset data you enter (the same kinds of records listed in section 1) is stored as JSON in this browser's IndexedDB (the browser's built-in site storage), with a flag in localStorage that
+          you are using local mode. Data that earlier versions kept in localStorage moves to IndexedDB the next time you open the app; the old copy stays in
+          localStorage as a backup for 30 days and is then deleted. Browsers without IndexedDB keep the data in localStorage. It is not sent to the operator, to Google Drive or to any server, including Wealthline's quote relay.
         </li>
         <li>
           The only data that leaves your browser are the market lookups described in section 3: ticker symbols, currency or coin codes, and a start date for
@@ -370,7 +371,7 @@ function PrivacyEnglish() {
           backups regularly.
         </li>
         <li>
-          Financial records in localStorage are not encrypted (saved statement passwords contain only ciphertext): anyone who can use this browser profile may read the data. Do not use local mode on a shared device, or delete the
+          Financial records stored in the browser are not encrypted (saved statement passwords contain only ciphertext): anyone who can use this browser profile may read the data. Do not use local mode on a shared device, or delete the
           data when you are done.
         </li>
       </ul>

@@ -1,12 +1,23 @@
-// Local mode: the same data file as the Drive mode, kept in this browser's localStorage
-// instead of Google Drive, with no sign-in. The user can download it as a JSON file and
-// upload that file later (in this or another browser) to restore it.
+// Local mode: the same data file as the Drive mode, kept in this browser instead of Google
+// Drive, with no sign-in. The user can download it as a JSON file and upload that file later
+// (in this or another browser) to restore it.
+//
+// The data lives in IndexedDB, which has far more room than localStorage's ~5 MB. Data saved by
+// earlier versions in localStorage moves there on the next open, with no step for the user
+// (see `migrate`). Browsers without a usable IndexedDB keep using localStorage.
 
 import { localDate } from './history'
 import { parseWealthData, type WealthData } from './model'
 import { serializeData } from './storageLimits'
 
+// Where earlier versions kept the data file, and still the fallback without IndexedDB.
 const DATA_KEY = 'wealthline.local.data'
+// The localStorage text moved aside after it was copied to IndexedDB, kept for BACKUP_DAYS.
+const BACKUP_KEY = 'wealthline.local.data.backup'
+const BACKUP_AT_KEY = 'wealthline.local.data.backup-at'
+const BACKUP_DAYS = 30
+// Set while IndexedDB holds the data, so the home page can tell without waiting for it.
+const STORED_KEY = 'wealthline.local.stored'
 // Set while the user is in local mode, so a reload of an app page reopens it.
 // index.html reads this key too, to hide the prerendered sign-in page on such a reload.
 const ACTIVE_KEY = 'wealthline.local.active'
@@ -14,6 +25,10 @@ const ACTIVE_KEY = 'wealthline.local.active'
 // tab's mode on reload, whatever other tabs did to the shared flag above and even with a
 // Google token left in the tab (one whose loading failed). index.html reads this key too.
 const TAB_KEY = 'wealthline.local.tab'
+
+const DB_NAME = 'wealthline'
+const DB_STORE = 'files'
+const CORE = 'core'
 
 const MAX_UPLOAD_BYTES = 100 * 1024 * 1024
 
@@ -38,6 +53,125 @@ function read(key: string): string | null {
   }
 }
 
+function forget(...keys: string[]) {
+  try {
+    for (const key of keys) localStorage.removeItem(key)
+  } catch {
+    // Storage blocked: nothing to remove.
+  }
+}
+
+const FULL = '此瀏覽器的儲存空間不足或已停用，資料沒有儲存。請先下載本機備份。'
+
+// The stored data file's text. `put` and `remove` run only under the lock below.
+interface Backend {
+  get(): Promise<string | null>
+  put(raw: string): Promise<void>
+  remove(): Promise<void>
+}
+
+const done = <T>(request: IDBRequest<T>) => new Promise<T>((resolve, reject) => {
+  request.onsuccess = () => resolve(request.result)
+  request.onerror = () => reject(request.error)
+})
+
+function openDb(): Promise<IDBDatabase> {
+  const request = indexedDB.open(DB_NAME, 1)
+  request.onupgradeneeded = () => {
+    if (!request.result.objectStoreNames.contains(DB_STORE)) request.result.createObjectStore(DB_STORE)
+  }
+  return done(request).then((db) => {
+    // A later version opened in another tab: let it upgrade; this tab reopens on next use.
+    db.onversionchange = () => { db.close(); database = null }
+    return db
+  })
+}
+
+let database: Promise<IDBDatabase> | null = null
+function db(): Promise<IDBDatabase> {
+  database ??= openDb().catch((e) => { database = null; throw e })
+  return database
+}
+
+// One request in its own transaction; resolves once a write is committed.
+async function run<T>(mode: IDBTransactionMode, task: (store: IDBObjectStore) => IDBRequest<T>): Promise<T> {
+  const tx = (await db()).transaction(DB_STORE, mode)
+  const result = done(task(tx.objectStore(DB_STORE)))
+  result.catch(() => {}) // reported through the transaction below
+  await new Promise<void>((resolve, reject) => {
+    tx.oncomplete = () => resolve()
+    tx.onerror = () => reject(tx.error)
+    tx.onabort = () => reject(tx.error ?? new Error('IndexedDB transaction aborted'))
+  })
+  return result
+}
+
+const indexedBackend: Backend = {
+  get: async () => ((await run('readonly', (store) => store.get(CORE))) as string | undefined) ?? null,
+  async put(raw) {
+    try {
+      await run('readwrite', (store) => store.put(raw, CORE))
+    } catch {
+      throw new Error(FULL)
+    }
+    try { localStorage.setItem(STORED_KEY, '1') } catch { /* only a hint for the home page */ }
+  },
+  async remove() {
+    await run('readwrite', (store) => store.delete(CORE))
+    forget(STORED_KEY)
+  },
+}
+
+const storageBackend: Backend = {
+  get: async () => read(DATA_KEY),
+  async put(raw) {
+    try {
+      localStorage.setItem(DATA_KEY, raw)
+    } catch {
+      throw new Error(FULL)
+    }
+  },
+  async remove() {
+    forget(DATA_KEY)
+  },
+}
+
+// IndexedDB when this browser can open it; decided once per page load.
+let chosen: Promise<Backend> | null = null
+function backend(): Promise<Backend> {
+  chosen ??= (typeof indexedDB === 'undefined' ? Promise.reject(new Error('no IndexedDB')) : db())
+    .then(() => indexedBackend, () => storageBackend)
+  return chosen
+}
+
+// Copies data an earlier version left in localStorage into IndexedDB, then moves the old text
+// aside. Removing it stops a tab still running an earlier version from saving over it: its next
+// save no longer finds the text it read and stops with LocalConflictError. When IndexedDB already
+// holds data, that data wins and the localStorage text only becomes the backup.
+async function migrate(store: Backend) {
+  const legacy = read(DATA_KEY)
+  if (store === storageBackend || legacy === null) return
+  if ((await store.get()) === null) {
+    await store.put(legacy)
+    if ((await store.get()) !== legacy) {
+      await store.remove().catch(() => {})
+      throw new Error('IndexedDB did not return the copied data')
+    }
+  }
+  forget(DATA_KEY)
+  try {
+    localStorage.setItem(BACKUP_KEY, legacy)
+    localStorage.setItem(BACKUP_AT_KEY, new Date().toISOString())
+  } catch {
+    // No room for the backup copy: the data itself is already in IndexedDB.
+  }
+}
+
+function expireBackup() {
+  const at = Date.parse(read(BACKUP_AT_KEY) ?? '')
+  if (read(BACKUP_KEY) !== null && !(Date.now() - at < BACKUP_DAYS * 86400_000)) forget(BACKUP_KEY, BACKUP_AT_KEY)
+}
+
 export const isLocalActive = () => read(ACTIVE_KEY) === '1'
 export function localChosenInTab(): boolean {
   try {
@@ -46,7 +180,7 @@ export function localChosenInTab(): boolean {
     return false
   }
 }
-export const hasLocalData = () => read(DATA_KEY) !== null
+export const hasLocalData = () => read(STORED_KEY) === '1' || read(DATA_KEY) !== null
 
 // Whether a page load opens local mode: this tab's own choice first; otherwise the shared
 // flag, unless the tab holds a live Google session.
@@ -67,8 +201,21 @@ export function setLocalActive(active: boolean) {
 }
 
 // Throws when the stored data is not a valid data file.
-export function loadLocal(): LocalFile | null {
-  const raw = read(DATA_KEY)
+export async function loadLocal(): Promise<LocalFile | null> {
+  let store = await backend()
+  // Without Web Locks nothing is written (see `locked`), so data left in localStorage is read where it is.
+  const raw = hasLocks() ? await locked(async () => {
+    try {
+      await migrate(store)
+    } catch {
+      // IndexedDB could not take the data (full, or failing): keep using localStorage on this
+      // page load, where the data still is, and try again on the next open.
+      store = storageBackend
+      chosen = Promise.resolve(storageBackend)
+    }
+    expireBackup()
+    return store.get()
+  }) : store === storageBackend ? read(DATA_KEY) : (await store.get()) ?? read(DATA_KEY)
   if (raw === null) return null
   let json: unknown
   try {
@@ -84,7 +231,9 @@ export function loadLocal(): LocalFile | null {
 // localStorage itself has no cross-tab locking, so without Web Locks local mode does not write at all.
 const LOCK = 'wealthline.local'
 
-function locked<T>(task: () => T): Promise<T> {
+const hasLocks = () => typeof navigator !== 'undefined' && !!navigator.locks
+
+function locked<T>(task: () => T | Promise<T>): Promise<T> {
   const locks = typeof navigator === 'undefined' ? undefined : navigator.locks
   if (!locks) {
     return Promise.reject(new Error('這個瀏覽器不支援跨分頁鎖定（Web Locks），為避免分頁互相覆蓋資料，本機模式無法寫入。請改用新版瀏覽器，並先下載本機備份。'))
@@ -92,37 +241,59 @@ function locked<T>(task: () => T): Promise<T> {
   return locks.request(LOCK, () => task())
 }
 
-function write(data: WealthData): string {
+let persistAsked = false
+async function write(store: Backend, data: WealthData): Promise<string> {
   const raw = JSON.stringify(data)
-  try {
-    localStorage.setItem(DATA_KEY, raw)
-  } catch {
-    throw new Error('此瀏覽器的儲存空間不足或已停用，資料沒有儲存。請先下載本機備份。')
+  await store.put(raw)
+  // Once per page load, ask the browser not to evict this site's data under storage pressure.
+  if (!persistAsked) {
+    persistAsked = true
+    void navigator.storage?.persist?.().catch(() => {})
   }
   return raw
 }
 
 // Writes `data` unless another tab changed the stored data since `expected` was read
 // (null: nothing was stored). Resolves to the new stored text, the version for the next save.
-export function saveLocal(data: WealthData, expected: string | null): Promise<string> {
-  return locked(() => {
-    if (read(DATA_KEY) !== expected) throw new LocalConflictError()
-    return write(data)
+export async function saveLocal(data: WealthData, expected: string | null): Promise<string> {
+  const store = await backend()
+  return locked(async () => {
+    if ((await store.get()) !== expected || (store !== storageBackend && read(DATA_KEY) !== null)) throw new LocalConflictError()
+    return write(store, data)
   })
 }
 
 // Replaces the stored data with an uploaded file, whatever was there, unless `wanted` says the
 // user has since left local mode or deleted the data. Resolves to the new stored text, or null.
-export function replaceLocal(data: WealthData, wanted: () => boolean): Promise<string | null> {
-  return locked(() => (wanted() ? write(data) : null))
+export async function replaceLocal(data: WealthData, wanted: () => boolean): Promise<string | null> {
+  const store = await backend()
+  return locked(async () => {
+    if (!wanted()) return null
+    const raw = await write(store, data)
+    // The upload replaces any data an earlier version left in localStorage too.
+    if (store !== storageBackend) forget(DATA_KEY)
+    return raw
+  })
 }
 
-// Removes the data and leaves local mode. Downloaded files are not affected.
-export function clearLocal(): Promise<void> {
-  return locked(() => {
-    localStorage.removeItem(DATA_KEY)
-    localStorage.removeItem(ACTIVE_KEY)
+// Removes the data, including the backup of data moved from localStorage, and leaves local
+// mode. Downloaded files are not affected.
+export async function clearLocal(): Promise<void> {
+  const store = await backend()
+  return locked(async () => {
+    await store.remove()
+    forget(DATA_KEY, BACKUP_KEY, BACKUP_AT_KEY, ACTIVE_KEY)
   })
+}
+
+// How much of this browser's storage the site uses, when the browser says.
+export async function storageEstimate(): Promise<{ usage: number; quota: number } | null> {
+  try {
+    const { usage, quota } = (await navigator.storage?.estimate?.()) ?? {}
+    return typeof usage === 'number' && typeof quota === 'number' && quota > 0 ? { usage, quota } : null
+  } catch {
+    return null
+  }
 }
 
 // Reads a data file the user picked: a download from local mode, or the Drive mode's data file.

@@ -142,7 +142,7 @@ export function Landing({ returning, hasLocal, busy, message, onSignIn, onResume
             <ul className="checks">
               <li>Google Drive 僅要求 drive.file 權限，看不到你雲端硬碟中的其他檔案。</li>
               <li>資料是一個普通的 JSON 檔，可以隨時下載、備份或刪除。</li>
-              <li>不想登入也可以：資料只存在這個瀏覽器的 localStorage，下載成檔案後可以再上傳還原。</li>
+              <li>不想登入也可以：資料只存在這個瀏覽器的儲存空間，下載成檔案後可以再上傳還原。</li>
               <li>不使用分析工具、廣告或追蹤 Cookie。</li>
               <li>隨時可以在 Google 帳戶設定中撤銷授權。</li>
             </ul>

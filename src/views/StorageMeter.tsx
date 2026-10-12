@@ -1,23 +1,56 @@
-// How big the stored data file is, against the size limit in storageLimits.ts.
+// How big the stored data is. A Drive data file is measured against the per-file limit in
+// storageLimits.ts; in local mode the limit is the browser's own storage quota.
 
 import type { CSSProperties } from 'react'
-import { BLOCK_BYTES, formatBytes, storageLevel } from '../storageLimits'
+import { BLOCK_BYTES, formatBytes, storageLevel, type StorageLevel } from '../storageLimits'
 
-export function StorageMeter({ bytes }: { bytes: number }) {
-  const level = storageLevel(bytes)
-  const share = Math.min(1, bytes / BLOCK_BYTES)
+// The browser's storage use for this site (local mode); null when the browser does not say.
+export type BrowserStorage = { usage: number; quota: number } | null
+
+const browserLevel = ({ usage, quota }: { usage: number; quota: number }): StorageLevel =>
+  usage > quota * 0.95 ? 'block' : usage > quota * 0.8 ? 'warn' : 'ok'
+
+function Bar({ share, label, text }: { share: number; label: string; text: string }) {
   return (
-    <div className={`storage-meter ${level}`}>
+    <span className="storage-meter-bar" role="meter" aria-label={label} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(Math.min(1, share) * 100)} aria-valuetext={text}>
+      <span style={{ '--storage-share': `${Math.min(1, share) * 100}%` } as CSSProperties} />
+    </span>
+  )
+}
+
+// `browser` is given in local mode only.
+export function StorageMeter({ bytes, browser }: { bytes: number; browser?: BrowserStorage }) {
+  if (browser !== undefined) {
+    return (
+      <div className={`storage-meter ${browser ? browserLevel(browser) : 'ok'}`}>
+        <span className="small">資料大小：{formatBytes(bytes)}</span>
+        {browser && <>
+          <span className="small">此瀏覽器已使用 {formatBytes(browser.usage)} / 可用 {formatBytes(browser.quota)}</span>
+          <Bar share={browser.usage / browser.quota} label="瀏覽器儲存空間" text={`已使用 ${formatBytes(browser.usage)}，可用 ${formatBytes(browser.quota)}`} />
+        </>}
+      </div>
+    )
+  }
+  return (
+    <div className={`storage-meter ${storageLevel(bytes)}`}>
       <span className="small">資料檔大小：{formatBytes(bytes)} / 上限 {formatBytes(BLOCK_BYTES)}</span>
-      <span className="storage-meter-bar" role="meter" aria-label="資料檔大小" aria-valuemin={0} aria-valuemax={BLOCK_BYTES} aria-valuenow={Math.min(bytes, BLOCK_BYTES)} aria-valuetext={`${formatBytes(bytes)}，上限 ${formatBytes(BLOCK_BYTES)}`}>
-        <span style={{ '--storage-share': `${share * 100}%` } as CSSProperties} />
-      </span>
+      <Bar share={bytes / BLOCK_BYTES} label="資料檔大小" text={`${formatBytes(bytes)}，上限 ${formatBytes(BLOCK_BYTES)}`} />
     </div>
   )
 }
 
-// Shown only when the file is near or over the limit.
-export function StorageNotice({ bytes, local }: { bytes: number; local: boolean }) {
+// Shown only when the data is near or over the limit. `browser` is given in local mode only.
+export function StorageNotice({ bytes, browser }: { bytes: number; browser?: BrowserStorage }) {
+  if (browser !== undefined) {
+    if (!browser) return null
+    const level = browserLevel(browser)
+    if (level === 'ok') return null
+    return (
+      <div className={`banner storage-notice ${level}`} role={level === 'block' ? 'alert' : 'status'}>
+        <p>此瀏覽器的儲存空間已使用 {formatBytes(browser.usage)}，可用 {formatBytes(browser.quota)}。{level === 'block' ? '空間快用完，之後可能無法儲存。' : ''}請下載資料檔備份，並清出瀏覽器空間。</p>
+      </div>
+    )
+  }
   const level = storageLevel(bytes)
   if (level === 'ok') return null
   const size = formatBytes(bytes)
@@ -25,8 +58,8 @@ export function StorageNotice({ bytes, local }: { bytes: number; local: boolean 
   return (
     <div className={`banner storage-notice ${level}`} role={level === 'block' ? 'alert' : 'status'}>
       {level === 'block'
-        ? <p>資料檔有 {size}，超過單一檔案 {limit} 的上限，{local ? '可能無法再儲存到此瀏覽器' : '無法再儲存到 Google Drive'}。請先下載資料備份，再刪除不需要的消費明細或銀行流水。</p>
-        : <p>資料檔已有 {size}，接近單一檔案 {limit} 的上限。{local ? '瀏覽器的儲存空間有限，請定期下載資料檔備份。' : '主要是消費明細和銀行流水佔用空間；請定期下載資料備份。'}</p>}
+        ? <p>資料檔有 {size}，超過單一檔案 {limit} 的上限，無法再儲存到 Google Drive。請先下載資料備份，再刪除不需要的消費明細或銀行流水。</p>
+        : <p>資料檔已有 {size}，接近單一檔案 {limit} 的上限。主要是消費明細和銀行流水佔用空間；請定期下載資料備份。</p>}
     </div>
   )
 }

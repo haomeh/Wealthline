@@ -15,7 +15,7 @@ import {
 import { DATA_FILE_NAME, FOLDER_NAME, loadData, saveData, type DriveFile, type DriveVersion } from './google/drive'
 import { applyFetchedRates, emptyData, missingRates, parseWealthData, ratesStale, usedCurrencies, type WealthData } from './model'
 import { finishSave } from './saveState'
-import { clearLocal, downloadDataFile, hasLocalData, loadLocal, opensLocal, readDataFile, replaceLocal, saveLocal, setLocalActive, type LocalFile } from './localStore'
+import { clearLocal, downloadDataFile, hasLocalData, loadLocal, opensLocal, readDataFile, replaceLocal, saveLocal, setLocalActive, storageEstimate, type LocalFile } from './localStore'
 import { localDate, pendingChanges, pendingLiabilityChanges, recordSave, revertChange, revertLiabilityChange } from './history'
 import { applyQuotes, fetchHoldingQuotes } from './quotes'
 import { fetchRates } from './rates'
@@ -61,6 +61,8 @@ export default function App() {
   const [data, setData] = useState<WealthData | null>(null)
   // Size of the stored data file (0: nothing stored yet), for the size limit notices.
   const [storedBytes, setStoredBytes] = useState(0)
+  // Local mode: how much of this browser's storage the site uses, when the browser says.
+  const [browserStorage, setBrowserStorage] = useState<{ usage: number; quota: number } | null>(null)
   const [dirty, setDirty] = useState(false)
   const dirtyRef = useRef(false)
   dirtyRef.current = dirty
@@ -133,7 +135,8 @@ export default function App() {
 
   // Opens local mode with the data stored in this browser, or with `file` (an upload just
   // stored). Throws, without entering local mode, when the stored data does not parse.
-  function openLocal(file: LocalFile | null = loadLocal()) {
+  async function openLocal(given?: LocalFile | null) {
+    const file = given === undefined ? await loadLocal() : given
     setLocalActive(true)
     localMode.current = true
     localRaw.current = file?.raw ?? null
@@ -146,6 +149,7 @@ export default function App() {
     const version = ++sessionVersion.current
     saved.current = file
     setStoredBytes(storedSize(file))
+    measureBrowser()
     const loaded = file ?? emptyData()
     setData(loaded)
     setDirty(false)
@@ -223,6 +227,12 @@ export default function App() {
     return byteSize(localMode.current && localRaw.current !== null ? localRaw.current : serializeData(file))
   }
 
+  function measureBrowser() {
+    if (!localMode.current) return setBrowserStorage(null)
+    const session = sessionVersion.current
+    void storageEstimate().then((estimate) => { if (session === sessionVersion.current) setBrowserStorage(estimate) })
+  }
+
   // Writes the data file to Drive, or to this browser in local mode.
   async function write(next: WealthData) {
     const session = sessionVersion.current
@@ -231,6 +241,7 @@ export default function App() {
       if (session === sessionVersion.current) {
         localRaw.current = raw
         setStoredBytes(byteSize(raw))
+        measureBrowser()
       }
       return
     }
@@ -250,7 +261,7 @@ export default function App() {
     if (localMode.current) {
       void run('載入中…', async () => {
         try {
-          openLocal()
+          await openLocal()
         } catch (e) {
           // Unreadable stored data: back to the home page, which shows why and offers an upload.
           setLocalActive(false)
@@ -314,7 +325,7 @@ export default function App() {
 
   const startLocal = () =>
     run('開啟中…', async () => {
-      openLocal()
+      await openLocal()
       navigate('/app')
     })
 
@@ -330,7 +341,7 @@ export default function App() {
       if (replacing && !confirm('上傳的資料檔會取代此瀏覽器中目前的資料，包括未儲存的修改。建議先下載目前的資料備份。要繼續嗎？')) return
       const raw = await replaceLocal(uploaded, current)
       if (raw === null || !current()) return
-      openLocal({ data: uploaded, raw })
+      await openLocal({ data: uploaded, raw })
       navigate('/app')
     })
 
@@ -473,7 +484,7 @@ export default function App() {
             ) : status.kind === 'error' ? (
               <span className="muted">同步未完成</span>
             ) : local ? (
-              <span className="synced" title="資料存在這個瀏覽器的 localStorage">
+              <span className="synced" title="資料存在這個瀏覽器的儲存空間（IndexedDB）">
                 <span aria-hidden>✓</span> 已存在此瀏覽器
               </span>
             ) : (
@@ -506,7 +517,7 @@ export default function App() {
               <div className="menu">
                 <strong>本機模式（未登入）</strong>
                 <span className="muted small">資料只存在這個瀏覽器。清除網站資料、換瀏覽器或換裝置都看不到，請定期下載資料檔備份。</span>
-                {storedBytes > 0 && <StorageMeter bytes={storedBytes} />}
+                {storedBytes > 0 && <StorageMeter bytes={storedBytes} browser={browserStorage} />}
                 <button onClick={() => saved.current && downloadDataFile(saved.current)} disabled={busy || dirty || !saved.current}>
                   下載資料檔
                 </button>
@@ -550,7 +561,7 @@ export default function App() {
           <p>{status.text}</p>
           {data && <button onClick={() => downloadDataFile(data, 'we-wealth-local-backup.json')}>下載本機資料備份</button>}
         </div>}
-        {(tab === 'overview' || tab === 'expenses' || tab === 'bank-transactions') && <StorageNotice bytes={storedBytes} local={local} />}
+        {(tab === 'overview' || tab === 'expenses' || tab === 'bank-transactions') && <StorageNotice bytes={storedBytes} browser={local ? browserStorage : undefined} />}
 
         {data && tab === 'overview' && (
           <Overview
