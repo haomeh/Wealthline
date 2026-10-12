@@ -1,7 +1,7 @@
 import { EXPENSE_CATEGORIES, expenseCategory, type Expense, type ExpenseCategory, type ExpenseCategoryRule } from './expenses'
 import { BANK_EXCLUSION_REASONS, INCOME_CATEGORIES, classifyBankTransaction, type BankCategoryRule, type BankTransaction, type Classification } from './bankTransactions'
 
-export type CashflowPeriod = 1 | 3 | 6 | 12
+export type CashflowPeriod = 1 | 3 | 6 | 12 | 'all'
 export type IncomeCategory = Extract<Classification, {kind:'income'}>['category']
 export type ExclusionReason = Extract<Classification, {kind:'excluded'}>['reason']
 export interface CashflowInput {
@@ -71,7 +71,7 @@ const sourceCoverage = (): CashflowSourceCoverage => ({cardCount:0,bankCount:0,r
 function emptyTotals(): CashflowTotals {
   return {income:0,consumption:0,difference:0,incomeCategories:[],consumptionCategories:[],excluded:reviewTotals(),exclusions:[],pending:reviewTotals(),investmentRecovery:{count:0,net:0,hasRecords:false}}
 }
-function monthsInPeriod(endMonth: string, period: CashflowPeriod): string[] {
+function monthsInPeriod(endMonth: string, period: Exclude<CashflowPeriod, 'all'>): string[] {
   if (typeof endMonth !== 'string' || !/^(?!0000)\d{4}-(0[1-9]|1[0-2])$/.test(endMonth) || ![1,3,6,12].includes(period)) throw new Error('收支分析期間無效')
   const [year,month] = endMonth.split('-').map(Number)
   const end = year * 12 + month - 1
@@ -198,11 +198,11 @@ export const cashflowMonthList = (input: CashflowInput) =>
  * `input.months`, when given, stands for the records (cashflowMonths of them).
  */
 export function cashflowSummary(input: CashflowInput, endMonth: string, period: CashflowPeriod): CashflowCurrencySummary[] {
-  const months = monthsInPeriod(endMonth,period)
+  let months = monthsInPeriod(endMonth,period === 'all' ? 1 : period)
   const monthSet = new Set(months)
   const currencies = new Map<string, {totals:CashflowTotals; months:Map<string, CashflowMonthTotals>; coverage:CashflowSourceCoverage}>()
   for (const point of input.months ?? cashflowMonths(input)) {
-    if (!monthSet.has(point.month)) continue
+    if (period !== 'all' && !monthSet.has(point.month)) continue
     let group = currencies.get(point.currency)
     if (!group) { group = {totals:emptyTotals(),months:new Map(),coverage:sourceCoverage()}; currencies.set(point.currency,group) }
     // One month can come in several entries (the summaries of two parts).
@@ -211,6 +211,7 @@ export function cashflowSummary(input: CashflowInput, endMonth: string, period: 
     addTotals(copy.totals,point.totals); addCoverage(copy.coverage,point.coverage)
     addTotals(group.totals,point.totals); addCoverage(group.coverage,point.coverage)
   }
+  if (period === 'all') months = [...new Set([...currencies.values()].flatMap(group=>[...group.months.keys()]))].sort()
   return [...currencies].sort(([a],[b])=>a.localeCompare(b)).map(([currency,group])=> {
     finish(group.totals)
     const points: CashflowMonth[] = months.map(month=> {

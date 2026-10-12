@@ -1635,6 +1635,14 @@ test('statement preview groups duplicate filenames by source and commits or canc
   assert.equal(drive.writes,0)
 })
 
+async function selectCashflowMonth(year,month) {
+  await click(document.querySelector('.cashflow-period-trigger'))
+  const currentYear=()=>Number(document.querySelector('.cashflow-picker-year strong').textContent.replace(' 年',''))
+  while(currentYear()!==year) await click(button(currentYear()>year?'前一年':'後一年'))
+  await click(document.querySelector(`.cashflow-month-grid button[aria-label^="${month} 月"]`))
+  await click(button('套用'))
+}
+
 test('overview expense totals separate currencies, refunds and months even without asset accounts',async()=>{
   const {expenseMonthSummary}=await server.ssrLoadModule('/src/expenses.ts')
   const expenses=[
@@ -1655,14 +1663,12 @@ test('overview expense totals separate currencies, refunds and months even witho
   await render(Overview,{data:{...fixture(),version:10,expenses},onGoRates(){},onNewAccount(){},onImport(){},onOpenAccount(){},onGoExpenses(){opened++}})
   assert.equal(document.querySelector('.overview').lastElementChild.getAttribute('aria-label'),'統一收支總覽')
   assert.equal(document.querySelector('.cashflow-sources').open,false)
-  await click(button('近 1 月'))
-  await selectValue('收支截止月份','2026-09')
-  await selectValue('收支幣別','TWD')
-  assert.deepEqual([...document.querySelectorAll('.cashflow-metrics dd')].map(e=>e.textContent),['0','110','-110'])
-  await selectValue('收支幣別','SGD')
-  assert.deepEqual([...document.querySelectorAll('.cashflow-metrics dd')].map(e=>e.textContent),['0','-2','2'])
-  await selectValue('收支截止月份','2026-10')
-  assert.deepEqual([...document.querySelector('[aria-label="收支幣別"]').options].map(e=>e.value),['TWD'])
+  await selectCashflowMonth(2026,9)
+  const metrics=currency=>['income','consumption','difference'].map(key=>document.querySelector(`[aria-label="${currency} 收支"] [data-cashflow-metric="${key}"]`).textContent)
+  assert.deepEqual(metrics('TWD'),['0','110','-110'])
+  assert.deepEqual(metrics('SGD'),['0','-2','+2'])
+  await selectCashflowMonth(2026,10)
+  assert.deepEqual([...document.querySelectorAll('.cashflow-currency-heading strong')].map(e=>e.textContent),['TWD'])
   assert.equal(document.querySelector('[data-cashflow-metric="consumption"]').textContent,'2,000')
   assert.deepEqual(expenses,original)
   await click(button('信用卡消費'));assert.equal(opened,1)
@@ -1744,11 +1750,9 @@ test('expense summary follows total assets without linking expense month to asse
   const original=structuredClone(data)
   assert.equal(document.querySelector('.hero').nextElementSibling.getAttribute('aria-label'),'統一收支總覽')
   const assetTimeline=document.querySelector('.snapshot-timeline').textContent
-  await selectValue('收支截止月份','2026-09')
-  await click(button('近 1 月'))
+  await selectCashflowMonth(2026,9)
   assert.equal(document.querySelector('[data-cashflow-metric="consumption"]').textContent,'12')
-  await click(button('消費分類'))
-  assert.match(document.querySelector('.cashflow-values').textContent,/交通/)
+  assert.match(document.querySelector('[aria-label="TWD 實際消費分類"]').textContent,/交通/)
   assert.equal(document.querySelector('.snapshot-timeline').textContent,assetTimeline)
   assert.match(assetTimeline,/目前資產/)
   assert.deepEqual(data,original)

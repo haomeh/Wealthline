@@ -1,15 +1,19 @@
 import type { ReactNode } from 'react'
 
-// Browse a short summary; reveal the full source without opening an editor.
-export function DetailRecord({ title, value, label, actions, children, className = '' }: {
-  title: string; value: ReactNode; label: string; actions?: ReactNode; children: ReactNode; className?: string
+// Use one row style for history sources, spending, and bank records.
+export function DetailRecord({ title, value, label, meta, status, actions, children, className = '' }: {
+  title: string; value: ReactNode; label: string; meta?: ReactNode; status?: ReactNode;
+  actions?: ReactNode; children: ReactNode; className?: string
 }) {
-  return <article className={`detail-record ${className}${actions ? ' has-actions' : ''}`}>
+  return <article className={`detail-record ${className}`}>
     <details className="detail-record-details">
       <summary title={title}>
         <span className="record-sr-only">{label} · </span>
-        <strong className="detail-record-title">{title}</strong>
-        <span className="detail-record-value">{value}</span>
+        <span className="detail-record-heading"><strong className="detail-record-title">{title}</strong>{status}</span>
+        <span className="detail-record-secondary">
+          {meta && <span className="detail-record-meta">{meta}</span>}
+          <span className="detail-record-value">{value}</span>
+        </span>
       </summary>
       <div className="detail-record-content">{children}</div>
     </details>

@@ -23,4 +23,17 @@ function quoteApi(): Plugin {
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react(), quoteApi()],
+  build: {
+    rolldownOptions: {
+      output: {
+        codeSplitting: {
+          groups: [
+            { name: 'react', test: /node_modules\/(?:react|react-dom|scheduler)\// },
+            // Keep Vite's shared preload helper out of the lazy PDF chunk.
+            { name: 'pdf', test: /node_modules\/pdfjs-dist\/legacy\/build\/pdf\.mjs$/, includeDependenciesRecursively: false },
+          ],
+        },
+      },
+    },
+  },
 })

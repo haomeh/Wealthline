@@ -3,7 +3,7 @@ import { before, after, afterEach, test } from 'node:test'
 import { createServer } from 'vite'
 import { JSDOM } from 'jsdom'
 import { act, createElement } from 'react'
-let server, dom, root, createRoot, Summary, Chart, Overview, model
+let server, dom, root, createRoot, Summary, Overview, model
 before(async()=>{
  dom=new JSDOM('<div id="root"></div>',{url:'https://wealthline.test/'})
  for(const key of ['window','document','HTMLElement','Event','MouseEvent','KeyboardEvent']) globalThis[key]=dom.window[key]
@@ -12,7 +12,6 @@ before(async()=>{
  ;({createRoot}=await import('react-dom/client'))
  server=await createServer({configFile:false,envDir:false,server:{middlewareMode:true,watch:null,hmr:false,ws:false}})
  ;({CashflowSummary:Summary}=await server.ssrLoadModule('/src/views/CashflowSummary.tsx'))
- ;({CashflowChart:Chart}=await server.ssrLoadModule('/src/views/CashflowChart.tsx'))
  ;({Overview}=await server.ssrLoadModule('/src/views/Overview.tsx'))
  model=await server.ssrLoadModule('/src/model.ts')
 })
@@ -36,33 +35,60 @@ test('unified totals, directional review, investment and separate source navigat
  await click(button('銀行流水'));await click(button('信用卡消費'));assert.equal(bankNav,1);assert.equal(cardNav,1)
  assert.match(document.body.textContent,/不是帳戶餘額或淨資產/)
 })
-test('category tabs retain controls and complete signed values; nonpositive nets have no donut',async()=>{
+test('nested rings normalize separately and preserve signed and zero categories',async()=>{
+ await render(Summary,{expenses:[card],bankTransactions:[bank('a','credit',100,{kind:'income',category:'薪資'}),bank('b','debit',50,{kind:'income',category:'利息'}),bank('z','credit',0,{kind:'income',category:'股利'})],now:'2026-01-25'})
+ const inner=document.querySelector('[data-cashflow-ring="income"]'),outer=document.querySelector('[data-cashflow-ring="consumption"]')
+ assert.equal(inner.dataset.positiveTotal,'100');assert.equal(outer.dataset.positiveTotal,'200')
+ assert.equal(inner.querySelectorAll('[data-cashflow-slice]').length,1)
+ assert.ok(Number(inner.querySelector('circle').getAttribute('r'))<Number(outer.querySelector('circle').getAttribute('r')))
+ assert.match(document.querySelector('[role="img"]').getAttribute('aria-label'),/內圈收入 50；外圈實際消費 200/)
+ assert.match(document.querySelector('[aria-label="TWD 收入分類"]').textContent,/利息.*-50/)
+ assert.match(document.querySelector('[aria-label="TWD 收入分類"]').textContent,/股利.*0/)
+ assert.equal(document.querySelector('[data-cashflow-metric="difference"]').textContent,'-150')
+ const salary=inner.querySelector('[data-cashflow-slice="薪資"]')
+ assert.equal(salary.getAttribute('stroke-dasharray'),'100 0')
+ assert.equal(salary.getAttribute('stroke'),document.querySelector('[aria-label="TWD 收入分類"] i').style.background)
+ assert.doesNotMatch(document.body.innerHTML,/NaN/)
+})
+test('refund-only and pending-only records never turn into positive arcs',async()=>{
  await render(Summary,{bankTransactions:[bank('negative','credit',80,{kind:'expense',category:'購物'})],now:'2026-01-25'})
- await click(button('消費分類'))
- assert.equal(document.querySelector('[data-cashflow-donut]'),null)
- assert.match(document.body.textContent,/-80/)
- assert.match(document.body.textContent,/沒有正值分類/)
- assert.equal(document.querySelector('[aria-label="收支截止月份"]').value,'2026-01')
- await click(button('收入分類'));assert.doesNotMatch(document.body.innerHTML,/NaN/)
+ assert.equal(document.querySelectorAll('[data-cashflow-slice]').length,0)
+ assert.match(document.body.textContent,/-80/);assert.match(document.body.textContent,/沒有正值分類/)
+ assert.equal(document.querySelector('[data-cashflow-metric="difference"]').textContent,'+80')
+ await act(()=>root.unmount());root=null
+ await render(Summary,{bankTransactions:[bank('pending','debit',0,{kind:'pending'})],now:'2026-01-25'})
+ for(const key of ['income','consumption','difference'])assert.equal(document.querySelector(`[data-cashflow-metric="${key}"]`).textContent,'0')
+ assert.match(document.body.textContent,/待確認 · 1 筆/)
+ assert.equal(document.querySelectorAll('[data-cashflow-slice]').length,0)
+ assert.doesNotMatch(document.body.textContent,/這段期間無紀錄/)
 })
-test('positive donut denominator excludes signed negative and zero categories',async()=>{
- await render(Summary,{bankTransactions:[bank('a','credit',100,{kind:'income',category:'薪資'}),bank('b','debit',50,{kind:'income',category:'利息'}),bank('z','credit',0,{kind:'income',category:'股利'})],now:'2026-01-25'})
- await click(button('收入分類'));assert.ok(document.querySelector('[data-cashflow-donut]'));assert.match(document.body.textContent,/正值占比/);assert.match(document.body.textContent,/-50/)
- assert.equal(document.querySelector('[data-positive-total]').dataset.positiveTotal,'100')
+async function picker(){await click(document.querySelector('.cashflow-period-trigger'))}
+async function selectMonth(month){await click(document.querySelector(`.cashflow-month-grid button[aria-label^="${month} 月"]`))}
+test('period drafts require apply; cancel and Escape retain applied state and restore focus',async()=>{
+ await render(Summary,{expenses:[card,{...card,id:'feb',date:'2026-02-01',amount:300}],now:'2026-01-25'})
+ await picker();await selectMonth(2)
+ assert.equal(document.querySelector('[data-cashflow-metric="consumption"]').textContent,'200')
+ await click(button('取消'))
+ assert.equal(document.activeElement,document.querySelector('.cashflow-period-trigger'))
+ await picker();assert.equal(document.querySelector('.cashflow-month-grid button[aria-pressed="true"]').textContent,'1 月')
+ await selectMonth(2);await click(button('套用'))
+ assert.equal(document.querySelector('[data-cashflow-metric="consumption"]').textContent,'300')
+ await picker();await click(button('年度'))
+ await act(()=>document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true})))
+ assert.equal(document.querySelector('.cashflow-picker'),null)
+ assert.match(document.querySelector('.cashflow-period-trigger').textContent,/2026 年 2 月/)
 })
-test('all twelve plot hits use actual narrow overlay at two offsets; keyboard month buttons agree',async()=>{
- const months=Array.from({length:12},(_,i)=>({month:`2026-${String(i+1).padStart(2,'0')}`,income:i===0?null:i*10,consumption:i===0?null:-i,difference:null}))
- let selected=''
- await render(Chart,{months,currency:'TWD',selectedMonth:'',onSelectMonth:m=>selected=m})
- const overlay=document.querySelector('[data-cashflow-hit]')
- for(const left of [20,170]){
-  overlay.getBoundingClientRect=()=>({left,width:280,top:0,height:150,right:left+280,bottom:150})
-  for(let i=0;i<12;i++) {await act(()=>overlay.dispatchEvent(new MouseEvent('click',{bubbles:true,clientX:left+(i+.5)*280/12})));assert.equal(selected,months[i].month)}
- }
- const nodes=[...document.querySelectorAll('[data-cashflow-month]')]
- for(const key of ['Enter',' ']) for(let i=0;i<12;i++){await act(()=>nodes[i].dispatchEvent(new KeyboardEvent('keydown',{key,bubbles:true})));assert.equal(selected,months[i].month)}
- assert.equal(document.querySelectorAll('[data-cashflow-bar]').length,22)
- assert.match(document.body.textContent,/無紀錄/);assert.doesNotMatch(document.body.innerHTML,/NaN/)
+test('calendar year and all periods use observed records without mixing currencies',async()=>{
+ await render(Summary,{expenses:[card,{...card,id:'feb',date:'2026-02-01',amount:300},{...card,id:'old',date:'2025-01-01',amount:50},{...card,id:'usd',currency:'USD',amount:7}],now:'2026-01-25'})
+ const amount=currency=>document.querySelector(`[aria-label="${currency} 收支"] [data-cashflow-metric="consumption"]`).textContent
+ assert.equal(amount('TWD'),'200');assert.equal(amount('USD'),'7')
+ await picker();await click(button('年度'));await click(button('套用'))
+ assert.equal(amount('TWD'),'500');assert.equal(amount('USD'),'7')
+ await picker();await click(button('全部期間'));await click(button('套用'))
+ assert.equal(amount('TWD'),'550');assert.equal(amount('USD'),'7')
+ assert.equal(document.querySelectorAll('.cashflow-currency').length,2)
+ assert.equal(document.querySelector('select'),null)
+ assert.match(document.body.textContent,/不換算/)
 })
 test('Overview uses one unified section in empty and populated asset branches for each source combination',async()=>{
  for(const populated of [false,true]) for(const source of ['bank','card','both']) {
@@ -73,8 +99,9 @@ test('Overview uses one unified section in empty and populated asset branches fo
   await render(Overview,{data,onGoRates(){},onNewAccount(){},onImport(){},onOpenAccount(){}})
   assert.equal(document.querySelectorAll('[aria-label="統一收支總覽"]').length,1)
   assert.equal(document.querySelectorAll('[aria-label="消費統計"]').length,0)
-  const picker=document.querySelector('[aria-label="收支截止月份"]')
-  await act(()=>{picker.value='2026-01';picker.dispatchEvent(new Event('change',{bubbles:true}))})
+  await picker()
+  while(!document.querySelector('.cashflow-picker-year').textContent.includes('2026 年')) await click(document.querySelector('[aria-label="前一年"]'))
+  await selectMonth(1);await click(button('套用'))
   assert.match(document.querySelector('[data-cashflow-metric="income"]').textContent,source==='card'?/^0$/:/950/)
   assert.match(document.querySelector('[data-cashflow-metric="consumption"]').textContent,source==='bank'?/-20/:source==='card'?/200/:/180/)
   if(populated)assert.ok(document.querySelector('[aria-label="資產時間線"]'))
@@ -83,37 +110,19 @@ test('Overview uses one unified section in empty and populated asset branches fo
   await act(()=>root.unmount());root=null
  }
 })
-test('period and chart month selection share the cutoff; tabs preserve month and currency',async()=>{
- await render(Summary,{expenses:[card,{...card,id:'usd',currency:'USD'}],now:'2026-01-25'})
- await click(button('近 12 月'));assert.equal(document.querySelectorAll('[data-cashflow-month]').length,12)
- const select=document.querySelector('[aria-label="收支幣別"]')
- await act(()=>{select.value='USD';select.dispatchEvent(new Event('change',{bubbles:true}))})
- assert.match(document.querySelector('.cashflow-currency-heading').textContent,/USD/)
- await click(button('收入分類'));await click(button('趨勢'))
- assert.equal(document.querySelectorAll('[data-cashflow-month]').length,12)
- assert.equal(document.querySelector('[aria-label="收支截止月份"]').value,'2026-01')
- await click(document.querySelector('[data-cashflow-month="2025-12"]'))
- assert.equal(document.querySelector('[aria-label="收支截止月份"]').value,'2025-12')
+test('no-record period stays distinct from zero and current month warns about coverage',async()=>{
+ await render(Summary,{expenses:[{...card,date:'2025-01-01'}],now:'2026-01-25'})
  assert.match(document.body.textContent,/這段期間無紀錄/)
-})
-test('one month retains two signed series and zero/pending-only coverage; negative investment warning remains',async()=>{
- await render(Summary,{expenses:[card],bankTransactions:[bank('neg','debit',50,{kind:'income',category:'投資回收款'}),bank('p','credit',20,{kind:'pending'})],now:'2026-01-25'})
- await click(button('近 1 月'))
- assert.equal(document.querySelectorAll('[data-cashflow-bar]').length,2)
- assert.match(document.body.textContent,/可能包含投入本金，不代表投資收益/)
- const bars=[...document.querySelectorAll('[data-cashflow-bar]')]
- assert.ok(bars.every(b=>Number(b.getAttribute('height'))>0))
- await act(()=>root.unmount());root=null
- await render(Summary,{bankTransactions:[bank('only-pending','debit',0,{kind:'pending'})],now:'2026-01-25'})
- for(const key of ['income','consumption','difference'])assert.equal(document.querySelector(`[data-cashflow-metric="${key}"]`).textContent,'0')
- assert.match(document.body.textContent,/待確認 · 1 筆/)
+ assert.equal(document.querySelector('[data-cashflow-metric]'),null)
+ assert.match(document.body.textContent,/本月尚未結束/)
+ assert.match(document.body.textContent,/不代表完整月份/)
  assert.doesNotMatch(document.body.innerHTML,/NaN/)
 })
-test('no-record window is honest and currencies stay separate',async()=>{
- await render(Summary,{expenses:[{...card,date:'2025-01-01'}],now:'2026-01-25'})
- assert.match(document.body.textContent,/這段期間無紀錄/);assert.doesNotMatch(document.body.innerHTML,/NaN/)
- await act(()=>root.unmount());root=null
- await render(Summary,{expenses:[card,{...card,id:'usd',currency:'USD'}],now:'2026-01-25'})
- const select=document.querySelector('[aria-label="收支幣別"]');assert.equal(select.options.length,2)
- assert.match(document.body.textContent,/不換算/);assert.match(document.body.textContent,/本月尚未結束/);assert.match(document.body.textContent,/不代表完整月份/)
+
+test('category colors remain stable when other categories disappear between periods',async()=>{
+ await render(Summary,{bankTransactions:[bank('salary','credit',100,{kind:'income',category:'薪資'}),bank('interest','credit',10,{kind:'income',category:'利息'}),{...bank('feb-interest','credit',15,{kind:'income',category:'利息'}),date:'2026-02-01'}],now:'2026-01-25'})
+ const color=document.querySelector('[data-cashflow-slice="利息"]').getAttribute('stroke')
+ await picker();await selectMonth(2);await click(button('套用'))
+ assert.equal(document.querySelector('[data-cashflow-slice="利息"]').getAttribute('stroke'),color)
+ assert.equal(document.querySelector('[aria-label="TWD 收入分類"] i').style.background,color)
 })

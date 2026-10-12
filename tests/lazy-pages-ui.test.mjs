@@ -161,6 +161,24 @@ test('the overview shows the archived years from the summary without reading the
   assert.ok(!dates.includes('2025-03-10'), 'one point per month')
 })
 
+test('nested cashflow selects summary-only months and all periods without loading detail parts', async () => {
+  const drive = await splitDrive()
+  await open('/app')
+  await click(document.querySelector('.cashflow-period-trigger'))
+  const currentYear=()=>Number(document.querySelector('.cashflow-picker-year strong').textContent.replace(' 年',''))
+  while(currentYear()!==2026) await click(button(currentYear()>2026?'前一年':'後一年'))
+  const january=document.querySelector('.cashflow-month-grid button[aria-label="1 月，有紀錄"]')
+  assert.ok(january)
+  await click(january);await click(button('套用'))
+  assert.equal(document.querySelector('[data-cashflow-metric="consumption"]').textContent,'10')
+  assert.equal(document.querySelector('[data-cashflow-metric="difference"]').textContent,'-10')
+  await click(document.querySelector('.cashflow-period-trigger'))
+  await click(button('全部期間'));await click(button('套用'))
+  assert.equal(document.querySelector('[data-cashflow-metric="consumption"]').textContent,'10')
+  assert.match(document.querySelector('.cashflow-currency-heading').textContent,/2 筆紀錄/)
+  assert.deepEqual(drive.reads,[])
+})
+
 test('the account menu downloads a full backup with every part, which local mode accepts', async () => {
   const drive = await splitDrive()
   await open('/app')

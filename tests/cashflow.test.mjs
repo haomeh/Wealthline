@@ -182,3 +182,26 @@ test('bank-only/card-only sources, booked bank date and card date stay independe
   assert.throws(()=>summarize({bankTransactions:[bank({direction:'unknown'})]}))
   assert.throws(()=>summarize({expenses:[card(1,{currency:'bad'})]}))
 })
+
+test('all periods include distant observed months and retain validation and currency coverage',()=>{
+ const input={expenses:[card(12,{date:'2001-01-01'}),card(-2,{date:'2026-12-31'}),card(0,{currency:'USD',date:'2025-05-05'})]}
+ const groups=summarize(input,'2026-01','all')
+ assert.deepEqual(groups.map(g=>g.currency),['TWD','USD'])
+ assert.equal(groups[0].consumption,10)
+ assert.deepEqual(groups[0].months.map(m=>m.month),['2001-01','2025-05','2026-12'])
+ assert.deepEqual(groups[0].months.map(m=>m.consumption),[12,null,-2])
+ assert.equal(groups[1].consumption,0)
+ assert.deepEqual(summarize({},'2026-01','all'),[])
+ assert.throws(()=>summarize({expenses:[card(1,{date:'2026-02-30'})]},'2026-01','all'))
+ assert.throws(()=>summarize(input,'bad','all'))
+})
+
+test('precomputed split summaries match raw month, calendar-year and all-period totals without mutation',()=>{
+ const input={expenses:[card(12,{date:'2025-01-01',category:'餐飲'}),card(-2,{date:'2026-01-01',category:'餐飲'}),card(7,{currency:'USD',date:'2026-02-01'})],bankTransactions:[bank({classification:income('投資回收款'),amount:50}),bank({id:'pending',classification:{kind:'pending'},amount:20})]}
+ const months=[...cashflow.cashflowMonths({expenses:input.expenses}),...cashflow.cashflowMonths({bankTransactions:input.bankTransactions})]
+ const original=structuredClone(months)
+ for(const [end,period] of [['2026-01',1],['2026-12',12],['2026-01','all']]) assert.deepEqual(summarize({months},end,period),summarize(input,end,period))
+ assert.deepEqual(cashflow.cashflowMonthList({months}),['2026-02','2026-01','2025-01'])
+ assert.deepEqual(months,original)
+ assert.deepEqual(summarize({months:[],expenses:input.expenses},'2026-01','all'),[])
+})

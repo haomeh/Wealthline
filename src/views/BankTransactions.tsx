@@ -12,6 +12,7 @@ import { BankTransactionEditor } from './BankTransactionEditor'
 import { BANK_TEXT_NOTICE, classificationLabel } from './bankUiHelpers'
 import { fmt } from '../format'
 import { ActionIcon } from './ActionIcon'
+import { DetailRecord } from './DetailRecord'
 
 export function BankTransactions({data,onChange,busy,passwordScope}: {data:WealthData;onChange:(next:WealthData)=>void;busy:boolean;passwordScope?:string}) {
  const latest=useRef({data,busy,onChange})
@@ -53,8 +54,8 @@ export function BankTransactions({data,onChange,busy,passwordScope}: {data:Wealt
  <section className="panel bank-accounts"><h3>獨立流水帳戶</h3><form onSubmit={e=>{e.preventDefault();if(busy)return;try{change({accounts:[...(latest.current.data.bankTransactionAccounts??[]),{id:crypto.randomUUID(),label:protectBankText(label),bank:protectBankText(bank)}]});setLabel('');setBank('');setMessage('已新增獨立帳戶；請儲存變更。')}catch{setMessage('請填寫有效的帳戶標籤及銀行名稱。')}}}><fieldset disabled={busy} className="bank-fields"><label className="field"><span>帳戶標籤（不用完整帳號）</span><input aria-label="帳戶標籤" maxLength={100} required value={label} onChange={e=>setLabel(e.target.value)}/></label><label className="field"><span>銀行名稱</span><input aria-label="銀行名稱" maxLength={100} required value={bank} onChange={e=>setBank(e.target.value)}/></label></fieldset><button disabled={busy}>新增流水帳戶</button></form><ul>{displayAccounts.map(a=><AccountLabel key={`${a.id}:${a.label}`} account={a} automatic={!!bankStatementIdentity(a.bank)} referenced={rows.some(r=>r.accountId===a.id)||!!data.bankStatementBalances?.some(b=>b.ledgerAccountId===a.id)} busy={busy} onRename={label=>{try{change({accounts:(latest.current.data.bankTransactionAccounts??[]).map(v=>v.id===a.id?{...v,label:protectBankText(label)}:v)})}catch{setMessage('標籤無效，未修改帳戶。')}}} onRemove={()=>{const current=latest.current.data;if(current.bankTransactions?.some(r=>r.accountId===a.id)||current.bankStatementBalances?.some(b=>b.ledgerAccountId===a.id)){setMessage('帳戶仍被流水引用，請先清除流水。');return}change({accounts:(current.bankTransactionAccounts??[]).filter(v=>v.id!==a.id)})}}/>)}</ul></section>
  <BankCategoryRules rules={rules} busy={busy} onEdit={index=>setRuleEditor(index===undefined?{}:{index,rule:rules[index]})} onRemove={index=>change({rules:(latest.current.data.bankCategoryRules??[]).filter((_,i)=>i!==index)})}/>
  <section className="panel bank-record-panel"><div className="panel-head"><h3>{rows.length} 筆銀行流水</h3><button disabled={busy||!accounts.length} onClick={()=>setEditing({id:crypto.randomUUID(),accountId:accounts[0].id,date:'',description:'',direction:'debit',amount:0,currency:'TWD'})}>手動新增流水</button></div><div className="bank-fields"><label className="field"><span>帳戶篩選</span><select aria-label="流水帳戶篩選" value={accountFilter} onChange={e=>setAccountFilter(e.target.value)}><option value="">全部帳戶</option>{displayAccounts.map(a=><option value={a.id} key={a.id}>{a.label}</option>)}</select></label><label className="field"><span>幣別篩選</span><select aria-label="流水幣別篩選" value={currencyFilter} onChange={e=>setCurrencyFilter(e.target.value)}><option value="">全部幣別</option>{[...new Set(rows.map(r=>r.currency))].sort().map(c=><option key={c}>{c}</option>)}</select></label><label className="field"><span>月份篩選</span><input aria-label="流水月份篩選" type="month" value={monthFilter} onChange={e=>setMonthFilter(e.target.value)}/></label></div>
- {!rows.length && <p className="empty">還沒有銀行流水；可先建立帳戶並手動新增，或匯入支持版型的 PDF。</p>}<div className="bank-records">{[...groups.entries()].map(([key,group])=><section key={key} className="bank-record-group">
-  <header className="bank-record-group-head"><time dateTime={group.date}>{group.date}</time><span title={group.account}>{group.account}</span></header>
+ {!rows.length && <p className="empty">還沒有銀行流水；可先建立帳戶並手動新增，或匯入支持版型的 PDF。</p>}<div className="bank-records record-groups">{[...groups.entries()].map(([key,group])=><section key={key} className="bank-record-group">
+  <header className="record-group-head"><time dateTime={group.date}>{group.date}</time><span title={group.account}>{group.account}</span></header>
   {group.rows.map(row=><BankRecord key={row.id} row={row} account={group.account} rules={rules} busy={busy} onEdit={()=>setEditing(row)} onRule={()=>editRule(row)}/>)}
  </section>)}</div></section></div>
 }
@@ -65,17 +66,12 @@ function AccountLabel({account,automatic,referenced,busy,onRename,onRemove}:{acc
 
 function BankRecord({row,account,rules,busy,onEdit,onRule}:{row:BankTransaction;account:string;rules:BankCategoryRule[];busy:boolean;onEdit:()=>void;onRule:()=>void}) {
  const category=classificationLabel(row,rules),direction=row.direction==='debit'?'支出':'入帳'
- return <article className="bank-record">
-  <details className="bank-record-details">
-   <summary aria-label={`查看流水 ${row.id}`} title={row.description}>
-    <strong className="bank-record-description">{row.description}</strong>
-    <span className="bank-record-amount" data-direction={row.direction} aria-label={`${direction} ${row.currency} ${fmt(row.amount)}`}><span className="bank-record-currency">{row.currency}</span><strong>{row.direction==='credit'?'+':'−'}{fmt(row.amount)}</strong></span>
-   </summary>
-   <div className="bank-record-content"><p>{row.description}</p><dl><dt>日期／帳戶</dt><dd>{row.date} · {account}</dd><dt>分類</dt><dd>{category}</dd></dl></div>
-  </details>
-  <div className="bank-record-actions">
+ return <DetailRecord className="bank-record" title={row.description} label={`查看流水 ${row.id}`}
+  value={<span className="record-money" data-direction={row.direction} aria-label={`${direction} ${row.currency} ${fmt(row.amount)}`}><small>{row.currency}</small><strong>{row.direction==='credit'?'+':'−'}{fmt(row.amount)}</strong></span>}
+  actions={<>
    <button type="button" className="bank-record-rule" data-pending={category==='待確認'||undefined} disabled={busy} aria-label={`分類規則：${category}`} title="編輯匹配規則／新增規則" onClick={onRule}><ActionIcon name="tag"/></button>
    <button type="button" disabled={busy} aria-label={`編輯流水 ${row.id}`} title="編輯流水" onClick={onEdit}><ActionIcon name="edit"/></button>
-  </div>
- </article>
+  </>}>
+  <p>{row.description}</p><dl className="record-evidence"><dt>日期／帳戶</dt><dd>{row.date} · {account}</dd><dt>分類</dt><dd>{category}</dd></dl>
+ </DetailRecord>
 }

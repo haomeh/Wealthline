@@ -208,8 +208,9 @@ function StatementPreviewRow({row:r,index:i,duplicate,rules,busy,onPatch,onRule}
   return <div className="statement-preview-row" aria-label={`交易 ${i+1}`}>
     <label className="statement-preview-select"><input type="checkbox" disabled={busy} aria-label={`第 ${i+1} 筆`} checked={r.selected} onChange={e=>onPatch({selected:e.target.checked})}/></label>
     <div className="statement-preview-body">
-      <div className="statement-preview-meta"><span>{r.date} · {r.card}</span>{r.needsReview && <span className="tag" title="請核對商家、日期、金額並排除繳款">核對</span>}{duplicate && <span className="tag">重複</span>}</div>
       <DetailRecord title={r.description || '商家待填寫'} label={`編輯第 ${i+1} 筆交易`}
+        meta={<span title={`${r.date} · ${r.card}`}>{r.date} · {r.card}</span>}
+        status={<>{r.needsReview && <span className="tag" title="請核對商家、日期、金額並排除繳款">核對</span>}{duplicate && <span className="tag">重複</span>}</>}
         value={<span className="record-money"><small>{r.currency}</small><strong>{amountLabel}</strong></span>}
         actions={<CategoryRuleButton expense={r} rules={rules} busy={busy} label={`新增第 ${i+1} 筆分類規則`} editLabel={`編輯第 ${i+1} 筆分類規則`} onClick={onRule}/>}>
         <div className="expense-fields statement-preview-fields">
