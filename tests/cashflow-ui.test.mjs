@@ -117,6 +117,7 @@ test('Overview uses one unified section in empty and populated asset branches fo
 })
 test('no-record period stays distinct from zero and current month warns about coverage',async()=>{
  await render(Summary,{expenses:[{...card,date:'2025-01-01'}],now:'2026-01-25'})
+ await picker();await click(document.querySelector('[aria-label="後一年"]'));await selectMonth(1);await click(button('套用'))
  assert.match(document.body.textContent,/這段期間無紀錄/)
  assert.equal(document.querySelector('[data-cashflow-metric]'),null)
  assert.match(document.body.textContent,/本月尚未結束/)
@@ -145,7 +146,8 @@ test('missing FX automatically requests, hides partial totals, and retry bypasse
 test('new currency-month requests automatically and stale selection results cannot replace current totals',async()=>{
  const pending=[]
  globalThis.fetch=(url)=>new Promise(resolve=>pending.push({url,resolve}))
- await render(Summary,{expenses:[{...card,currency:'USD',amount:1},{...card,id:'feb',currency:'SGD',date:'2026-02-01',amount:2}],now:'2026-03-10'})
+ await render(Summary,{expenses:[{...card,currency:'USD',amount:1},{...card,id:'feb',currency:'SGD',date:'2026-02-01',amount:2},{...card,id:'mar',date:'2026-03-01'}],now:'2026-03-10'})
+ assert.equal(pending.length,0)
  await picker();await selectMonth(1);await click(button('套用'))
  assert.match(document.querySelector('[role="status"]').textContent,/正在換算/)
  assert.equal(pending.length,1)
@@ -166,4 +168,29 @@ test('summary-only input converts to one chart without needing raw detail record
  assert.equal(document.querySelector('[data-cashflow-metric="consumption"]').textContent,'264')
  await picker();assert.ok(document.querySelector('button[aria-label="1 月，有紀錄"]'))
  assert.deepEqual(months,before)
+})
+
+// A bank statement imported for an earlier month (Harvey's HSBC SG rows were 2024-04, all unclassified).
+test('the overview opens on the latest recorded month when the current month has none, and shows unclassified bank rows',async()=>{
+ const imported=[{...bank('a','debit',1060.03,undefined),date:'2024-04-03'},{...bank('b','credit',0.23,undefined),date:'2024-04-08'}]
+ let bankNav=0
+ await render(Summary,{bankTransactions:imported,now:'2026-10-12',onGoBankTransactions:()=>bankNav++})
+ assert.match(document.querySelector('.cashflow-period-trigger').textContent,/2024 年 4 月/)
+ assert.doesNotMatch(document.body.textContent,/這段期間無紀錄/)
+ const note=document.querySelector('[data-cashflow-pending]')
+ assert.ok(note,'unclassified rows are named outside the collapsed review')
+ assert.match(note.textContent,/2 筆銀行流水未分類，不計入收入或消費/)
+ await click([...note.querySelectorAll('button')].find(el=>el.textContent==='前往分類'));assert.equal(bankNav,1)
+ // An empty month offers the latest recorded month.
+ await picker();while(!document.querySelector('.cashflow-picker-year').textContent.includes('2026 年')) await click(document.querySelector('[aria-label="後一年"]'))
+ await selectMonth(10);await click(button('套用'))
+ assert.match(document.body.textContent,/這段期間無紀錄/)
+ await click(button('查看 2024 年 4 月'))
+ assert.match(document.querySelector('.cashflow-period-trigger').textContent,/2024 年 4 月/)
+ assert.ok(document.querySelector('[data-cashflow-pending]'))
+})
+test('the current month stays the default when it has records',async()=>{
+ await render(Summary,{expenses:[card,{...card,id:'old',date:'2025-03-01'}],now:'2026-01-25'})
+ assert.match(document.querySelector('.cashflow-period-trigger').textContent,/2026 年 1 月/)
+ assert.equal(document.querySelector('[data-cashflow-pending]'),null)
 })

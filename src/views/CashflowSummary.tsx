@@ -14,18 +14,24 @@ function Review({label,total,currency}: {label:string;total:CashflowReviewTotals
   return <div className="cashflow-review-item"><strong>{label} · {total.count} 筆</strong><span>支出方向 {total.debitCount} 筆 · {currency} {fmt(total.debitAmount)}</span><span>入帳方向 {total.creditCount} 筆 · {currency} {fmt(total.creditAmount)}</span></div>
 }
 type Selection = {range:'month'|'year'|'all';year:number;month:number}
+const monthKey=(year:number,month:number)=>`${String(year).padStart(4,'0')}-${String(month).padStart(2,'0')}`
+const monthSelection=(key:string):Selection=>({range:'month',year:Number(key.slice(0,4)),month:Number(key.slice(5,7))})
 
 export function CashflowSummary({now,onGoExpenses,onGoBankTransactions,...input}: CashflowSummaryProps) {
   const date=new Date(now)
-  const [selection,setSelection]=useState<Selection>({range:'month',year:date.getFullYear(),month:date.getMonth()+1})
+  const currentMonth=monthKey(date.getFullYear(),date.getMonth()+1)
+  const {expenses,expenseRules,bankTransactions,bankRules,months}=input
+  const monthList=useMemo(()=>cashflowMonthList({expenses,bankTransactions,months}),[expenses,bankTransactions,months])
+  const recordedMonths=new Set(monthList)
+  // An imported statement is usually for an earlier month: without records this month, open on the latest one.
+  const latestMonth=monthList.find(month=>month<=currentMonth) ?? monthList[0]
+  const [selection,setSelection]=useState<Selection>(()=>monthSelection(recordedMonths.has(currentMonth) || !latestMonth || latestMonth>currentMonth ? currentMonth : latestMonth))
   const [draft,setDraft]=useState(selection)
   const [open,setOpen]=useState(false)
   const pickerId=useId()
   const trigger=useRef<HTMLButtonElement>(null)
-  const endMonth=`${String(selection.year).padStart(4,'0')}-${selection.range==='year'?'12':String(selection.month).padStart(2,'0')}`
+  const endMonth=monthKey(selection.year,selection.range==='year'?12:selection.month)
   const period=selection.range==='all'?'all':selection.range==='year'?12:1
-  const recordedMonths=new Set(cashflowMonthList(input))
-  const {expenses,expenseRules,bankTransactions,bankRules,months}=input
   const rawGroups=useMemo(()=>cashflowSummary({expenses,expenseRules,bankTransactions,bankRules,months},endMonth,period),[expenses,expenseRules,bankTransactions,bankRules,months,endMonth,period])
   const today=`${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`
   const needsFx=rawGroups.some(group=>group.currency!=='TWD')
@@ -58,14 +64,17 @@ export function CashflowSummary({now,onGoExpenses,onGoBankTransactions,...input}
       <div className="segmented" role="group" aria-label="時間範圍">{([['month','月份'],['year','年度'],['all','全部期間']] as const).map(([range,text])=><button key={range} aria-pressed={draft.range===range} className={draft.range===range?'on':''} onClick={()=>setDraft({...draft,range})}>{text}</button>)}</div>
       {draft.range!=='all' && <div className="cashflow-picker-year"><button aria-label="前一年" disabled={draft.year<=1} onClick={()=>setDraft({...draft,year:draft.year-1})}>‹</button><strong>{draft.year} 年</strong><button aria-label="後一年" disabled={draft.year>=9999} onClick={()=>setDraft({...draft,year:draft.year+1})}>›</button></div>}
       {draft.range==='month' && <><div className="cashflow-month-grid">{Array.from({length:12},(_,i)=>{
-        const month=i+1, hasData=recordedMonths.has(`${String(draft.year).padStart(4,'0')}-${String(month).padStart(2,'0')}`)
+        const month=i+1, hasData=recordedMonths.has(monthKey(draft.year,month))
         return <button key={month} aria-label={`${month} 月${hasData?'，有紀錄':''}`} aria-pressed={draft.month===month} className={hasData?'has-records':''} onClick={()=>setDraft({...draft,month})}>{month} 月</button>
       })}</div><p className="muted small">圓點表示有紀錄</p></>}
     </section>}
     {loading && <p role="status" className="notice">正在換算每月匯率…</p>}
     {needsFx && current?.error && <div role="alert" className="notice"><p>無法完成 TWD 換算：{current.error}。未顯示部分合計。</p><button onClick={()=>setAttempt(attempt+1)}>重試匯率</button></div>}
-    {!rawGroups.length ? <p className="cashflow-no-record muted">這段期間無紀錄，不代表收支為零。</p>:groups.map(group=><section className="cashflow-currency" key={group.currency} aria-label={`${group.currency} 收支`}>
+    {!rawGroups.length ? <div className="cashflow-no-record"><p className="muted">這段期間無紀錄，不代表收支為零。</p>
+      {latestMonth && <button onClick={()=>setSelection(monthSelection(latestMonth))}>查看 {Number(latestMonth.slice(0,4))} 年 {Number(latestMonth.slice(5,7))} 月</button>}
+    </div>:groups.map(group=><section className="cashflow-currency" key={group.currency} aria-label={`${group.currency} 收支`}>
       <div className="cashflow-currency-heading"><strong>{group.currency}</strong><span className="muted small">{group.coverage.recordCount} 筆紀錄</span></div>
+      {group.pending.count>0 && <p className="notice small cashflow-pending" role="note" data-cashflow-pending><span>{group.pending.count} 筆銀行流水未分類，不計入收入或消費；分類後才會計入。</span>{onGoBankTransactions && <button className="link" onClick={onGoBankTransactions}>前往分類</button>}</p>}
       <CashflowChart group={group}/>
       {group.investmentRecovery.hasRecords && <p className="notice small" role="note">投資回收款：可能包含投入本金，不代表投資收益</p>}
       <details className="cashflow-review"><summary>待確認 {group.pending.count} 筆 · 已排除 {group.excluded.count} 筆</summary>

@@ -2711,7 +2711,9 @@ dialog.expense-rule-dialog { max-width: 440px; }
 .cashflow-review-item strong { min-width: 140px; }
 .cashflow-sources > div { border-left: 2px solid var(--hairline); padding-left: 16px; margin: 16px 0; }
 .cashflow-sources h4 { margin-bottom: 8px; }
-.cashflow-no-record { padding: 24px 0; }
+.cashflow-no-record { padding: 24px 0; display: grid; justify-items: start; gap: 12px; }
+.cashflow-no-record p { margin: 0; }
+.cashflow-pending { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; }
 .cashflow-footnote { margin: 0; }
 @media (max-width: 700px) {
   .cashflow-nested { grid-template-columns: minmax(0, 1fr); gap: 24px; }
