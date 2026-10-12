@@ -379,7 +379,7 @@ export function parseBankStatement(pages: readonly BankPage[], metadata: BankSta
                 if (cells.length === 2 && cells.every(i => money(i.text) === 0))
                     section.noTransactions = true;
             }
-            if (layout === dbsSingapore && /^CURRENCY\s*:/i.test(l.text)) {
+            if (layout === dbsSingapore && /^CURRENCY\s*:/i.test(l.text) && l.items.some(i => i.x < table!.descriptionX && /^CURRENCY\s*:/i.test(i.text))) {
                 if (/^CURRENCY\s*:\s*SINGAPORE DOLLAR$/i.test(l.text))
                     continue;
                 // A foreign block also ends a closed SGD table: report its exclusion.
@@ -545,6 +545,10 @@ export function parseBankStatement(pages: readonly BankPage[], metadata: BankSta
                 discard('missing-explicit-amount');
             }
         }
+        // A page can end after a complete row but before the section's closing total.
+        // Warn even when there is no pending row; a headerless next page cannot be verified.
+        if (layout === dbsSingapore && table && !closed)
+            issue(p.page, 'unproven-page-continuity');
         if (mayContinue && pending && !table)
             discard('unproven-page-continuity');
     }

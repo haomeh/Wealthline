@@ -15,7 +15,7 @@ export function dbsSingaporeContext(lines: readonly SpatialLine[], index: number
     if (!table) return;
     const headings = lines.slice(0, index).filter(row => row.y - header.y <= 40 * table.scale && row.items.some(i => i.x < table.descriptionX && /^My Account$/i.test(i.text)));
     const accounts = new Set(headings.flatMap(row => row.items.filter(i => i.x > table.debitEdge).map(i => labeledAccount(i.text)).filter((id): id is string => !!id)));
-    const labels = lines.slice(index + 1).filter(row => header.y - row.y <= 45 * table.scale && /^CURRENCY:/i.test(row.text));
+    const labels = lines.slice(index + 1).filter(row => header.y - row.y <= 45 * table.scale && /^CURRENCY:/i.test(row.text) && row.items.some(i => i.x < table.descriptionX && /^CURRENCY\s*:/i.test(i.text)));
     if (accounts.size !== 1 || labels.length !== 1 || !/^CURRENCY:\s*SINGAPORE DOLLAR$/i.test(labels[0].text)) return;
     return { account: [...accounts][0], currency: 'SGD' };
 }

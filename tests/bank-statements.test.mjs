@@ -263,3 +263,32 @@ test('unrecognized DBS region is generic even when the masthead mentions Singapo
   assert.equal(r.status,'unsupported');assert.equal(r.bank,'DBS');assert.equal(r.recognizedCount,0);
  }
 })
+
+test('open DBS SGD page without a closing total warns even if all recognized rows are complete',()=>{
+ for(const continuation of [false,true]){
+  const p=dbsSgWithoutNarration();
+  if(continuation)p[2]={page:3,width:594,height:792,items:[item('04/09/2031',45,600),item('Unverified headerless continuation',113,600),right('55.00',395,600)]};
+  else p.splice(2);
+  const r=bank.parseBankStatement(p);assert.equal(r.status,'partial');assert.equal(r.recognizedCount,2);assert.equal(r.rejectedCount,1);
+  assert.deepEqual(r.sections[0].warnings,[{page:2,code:'unproven-page-continuity',count:1}]);
+  assert.ok(!JSON.stringify(r).includes('Unverified headerless continuation'));
+ }
+})
+test('DBS closing total keeps a complete clean table recognized without a continuity warning',()=>{
+ const p=dbsSgWithoutNarration();p[1].items.push(item('Total Balance Carried Forward in SGD:',113,122),right('12.00',395,122),right('42.50',474,122),right('987684.82',548,122));
+ const r=bank.parseBankStatement(p);assert.equal(r.status,'recognized');assert.equal(r.recognizedCount,2);assert.equal(r.rejectedCount,0);
+})
+test('Currency-prefixed DBS narration stays a review candidate and never switches the table currency',()=>{
+ for(const text of ['Currency: US DOLLAR','CURRENCY: SINGAPORE DOLLAR','Currency:']){
+  const p=dbsSg();p[1].items.push(item(text,113,460));const r=bank.parseBankStatement(p);
+  assert.equal(r.recognizedCount,2);assert.equal(r.sections.length,1);assert.equal(r.sections[0].currency,'SGD');
+  assert.ok(r.sections[0].rows[1].ambiguousNarration.trailing.includes(text));
+  assert.ok(r.sections[0].warnings.every(w=>w.code==='ambiguous-trailing-narration'));
+ }
+})
+test('DBS currency evidence comes from the date column, excluding nearby description text',()=>{
+ const misplaced=dbsSg();misplaced[1].items.find(i=>i.text==='CURRENCY: SINGAPORE DOLLAR').x=113;
+ assert.equal(bank.parseBankStatement(misplaced).recognizedCount,0);
+ const nearby=dbsSg();nearby[1].items.push(item('Currency: US DOLLAR',113,565));
+ const r=bank.parseBankStatement(nearby);assert.equal(r.bank,'DBS Singapore');assert.equal(r.recognizedCount,2);
+})
