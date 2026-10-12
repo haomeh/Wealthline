@@ -79,6 +79,8 @@ export interface Layout {
     ];
     decimalOnly?: boolean;
     wrapped?: boolean;
+    /** Never inherit a date for a new amount-bearing row in this layout. */
+    datedRowsOnly?: boolean;
     partial?: boolean;
     accountColumn?: boolean;
     currencyColumn?: boolean;

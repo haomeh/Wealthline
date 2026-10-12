@@ -20,7 +20,7 @@ test('validated activity-shaped footer row is warned rather than silently droppe
  const r=bank.parseBankStatement(p);assert.equal(r.recognizedCount,1);assert.equal(r.status,'partial');assert.ok(r.sections[0].warnings.some(w=>w.code==='activity-below-table-boundary'));
 })
 let server,bank
-before(async()=>{server=await createServer({configFile:false,envDir:false,server:{middlewareMode:true,watch:null,hmr:false,ws:false}});bank=await server.ssrLoadModule('/src/bankStatements.ts')})
+before(async()=>{server=await createServer({cacheDir:'node_modules/.vite-bank-statements',configFile:false,envDir:false,server:{middlewareMode:true,watch:null,hmr:false,ws:false}});bank=await server.ssrLoadModule('/src/bankStatements.ts')})
 after(()=>server?.close())
 test('observed HSBC variants group wrapped rows; amounts not balances or narrative numbers',()=>{
  for(const sg of [false,true]) {const r=bank.parseBankStatement(hsbc(sg));assert.equal(r.status,'recognized');assert.equal(r.sections[0].rows.length,1);assert.equal(r.sections[0].rows[0].amount,42.5);assert.equal(r.sections[0].rows[0].direction,'debit');assert.equal(r.sections[0].rows[0].date,sg?'2031-07-09':'2031-06-17');assert.match(r.sections[0].rows[0].description,/123456789012/);assert.ok(!JSON.stringify(r).includes('7700001111'))}
@@ -66,7 +66,7 @@ test('positional parser limits, invalid coordinates and duplicate pages reject w
 })
 
 test('neutral PDF lifecycle bounds, local resources, retries, abort and cleanup without card scoping',async()=>{
- const mockServer=await createServer({configFile:false,envDir:false,ssr:{noExternal:['pdfjs-dist']},server:{middlewareMode:true,watch:null,hmr:false,ws:false},plugins:[{name:'bank-pdf-lifecycle-mock',enforce:'pre',resolveId(id){if(id==='pdfjs-dist/legacy/build/pdf.mjs')return '\0bank-pdf-test'},load(id){if(id==='\0bank-pdf-test')return `
+ const mockServer=await createServer({cacheDir:'node_modules/.vite-bank-pdf-lifecycle',configFile:false,envDir:false,ssr:{noExternal:['pdfjs-dist']},server:{middlewareMode:true,watch:null,hmr:false,ws:false},plugins:[{name:'bank-pdf-lifecycle-mock',enforce:'pre',resolveId(id){if(id==='pdfjs-dist/legacy/build/pdf.mjs')return '\0bank-pdf-test'},load(id){if(id==='\0bank-pdf-test')return `
  export const GlobalWorkerOptions={};export class PasswordException extends Error{};
  export function getDocument(options){const s=globalThis.__bankPdfLifecycle;s.options=options;s.opened++;let reject;const task={destroy:async()=>{s.destroyed++;reject?.(new Error('destroyed'))}};
  task.promise=new Promise((resolve,fail)=>{reject=fail;queueMicrotask(()=>{try {if(s.password){for(let n=0;n<10;n++){let candidate;task.onPassword(value=>candidate=value);if(candidate instanceof Error)throw new PasswordException();s.tried.push(candidate);if(candidate===s.password)break;if(n===9)throw new PasswordException()}}
@@ -74,7 +74,8 @@ test('neutral PDF lifecycle bounds, local resources, retries, abort and cleanup 
  const reset=extra=>globalThis.__bankPdfLifecycle={opened:0,destroyed:0,cleaned:0,tried:[],...extra}
  try {const doc=await mockServer.ssrLoadModule('/src/statementDocument.ts');
   let state=reset({password:'synthetic-secret'});const r=await doc.readBankDocument(new Uint8Array([1]),['wrong','synthetic-secret'],new AbortController().signal);assert.equal(r.mode,'bank');assert.deepEqual(r.pages[0].items[0],{text:'HSBC Taiwan',x:30,y:820,width:60,height:9});assert.deepEqual(state.tried,['wrong','synthetic-secret']);assert.equal(state.cleaned,1);assert.equal(state.destroyed,1);assert.equal(state.options.useWorkerFetch,false);assert.equal(state.options.useWasm,false);
-  state=reset({password:'synthetic-secret'});await assert.rejects(doc.readBankDocument(new Uint8Array([1]),['wrong'],new AbortController().signal),/密碼/);assert.equal(state.destroyed,1)
+  state=reset({password:'synthetic-secret'});await assert.rejects(doc.readBankDocument(new Uint8Array([1]),['wrong'],new AbortController().signal),/提供的密碼無法開啟/);assert.equal(state.destroyed,1)
+  for(const passwords of ['',[],[''], ' , ']){state=reset({password:'synthetic-secret'});await assert.rejects(doc.readBankDocument(new Uint8Array([1]),passwords,new AbortController().signal),/此帳單需要密碼/);assert.equal(state.destroyed,1)}
   state=reset({numPages:101});await assert.rejects(doc.readBankDocument(new Uint8Array([1]),'',new AbortController().signal),/100 頁/);assert.equal(state.destroyed,1)
   state=reset({items:[{str:'x'.repeat(500001),transform:[1,0,0,1,1,1],width:1,height:1}]});await assert.rejects(doc.readBankDocument(new Uint8Array([1]),'',new AbortController().signal),/文字過多/);assert.equal(state.cleaned,1);assert.equal(state.destroyed,1)
   state=reset({items:[]});await assert.rejects(doc.readBankDocument(new Uint8Array([1]),'',new AbortController().signal),/沒有可讀取/);assert.equal(state.destroyed,1)
@@ -135,7 +136,7 @@ test('Chinese section currencies and zero transaction counts do not become amoun
  const p=hsbc();p[0].items=p[0].items.filter(i=>i.y>=700);p[0].items.find(i=>i.text.includes('活期')).text='綜合外幣存款';p[0].items.push(item('美金',559,686),item('17/06/2031',53,678),item('承前結餘',103,678),right('100.00',573,678),item('結餘',103,670),right('100.00',573,670),item('交易總額',103,662),right('0.00',402,662),right('0.00',482,662),item('交易次數',103,654),right('0',402,654),right('0',482,654));const r=bank.parseBankStatement(p);assert.equal(r.status,'recognized');assert.equal(r.sections[0].currency,'USD');assert.equal(r.sections[0].noTransactions,true);assert.equal(r.recognizedCount,0)
 })
 test('raster DBS logo requires statement plus branded footer; generic/disclosure headers fail closed',()=>{
- const p=[page(1,[item('綜合對帳單',325,533),item('DBS Bank',138,67)])];assert.equal(bank.parseBankStatement(p).bank,'DBS Taiwan');assert.equal(bank.parseBankStatement(p).warnings[0].code,'unsupported-dbs-activity-layout');
+ const p=[page(1,[item('綜合對帳單',325,533),item('DBS Bank',138,67)])];assert.equal(bank.parseBankStatement(p).bank,'DBS');assert.equal(bank.parseBankStatement(p).warnings[0].code,'unsupported-dbs-activity-layout');
  const generic=hsbc();generic[0].items=generic[0].items.filter(i=>i.y<=700);generic[0].items.push(item('Disclosure mentions HSBC',30,200));assert.equal(bank.parseBankStatement(generic).status,'unsupported');
  const bad=hsbc();bad[0].items.find(i=>i.text.includes('活期')).text='信用卡摘要 SGD';assert.equal(bank.parseBankStatement(bad).recognizedCount,0)
 })
@@ -178,4 +179,116 @@ test('undated money in a validated wrapped table below the footer boundary warns
  assert.equal(bank.parseBankStatement(footer).status,'recognized');
  const closed=hsbc();closed[0].items.push(item('Closing Balance',103,640),right('7.00',482,90));assert.equal(bank.parseBankStatement(closed).status,'recognized');
  const two=hsbc();two[0].items.push(right('7.00',482,90),right('7.00',402,90));assert.equal(bank.parseBankStatement(two).status,'recognized')
+})
+
+// All values are invented. Coordinates and labels reflect the observed DBS SG table.
+const dbsSg=()=>[
+ {page:1,width:594,height:792,items:[item('DBS Bank Ltd',30,740),item('Consolidated Statement',401,711)]},
+ {page:2,width:594,height:792,items:[
+  item('My Account',45,626),item('Account No. 271-000111-7',441,626),
+  item('Date',45,604),item('Description',113,604),item('Withdrawal (-)',338,604),item('Deposit (+)',430,604),item('Balance',515,604),
+  item('CURRENCY: SINGAPORE DOLLAR',53,574),
+  item('Balance Brought Forward',113,549),right('987654.32',548,549),
+  item('02/09/2031',45,531),item('Example incoming',113,531),right('42.50',474,531),right('987696.82',548,531),
+  item('Account No. 271-000111-7',113,521),item('Reference 123456789012',113,510),
+  item('03/09/2031',45,483),item('Example payment',113,483),right('12.00',395,483),right('987684.82',548,483),
+  item('VALUE DATE : 03/09/2031',113,473),
+  item('Total Balance Carried Forward in SGD:',113,122),right('12.00',395,122),right('42.50',474,122),right('987684.82',548,122),
+ ]},
+ {page:3,width:594,height:792,items:[item('Disclosure',34,704),item('04/09/2031',45,600),item('Not an activity table',113,600),right('99.00',395,600)]}
+]
+test('DBS Singapore validates own account and SGD table, separates money from balances, preserves wrapped narration for review',()=>{
+ const pages=dbsSg(),before=JSON.stringify(pages),r=bank.parseBankStatement(pages);
+ assert.equal(r.bank,'DBS Singapore');assert.equal(r.status,'partial');assert.equal(r.recognizedCount,2);assert.equal(r.sections.length,1);
+ assert.deepEqual(r.sections[0].rows.map(row=>[row.date,row.currency,row.direction,row.amount]),[['2031-09-02','SGD','credit',42.5],['2031-09-03','SGD','debit',12]]);
+ assert.ok(r.sections[0].warnings.every(w=>w.code==='ambiguous-trailing-narration'));
+ assert.equal(r.sections[0].rows[0].page,2);assert.match(r.sections[0].rows[0].ambiguousNarration.trailing.join(' '),/帳號已遮蔽/);assert.match(r.sections[0].rows[1].ambiguousNarration.trailing.join(' '),/VALUE DATE/);
+ assert.ok(!JSON.stringify(r).includes('271-000111-7'));assert.ok(!JSON.stringify(r).includes('987684.82'));assert.equal(JSON.stringify(pages),before);
+ pages[1].items.reverse();assert.deepEqual(bank.parseBankStatement(pages),r);
+})
+test('DBS Singapore needs bank identity, complete positional header, own-account heading and exact currency evidence',()=>{
+ for(const kind of ['bank','header','shifted','account','currency','conflict']){
+  const p=dbsSg();
+  if(kind==='bank'){p[0].items[0].text='Other bank';p[1].items.push(item('Payment to DBS Bank',113,450));}
+  if(kind==='header')p[1].items=p[1].items.filter(i=>i.text!=='Deposit (+)');
+  if(kind==='shifted')p[1].items.find(i=>i.text==='Withdrawal (-)').x+=70;
+  if(kind==='account')p[1].items=p[1].items.filter(i=>!i.text.startsWith('Account No.'));
+  if(kind==='currency')p[1].items.find(i=>i.text.startsWith('CURRENCY:')).text='CURRENCY: US DOLLAR';
+  if(kind==='conflict')p[1].items.push(item('Account No. 271-000222-8',441,636),item('My Account',45,636));
+  assert.equal(bank.parseBankStatement(p).recognizedCount,0,kind);
+ }
+})
+test('DBS Singapore rejects missing dates, ambiguous debit/credit, malformed amounts and undated activity without importing balances',()=>{
+ for(const kind of ['missing-date','invalid-date','two-amounts','malformed','undated']){
+  const p=dbsSg();
+  if(kind==='missing-date')p[1].items=p[1].items.filter(i=>i.text!=='03/09/2031');
+  if(kind==='invalid-date')p[1].items.find(i=>i.text==='03/09/2031').text='31/09/2031';
+  if(kind==='two-amounts')p[1].items.push(right('8.00',474,483));
+  if(kind==='malformed')p[1].items.find(i=>i.text==='12.00'&&i.y===483).text='12.xx';
+  if(kind==='undated')p[1].items.push(item('Unexpected payment',113,450),right('8.00',395,450));
+  const r=bank.parseBankStatement(p);assert.equal(r.recognizedCount,kind==='undated'?2:1,kind);assert.ok(r.rejectedCount>0,kind);
+ }
+})
+test('DBS opening and closing balances alone never prove zero transactions',()=>{
+ const p=dbsSg();p[1].items=p[1].items.filter(i=>i.y>=549||i.y===122);const r=bank.parseBankStatement(p);
+ assert.equal(r.status,'unsupported');assert.equal(r.recognizedCount,0);assert.ok(!r.sections.some(s=>s.noTransactions));
+})
+
+const dbsSgWithoutNarration=()=>{
+ const p=dbsSg();p[1].items=p[1].items.filter(i=>![521,510,473,122].includes(i.y));return p;
+}
+test('DBS Singapore closes foreign currency blocks and warns before or after an SGD total',()=>{
+ for(const withTotal of [false,true]){
+  const p=dbsSgWithoutNarration();
+  if(withTotal)p[1].items.push(item('Total Balance Carried Forward in SGD:',113,470),right('12.00',395,470),right('42.50',474,470),right('987684.82',548,470));
+  p[1].items.push(item('CURRENCY: US DOLLAR',53,450),item('04/09/2031',45,420),item('Foreign payment',113,420),right('55.00',395,420),right('145.00',548,420));
+  const r=bank.parseBankStatement(p);assert.equal(r.status,'partial',String(withTotal));assert.equal(r.recognizedCount,2);assert.equal(r.sections.length,1);
+  assert.deepEqual(r.sections[0].rows.map(row=>[row.currency,row.amount]),[['SGD',42.5],['SGD',12]]);
+  assert.deepEqual(r.sections[0].warnings.map(w=>w.code),['unsupported-dbs-sg-account']);
+  assert.equal(r.rejectedCount,1);assert.ok(!JSON.stringify(r).includes('Foreign payment'));
+ }
+})
+test('DBS foreign currency boundary discards pending and requires a new validated table to resume',()=>{
+ for(const marker of ['CURRENCY: US DOLLAR','CURRENCY : EURO','CURRENCY:']){
+  const p=dbsSgWithoutNarration();
+  p[1].items.push(item('04/09/2031',45,470),item('Unfinished SGD payment',113,470),item(marker,53,450),right('55.00',395,430),item('CURRENCY: SINGAPORE DOLLAR',53,410),item('05/09/2031',45,390),item('Unvalidated return to SGD',113,390),right('66.00',395,390));
+  const r=bank.parseBankStatement(p);assert.equal(r.recognizedCount,2);assert.equal(r.status,'partial');
+  assert.deepEqual(r.sections[0].warnings.map(w=>w.code),['currency-boundary','unsupported-dbs-sg-account']);
+  assert.ok(!JSON.stringify(r).includes('Unfinished SGD payment'));assert.ok(!JSON.stringify(r).includes('Unvalidated return to SGD'));
+ }
+})
+test('unrecognized DBS region is generic even when the masthead mentions Singapore',()=>{
+ for(const brand of ['DBS Singapore','DBS Taiwan','DBS Bank Ltd']){
+  const r=bank.parseBankStatement([{page:1,width:594,height:792,items:[item(brand,30,740),item('Account Summary',30,600)]}]);
+  assert.equal(r.status,'unsupported');assert.equal(r.bank,'DBS');assert.equal(r.recognizedCount,0);
+ }
+})
+
+test('open DBS SGD page without a closing total warns even if all recognized rows are complete',()=>{
+ for(const continuation of [false,true]){
+  const p=dbsSgWithoutNarration();
+  if(continuation)p[2]={page:3,width:594,height:792,items:[item('04/09/2031',45,600),item('Unverified headerless continuation',113,600),right('55.00',395,600)]};
+  else p.splice(2);
+  const r=bank.parseBankStatement(p);assert.equal(r.status,'partial');assert.equal(r.recognizedCount,2);assert.equal(r.rejectedCount,1);
+  assert.deepEqual(r.sections[0].warnings,[{page:2,code:'unproven-page-continuity',count:1}]);
+  assert.ok(!JSON.stringify(r).includes('Unverified headerless continuation'));
+ }
+})
+test('DBS closing total keeps a complete clean table recognized without a continuity warning',()=>{
+ const p=dbsSgWithoutNarration();p[1].items.push(item('Total Balance Carried Forward in SGD:',113,122),right('12.00',395,122),right('42.50',474,122),right('987684.82',548,122));
+ const r=bank.parseBankStatement(p);assert.equal(r.status,'recognized');assert.equal(r.recognizedCount,2);assert.equal(r.rejectedCount,0);
+})
+test('Currency-prefixed DBS narration stays a review candidate and never switches the table currency',()=>{
+ for(const text of ['Currency: US DOLLAR','CURRENCY: SINGAPORE DOLLAR','Currency:']){
+  const p=dbsSg();p[1].items.push(item(text,113,460));const r=bank.parseBankStatement(p);
+  assert.equal(r.recognizedCount,2);assert.equal(r.sections.length,1);assert.equal(r.sections[0].currency,'SGD');
+  assert.ok(r.sections[0].rows[1].ambiguousNarration.trailing.includes(text));
+  assert.ok(r.sections[0].warnings.every(w=>w.code==='ambiguous-trailing-narration'));
+ }
+})
+test('DBS currency evidence comes from the date column, excluding nearby description text',()=>{
+ const misplaced=dbsSg();misplaced[1].items.find(i=>i.text==='CURRENCY: SINGAPORE DOLLAR').x=113;
+ assert.equal(bank.parseBankStatement(misplaced).recognizedCount,0);
+ const nearby=dbsSg();nearby[1].items.push(item('Currency: US DOLLAR',113,565));
+ const r=bank.parseBankStatement(nearby);assert.equal(r.bank,'DBS Singapore');assert.equal(r.recognizedCount,2);
 })

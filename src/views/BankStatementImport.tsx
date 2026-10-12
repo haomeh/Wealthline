@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { BANK_PDF_ERRORS, bankStatementErrorMessage } from '../bankStatementErrors'
 import { sha256 } from '../expenses'
 import { mergeBankTransactions, prepareBankTransactions, validateBankLedger, type BankTransaction, type BankTransactionAccount, type BankTransactionRow, type BankCategoryRule, type BankRowProvenance } from '../bankTransactions'
 import { protectBankText } from '../bankTextPrivacy'
@@ -28,9 +29,9 @@ export function BankStatementImport({accounts,existing,rules,passwords,passwordS
  for(let index=0;index<files.length;index++){
  if(abort.signal.aborted)return
  try{
- const file=files[index];if(file.size>20*1024*1024)throw new Error('size')
+ const file=files[index];if(file.size>20*1024*1024)throw new Error(BANK_PDF_ERRORS.size)
  const bytes=new Uint8Array(await file.arrayBuffer());if(abort.signal.aborted)return
- if(new TextDecoder().decode(bytes.slice(0,5))!=='%PDF-')throw new Error('magic')
+ if(new TextDecoder().decode(bytes.slice(0,5))!=='%PDF-')throw new Error(BANK_PDF_ERRORS.format)
  const hash=await sha256(bytes),document=await readBankStatementPdf(bytes,candidates,abort.signal)
  if(abort.signal.aborted)return
  const result:BankStatementResult=parseBankStatement(document.pages)
@@ -42,7 +43,7 @@ export function BankStatementImport({accounts,existing,rules,passwords,passwordS
  // Candidates stay preview-only metadata under the same protection as summaries.
  ...(r.ambiguousNarration && {narration:{leading:r.ambiguousNarration.leading.map(t=>protectBankText(t)),trailing:r.ambiguousNarration.trailing.map(t=>protectBankText(t))}})}))})
  })
- }catch{if(abort.signal.aborted)return;outcomes.push(`檔案 ${index+1} · 無法解析：請核對 PDF、20 MB 上限、密碼或支持版型。未加入任何此檔資料。`)}
+ }catch(e){if(abort.signal.aborted)return;outcomes.push(`檔案 ${index+1} · 無法解析：${bankStatementErrorMessage(e).replace(/。$/, '')}。未加入任何此檔資料。`)}
  }
  if(!abort.signal.aborted){setReports(outcomes);setSections(next);setFiles([])}
  }catch{if(!abort.signal.aborted)setError('無法解鎖或讀取帳單，請重新設定密碼或手動輸入。')}finally{if(!abort.signal.aborted)setParsing(false)}
