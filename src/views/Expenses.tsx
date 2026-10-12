@@ -1,8 +1,10 @@
+import { ExpenseRecords } from './ExpenseRecords'
+import { DetailRecord } from './DetailRecord'
+import { fmt } from '../format'
 import { dataVersion } from '../dataVersion'
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { mergeExpenses, isUnrecognizedMerchant, parseExpense, prepareExpenses, sha256, expenseCategory, parseExpenseCategoryRules, EXPENSE_CATEGORIES, type ExpenseCategoryRule, type ExpenseCategory, type Expense } from '../expenses'
 import { assertCreditCardFile, parseStatement, statementMetadata } from '../statements'
-import { fmt } from '../format'
 import { ExpenseCategoryRules, CategoryRuleButton, CategoryRuleDialog } from './ExpenseCategoryRules'
 import { StatementPasswordSettings } from './StatementPasswordSettings'
 import { parseStatementPasswords, statementPasswordStatus, unlockStatementPasswords, type StatementPassword } from '../statementPasswords'
@@ -45,9 +47,7 @@ export function Expenses({data,onChange,busy,passwordScope}: {passwordScope?:str
     {message && <p role="status" className="notice">{message}</p>}
     {!expenses.length ? <section className="panel empty"><p>還沒有消費紀錄。選擇文字 PDF 帳單，預覽確認後即可匯入。</p></section> : <section className="panel">
       <h3>{expenses.length} 筆交易</h3>
-      <div className="table-wrap"><table className="data expense-table"><thead><tr><th>日期</th><th>銀行／卡片</th><th>商家／說明</th><th>類別</th><th className="num">金額</th><th>操作</th></tr></thead><tbody>
-        {[...expenses].sort((a,b)=>b.date.localeCompare(a.date)).map(e=><tr key={e.id}><td>{e.date}</td><td>{e.card}</td><td>{e.description}</td><td><div className="expense-category-cell"><span>{expenseCategory(e,rules)}</span><CategoryRuleButton expense={e} rules={rules} busy={busy} onClick={index=>setRuleExpense({expense:e,index})}/></div></td><td className="num">{e.currency} {fmt(e.amount)}</td><td><button disabled={busy} aria-label={`編輯消費 ${e.date} ${e.description}`} onClick={()=>setEditing(e)}>編輯</button></td></tr>)}
-      </tbody></table></div>
+      <ExpenseRecords expenses={expenses} rules={rules} busy={busy} onEdit={setEditing} onRule={(expense,index)=>setRuleExpense({expense,index})} />
     </section>}
   </div>
 }
@@ -180,20 +180,11 @@ function StatementImport({existing,busy,onCancel,onImport,rules,onAddRule,passwo
       <div className="expense-preview">{[...reports.map((report,index)=>({report,index})).filter(({report})=>!report.error),...(drafts.some(r=>r.sourceFile===undefined)?[{report:{name:'手動補登'},index:undefined}]:[])].map(({report,index})=>
         <section className="statement-group" key={index ?? 'manual'} aria-label={`來源：${report.name}`}>
           <header><strong>{report.name}</strong><span className="muted small">{drafts.filter(r=>r.sourceFile===index).length} 筆</span></header>
-          <div className="table-wrap"><table className="data statement-preview-table"><thead><tr><th>選取</th><th>銀行／卡片</th><th>日期</th><th>商家／說明</th><th>類別</th><th className="num">金額</th><th>幣別</th></tr></thead><tbody>
-          {drafts.map((r,i)=>{
+          <div className="statement-preview-records">{drafts.map((r,i)=>{
             if(r.sourceFile!==index) return null
-            const duplicate = (r.sourceKey && existingSourceKeys.has(r.sourceKey)) || (r.importKey && existingImportKeys.has(r.importKey))
-            return <tr key={r.id} aria-label={`交易 ${i+1}`}>
-              <td><label className="expense-select"><input type="checkbox" disabled={busy} aria-label={`第 ${i+1} 筆`} checked={r.selected} onChange={e=>patch(r.id,{selected:e.target.checked})}/><span>{i+1}</span>{r.needsReview && <span className="tag" title="請核對商家、日期、金額並排除繳款">核對</span>}{duplicate && <span className="tag">重複</span>}</label></td>
-              <td><PreviewField label={`第 ${i+1} 筆卡片`} value={r.card} maxLength={100} disabled={busy} onChange={card=>patch(r.id,{card})}/></td>
-              <td><PreviewField label={`第 ${i+1} 筆日期`} type="date" value={r.date} disabled={busy} onChange={date=>patch(r.id,{date})}/></td>
-              <td><PreviewField label={`第 ${i+1} 筆商家`} value={r.description} maxLength={500} disabled={busy} onChange={description=>patch(r.id,{description})}/></td>
-              <td><div className="expense-category-cell"><PreviewCategory rules={rules} expense={r} label={`第 ${i+1} 筆類別`} disabled={busy} onChange={category=>patch(r.id,{category})}/><CategoryRuleButton expense={r} rules={rules} busy={busy} label={`新增第 ${i+1} 筆分類規則`} editLabel={`編輯第 ${i+1} 筆分類規則`} onClick={index=>onAddRule(r,index)}/></div></td>
-              <td className="num"><PreviewField label={`第 ${i+1} 筆金額`} type="number" value={r.amountText} disabled={busy} onChange={amountText=>patch(r.id,{amountText})}/></td>
-              <td><PreviewField label={`第 ${i+1} 筆幣別`} value={r.currency} maxLength={3} disabled={busy} onChange={currency=>patch(r.id,{currency:currency.toUpperCase()})}/></td>
-            </tr>
-          })}</tbody></table></div>
+            const duplicate = !!((r.sourceKey && existingSourceKeys.has(r.sourceKey)) || (r.importKey && existingImportKeys.has(r.importKey)))
+            return <StatementPreviewRow key={r.id} row={r} index={i} duplicate={duplicate} rules={rules} busy={busy} onPatch={updates=>patch(r.id,updates)} onRule={index=>onAddRule(r,index)} />
+          })}</div>
           {!drafts.some(r=>r.sourceFile===index) && <p className="muted small">沒有辨識到可匯入的交易，請核對未匯入文字列。</p>}
         </section>
       )}</div>
@@ -206,6 +197,32 @@ function StatementImport({existing,busy,onCancel,onImport,rules,onAddRule,passwo
     </>}
     <details className="statement-help"><summary>支援格式與注意事項</summary><p className="muted small">支援富邦、玉山文字帳單與 SG 匯豐 SGD 帳單；匯豐圖片商家欄以本機 OCR 補上。OCR 交易預設不勾選，請核對商家、日期、金額並排除繳款。證券帳單不支援，其他排版可能漏辨識。退款以負數記錄，繳款與總計不當作消費。</p></details>
   </section>
+}
+
+function StatementPreviewRow({row:r,index:i,duplicate,rules,busy,onPatch,onRule}: {
+  row:Draft;index:number;duplicate:boolean;rules:ExpenseCategoryRule[];busy:boolean;
+  onPatch:(updates:Partial<Draft>)=>void;onRule:(index?:number)=>void
+}) {
+  const amount = r.amountText.trim() ? Number(r.amountText) : null
+  const amountLabel = amount === null ? '待填寫' : Number.isFinite(amount) && Math.abs(amount) <= 1e12 ? fmt(amount) : '金額無效'
+  return <div className="statement-preview-row" aria-label={`交易 ${i+1}`}>
+    <label className="statement-preview-select"><input type="checkbox" disabled={busy} aria-label={`第 ${i+1} 筆`} checked={r.selected} onChange={e=>onPatch({selected:e.target.checked})}/></label>
+    <div className="statement-preview-body">
+      <div className="statement-preview-meta"><span>{r.date} · {r.card}</span>{r.needsReview && <span className="tag" title="請核對商家、日期、金額並排除繳款">核對</span>}{duplicate && <span className="tag">重複</span>}</div>
+      <DetailRecord title={r.description || '商家待填寫'} label={`編輯第 ${i+1} 筆交易`}
+        value={<span className="record-money"><small>{r.currency}</small><strong>{amountLabel}</strong></span>}
+        actions={<CategoryRuleButton expense={r} rules={rules} busy={busy} label={`新增第 ${i+1} 筆分類規則`} editLabel={`編輯第 ${i+1} 筆分類規則`} onClick={onRule}/>}>
+        <div className="expense-fields statement-preview-fields">
+          <div className="field statement-merchant-field"><span>商家／說明</span><PreviewField label={`第 ${i+1} 筆商家`} value={r.description} maxLength={500} disabled={busy} onChange={description=>onPatch({description})}/></div>
+          <div className="field"><span>日期</span><PreviewField label={`第 ${i+1} 筆日期`} type="date" value={r.date} disabled={busy} onChange={date=>onPatch({date})}/></div>
+          <div className="field"><span>銀行／卡片</span><PreviewField label={`第 ${i+1} 筆卡片`} value={r.card} maxLength={100} disabled={busy} onChange={card=>onPatch({card})}/></div>
+          <div className="field"><span>金額</span><PreviewField label={`第 ${i+1} 筆金額`} type="number" value={r.amountText} disabled={busy} onChange={amountText=>onPatch({amountText})}/></div>
+          <div className="field"><span>幣別</span><PreviewField label={`第 ${i+1} 筆幣別`} value={r.currency} maxLength={3} disabled={busy} onChange={currency=>onPatch({currency:currency.toUpperCase()})}/></div>
+          <div className="field"><span>分類</span><PreviewCategory rules={rules} expense={r} label={`第 ${i+1} 筆類別`} disabled={busy} onChange={category=>onPatch({category})}/></div>
+        </div>
+      </DetailRecord>
+    </div>
+  </div>
 }
 
 function PreviewField({label,value,type='text',maxLength,disabled,onChange}: {label:string;value:string;type?:string;maxLength?:number;disabled:boolean;onChange:(value:string)=>void}) {

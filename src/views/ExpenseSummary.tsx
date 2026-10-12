@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
-import { expenseMonthSummary, expenseTrend, expenseCategory, type Expense, type ExpenseCategoryRule } from '../expenses'
+import { expenseMonthSummary, expenseTrend, type Expense, type ExpenseCategoryRule } from '../expenses'
 import { fmt } from '../format'
 import { TrendChart } from './TrendChart'
 import { ActionIcon } from './ActionIcon'
+import { ExpenseRecords } from './ExpenseRecords'
 
 export function ExpenseSummary({expenses,now,onGoExpenses,rules = []}: {expenses:Expense[];now:string;onGoExpenses?:()=>void;rules?:ExpenseCategoryRule[]}) {
   const [selectedMonth,setSelectedMonth] = useState('')
@@ -53,7 +54,7 @@ export function ExpenseSummary({expenses,now,onGoExpenses,rules = []}: {expenses
       <div className="table-wrap"><table className="data"><thead><tr><th>銀行／卡片</th><th className="num">筆數</th><th className="num">淨支出（{g.currency}）</th></tr></thead><tbody>{g.cards.map(c=><tr key={c.card}><td>{c.card}</td><td className="num">{c.count}</td><td className="num">{fmt(c.net)}</td></tr>)}</tbody></table></div>
       </details>
     </div>)}</div>}
-    {!!rows.length && <details className="expense-period-details"><summary>{month.replace('-', ' / ')} 交易明細 · {rows.length} 筆</summary><div className="table-wrap"><table className="data expense-table"><thead><tr><th>日期</th><th>銀行／卡片</th><th>商家／說明</th><th>類別</th><th className="num">金額</th></tr></thead><tbody>{rows.map(e=><tr key={e.id}><td>{e.date}</td><td>{e.card}</td><td>{e.description}</td><td>{expenseCategory(e,rules)}</td><td className="num">{e.currency} {fmt(e.amount)}</td></tr>)}</tbody></table></div></details>}
+    {!!rows.length && <details className="expense-period-details"><summary>{month.replace('-', ' / ')} 交易明細 · {rows.length} 筆</summary><ExpenseRecords expenses={rows} rules={rules} /></details>}
     <p className="muted small">依交易日期統計，退款扣除後為淨支出。分類依自訂規則與商家關鍵字初判，可在明細修改；分類圖不含退款。不同幣別分開計算，消費不扣除資產餘額。</p>
   </section>
 }

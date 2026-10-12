@@ -6,6 +6,7 @@ import { LIABILITY_KINDS, balanceSheet, liabilityBaseValue, parseLiability, type
 import { fmt } from '../format'
 import { REPAYMENT_METHODS, estimateLoan, type RepaymentMethod } from '../loanEstimate'
 import { LoanProjection } from './LoanEstimate'
+import { ActionIcon } from './ActionIcon'
 
 export function Liabilities({ data, onChange }: { data: WealthData; onChange: (data: WealthData) => void }) {
   const [editing, setEditing] = useState<Liability | 'new' | null>(null)
@@ -31,31 +32,38 @@ export function Liabilities({ data, onChange }: { data: WealthData; onChange: (d
     <div className="liability-list">{debts.map((d) => {
       const value = liabilityBaseValue(data, d, now)
       const projected = projectLiability(d, now)
-      return <section className="panel" key={d.id}>
+      const hasDetails = d.schedule || d.annualRate !== undefined || d.paymentAmount !== undefined || d.totalInstallments !== undefined || d.paidInstallments !== undefined || (d.repaymentMethod && d.repaymentMethod !== 'none') || d.basisHistory?.length || d.notes
+      return <section className="panel liability-record" key={d.id}>
         <div className="panel-head"><h3>{d.name}</h3><span className="tag">{LIABILITY_KINDS[d.kind]}</span></div>
         <p className="liability-balance">{d.currency} {projected.balance === null ? '基準日前無法估算' : fmt(projected.balance)}</p>
         <p className="muted small">{d.schedule ? '預估未償本金' : '目前未償餘額'} · {Number.isFinite(value) ? `NT$ ${fmt(value, 0)}` : '缺少有效匯率，請至「匯率」設定'}</p>
-        {d.schedule && <div className="notice">
-          <p>截至 {projected.asOf}（{d.schedule.timeZone}）預估已到期 {projected.elapsed} 期；剩餘 {projected.remaining ?? '—'} 期。{projected.nextDueDate ? `下一期：第 ${projected.elapsed + 1} 期，${projected.nextDueDate}` : projected.balance === null ? '基準日前無法估算' : '預估已清償'}</p>
-          <p>{d.schedule.source === 'original' ? '原始貸款總額' : '校正基準本金'}：{d.currency} {fmt(d.balance)} · {d.remainingInstallments} 期 · {d.schedule.source === 'correction' && `基準日 ${d.schedule.baseDate} 結束時 · `}第一筆還款 {d.schedule.firstDueDate} · 每月 {d.schedule.monthlyDay} 日（短月取月底）</p>
-          <p>預估已償本金 {d.currency} {fmt(projected.principalRepaid)}。只減本金，不把利息當本金扣減；尚未確認實際付款。</p>
-        </div>}
-        <dl className="liability-details">
-          {d.annualRate !== undefined && <><dt>年利率</dt><dd>{fmt(d.annualRate, 4)}%</dd></>}
-          {d.paymentAmount !== undefined && <><dt>既有手填每期應付</dt><dd>{d.currency} {fmt(d.paymentAmount)}</dd></>}
-          {!d.schedule && d.nextDueDate && <><dt>下次到期日</dt><dd>{d.nextDueDate}</dd></>}
-          {!d.schedule && d.totalInstallments !== undefined && <><dt>總期數</dt><dd>{d.totalInstallments}</dd></>}
-          {!d.schedule && d.paidInstallments !== undefined && <><dt>已繳期數</dt><dd>{d.paidInstallments}</dd></>}
-        </dl>
-        {d.repaymentMethod && d.repaymentMethod !== 'none' && <LoanProjection scheduled={!!d.schedule} principal={d.balance} annualRate={d.annualRate} periods={d.remainingInstallments} method={d.repaymentMethod} currency={d.currency} />}
-        {d.basisHistory?.length ? <details><summary>基準變更紀錄（{d.basisHistory.length}）</summary>{d.basisHistory.map(b => <p key={b.id} className="small">{b.at} · {b.reason} · 舊基準 {b.currency} {fmt(b.balance)}，{b.annualRate ?? '—'}%，{b.remainingInstallments ?? '—'} 期，{b.repaymentMethod ? REPAYMENT_METHODS[b.repaymentMethod] : '手動'}{b.schedule && ` · ${b.schedule.source === 'original' ? '原始貸款' : `校正日 ${b.schedule.baseDate}`} · 首期 ${b.schedule.firstDueDate} · 每月 ${b.schedule.monthlyDay} 日 · ${b.schedule.timeZone}`}</p>)}</details> : null}
-        {d.notes && <p className="liability-notes muted">{d.notes}</p>}
-        <div className="row">
-          <button onClick={() => { setReset(false); setEditing(d) }} aria-label={`編輯負債 ${d.name}`}>編輯</button>
-          {d.schedule && <button onClick={() => { setReset(true); setEditing(d) }}>校正餘額／重設基準</button>}
-          <button className="danger" aria-label={`刪除負債 ${d.name}`} onClick={() => {
+        {d.schedule ? <>
+          <p className="muted small liability-schedule-summary">截至 {projected.asOf} · 剩餘 {projected.remaining ?? '—'} 期 · {projected.nextDueDate ? `下一期：第 ${projected.elapsed + 1} 期，${projected.nextDueDate}` : projected.balance === null ? '基準日前無法估算' : '預估已清償'}</p>
+          <p className="muted small">按期預估，尚未確認實際付款；不扣現金。</p>
+        </> : (d.nextDueDate || d.remainingInstallments !== undefined) && <p className="muted small liability-schedule-summary">{d.nextDueDate && `下次到期日 ${d.nextDueDate}`}{d.nextDueDate && d.remainingInstallments !== undefined && ' · '}{d.remainingInstallments !== undefined && `剩餘 ${d.remainingInstallments} 期`}</p>}
+        {hasDetails && <details className="liability-record-details">
+          <summary>條件與試算</summary>
+          {d.schedule && <div className="notice">
+            <p>截至 {projected.asOf}（{d.schedule.timeZone}）預估已到期 {projected.elapsed} 期。</p>
+            <p>{d.schedule.source === 'original' ? '原始貸款總額' : '校正基準本金'}：{d.currency} {fmt(d.balance)} · {d.remainingInstallments} 期 · {d.schedule.source === 'correction' && `基準日 ${d.schedule.baseDate} 結束時 · `}第一筆還款 {d.schedule.firstDueDate} · 每月 {d.schedule.monthlyDay} 日（短月取月底）</p>
+            <p>預估已償本金 {d.currency} {fmt(projected.principalRepaid)}。只減本金，不把利息當本金扣減；尚未確認實際付款。</p>
+          </div>}
+          <dl className="liability-details">
+            {d.annualRate !== undefined && <><dt>年利率</dt><dd>{fmt(d.annualRate, 4)}%</dd></>}
+            {d.paymentAmount !== undefined && <><dt>既有手填每期應付</dt><dd>{d.currency} {fmt(d.paymentAmount)}</dd></>}
+            {!d.schedule && d.totalInstallments !== undefined && <><dt>總期數</dt><dd>{d.totalInstallments}</dd></>}
+            {!d.schedule && d.paidInstallments !== undefined && <><dt>已繳期數</dt><dd>{d.paidInstallments}</dd></>}
+          </dl>
+          {d.repaymentMethod && d.repaymentMethod !== 'none' && <LoanProjection scheduled={!!d.schedule} principal={d.balance} annualRate={d.annualRate} periods={d.remainingInstallments} method={d.repaymentMethod} currency={d.currency} />}
+          {!!d.basisHistory?.length && <section><h4>基準變更紀錄（{d.basisHistory.length}）</h4>{d.basisHistory.map(b => <p key={b.id} className="small">{b.at} · {b.reason} · 舊基準 {b.currency} {fmt(b.balance)}，{b.annualRate ?? '—'}%，{b.remainingInstallments ?? '—'} 期，{b.repaymentMethod ? REPAYMENT_METHODS[b.repaymentMethod] : '手動'}{b.schedule && ` · ${b.schedule.source === 'original' ? '原始貸款' : `校正日 ${b.schedule.baseDate}`} · 首期 ${b.schedule.firstDueDate} · 每月 ${b.schedule.monthlyDay} 日 · ${b.schedule.timeZone}`}</p>)}</section>}
+          {d.notes && <p className="liability-notes muted">{d.notes}</p>}
+        </details>}
+        <div className="row liability-actions">
+          <button title="編輯" onClick={() => { setReset(false); setEditing(d) }} aria-label={`編輯負債 ${d.name}`}><ActionIcon name="edit" /></button>
+          {d.schedule && <button title="校正餘額／重設基準" aria-label={`校正餘額／重設基準 ${d.name}`} onClick={() => { setReset(true); setEditing(d) }}><ActionIcon name="undo" /></button>}
+          <button className="danger" title="刪除" aria-label={`刪除負債 ${d.name}`} onClick={() => {
             if (confirm(`刪除負債「${d.name}」？這只移除紀錄，不表示貸款已清償。`)) onChange({ ...data, liabilities: debts.filter((x) => x.id !== d.id) })
-          }}>刪除</button>
+          }}><ActionIcon name="delete" /></button>
         </div>
       </section>
     })}</div>
