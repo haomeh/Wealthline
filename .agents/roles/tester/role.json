@@ -1,0 +1,14 @@
+{
+  "tier": "standard",
+  "claudeTools": [
+    "Read",
+    "Grep",
+    "Glob",
+    "Bash"
+  ],
+  "codexSandbox": "read-only",
+  "codexPlugins": [],
+  "agyMode": "plan",
+  "agySandbox": true,
+  "claudePlugins": []
+}

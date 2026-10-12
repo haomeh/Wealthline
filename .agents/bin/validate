@@ -1,0 +1,22 @@
+#!/bin/sh
+# Approved project checks only. Runs trusted project scripts; this is not a sandbox.
+set -eu
+usage() { echo "usage: validate test|lint|typecheck" >&2; exit 2; }
+[ $# -eq 1 ] || usage
+check=$1
+case "$check" in
+  test) set -- npm test ;;
+  lint) set -- npm run lint ;;
+  typecheck) set -- node node_modules/typescript/bin/tsc -b ;;
+  *) usage ;;
+esac
+cd "$(dirname "$0")/../.."
+logs=.agents/state/logs
+mkdir -p "$logs"
+log="$logs/$check-$(date +%Y%m%d-%H%M%S).log"
+code=0
+"$@" >"$log" 2>&1 || code=$?
+tail -c 6000 "$log"
+echo "Check: $check  Exit code: $code  Log: $log"
+ls -t "$logs"/*.log | tail -n +6 | xargs rm -f
+exit "$code"

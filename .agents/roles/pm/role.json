@@ -1,0 +1,13 @@
+{
+  "tier": "standard",
+  "claudeTools": [
+    "Read",
+    "Grep",
+    "Glob"
+  ],
+  "codexSandbox": "read-only",
+  "codexPlugins": [],
+  "agyMode": "plan",
+  "agySandbox": true,
+  "claudePlugins": []
+}
