@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { BANK_PDF_ERRORS, bankStatementErrorMessage, type BankImportStage } from '../bankStatementErrors'
 import { sha256 } from '../expenses'
-import { mergeBankTransactions, prepareBankTransactions, validateBankLedger, type BankTransaction, type BankTransactionAccount, type BankTransactionRow, type BankCategoryRule, type BankRowProvenance } from '../bankTransactions'
+import { bankCategoryRuleIndex, mergeBankTransactions, prepareBankTransactions, validateBankLedger, type BankTransaction, type BankTransactionAccount, type BankTransactionRow, type BankCategoryRule, type BankRowProvenance } from '../bankTransactions'
 import { protectBankText } from '../bankTextPrivacy'
 import { unlockStatementPasswords, type StatementPassword } from '../statementPasswords'
 import type { BankSection, BankStatementResult } from '../bankStatements'
@@ -123,11 +123,11 @@ export function BankStatementImport({accounts,existing,rules,passwords,passwordS
     <label className="field"><span>選擇獨立流水帳戶</span><select aria-label={`區段 ${index+1} 帳戶`} disabled={locked} value={s.accountId} onChange={e=>patch(s.id,{accountId:e.target.value})}><option value="">請選擇流水帳戶</option>{accounts.map(a=><option key={a.id} value={a.id}>{a.label} · {a.bank}</option>)}<option value="new">新增獨立帳戶標籤</option></select></label>
     {s.accountId==='new' && <label className="field"><span>新帳戶標籤</span><input aria-label={`區段 ${index+1} 新標籤`} disabled={locked} maxLength={100} value={s.label} onChange={e=>patch(s.id,{label:e.target.value})}/></label>}
    </div>
-   <div className="bank-preview-list">{s.rows.map((r,i)=><article className="bank-preview-row" key={r.draft.id}>
+   <div className="bank-preview-list">{s.rows.map((r,i)=>{const category=classificationLabel(r.draft,rules);return <article className="bank-preview-row" key={r.draft.id}>
     <div className="bank-preview-overview">
      <label className="bank-preview-select"><input aria-label={`區段 ${index+1} 選取 ${i+1}`} type="checkbox" disabled={locked} checked={r.selected} onChange={e=>patch(s.id,{rows:s.rows.map((v,j)=>j===i?{...v,selected:e.target.checked}:v)})}/><span className="muted small">{i+1}</span></label>
      <div className="bank-preview-copy"><time className="muted small">{r.draft.date||'日期待填'}</time><strong>{protectBankText(r.draft.description)||'摘要待填'}</strong>
-      <div className="bank-preview-tags"><span>{classificationLabel(r.draft,rules)}</span>{r.narration && <span className={r.confirmed?'bank-summary-confirmed':'bank-summary-pending'}>{r.confirmed?'摘要已核對':'摘要待確認'}</span>}</div>
+      <div className="bank-preview-tags"><button type="button" className="bank-preview-category" disabled={locked} title="編輯匹配規則／新增規則" aria-label={`區段 ${index+1} 交易 ${i+1} 分類規則`} onClick={()=>onAddRule(r.draft)}><span>{category==='待確認'?'未分類':category}</span><ActionIcon name={bankCategoryRuleIndex(r.draft,rules)>=0?'edit':'add'}/></button>{r.narration && <span className={r.confirmed?'bank-summary-confirmed':'bank-summary-pending'}>{r.confirmed?'摘要已核對':'摘要待確認'}</span>}</div>
      </div>
      <div className="bank-preview-amount"><span className="muted small">{r.draft.direction==='debit'?'支出':'入帳'}</span><strong>{fmt(r.draft.amount)}</strong><span className="muted small">{r.draft.currency}</span></div>
     </div>
@@ -144,10 +144,9 @@ export function BankStatementImport({accounts,existing,rules,passwords,passwordS
        </li>)}</ul>
        <label className="bank-summary-check"><input type="checkbox" aria-label={`區段 ${index+1} 交易 ${i+1} 確認摘要`} disabled={locked} checked={!!r.confirmed} onChange={e=>patch(s.id,{rows:s.rows.map((v,j)=>j===i?{...v,confirmed:e.target.checked}:v)})}/><span>已核對原帳單，確認本筆摘要</span></label>
       </div>}
-      <button type="button" className="bank-rule-action" disabled={locked} title="編輯匹配規則／新增規則" aria-label={`區段 ${index+1} 交易 ${i+1} 分類規則`} onClick={()=>onAddRule(r.draft)}><ActionIcon name="edit"/><span>分類規則</span></button>
      </div>
     </details>
-   </article>)}</div>
+   </article>})}</div>
    <button type="button" className="bank-add-row" disabled={locked} onClick={()=>{const draft:BankTransaction={id:crypto.randomUUID(),accountId:'',date:'',description:'',currency:s.currency,direction:'debit',amount:0};patch(s.id,{noTransactions:false,partial:true,rows:[...s.rows,{draft,original:draft,provenance:{page:1,sectionKey:'manual',rowKey:'manual'},selected:true,manual:true}]})}}>補登此區段交易</button>
   </section>)}
   {(error||reviewError) && <p role="alert" className="banner error">{error||reviewError}</p>}

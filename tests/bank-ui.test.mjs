@@ -227,3 +227,13 @@ test('collapsed narration preview exposes pending state and still requires confi
  await act(()=>details.querySelector('summary').click());await act(()=>box('區段 1 交易 1 確認摘要').click());await act(()=>details.querySelector('summary').click());assert.equal(details.open,false);assert.match(row.querySelector('.bank-preview-overview').textContent,/摘要已核對/);
  await click('檢查映射與重複');assert.match(box('銀行重複核對').textContent,/可新增 1 筆/);assert.equal(latest().bankTransactions.length,0);
 })
+
+
+test('collapsed bank preview can add and edit a category rule without opening the transaction editor',async()=>{
+ pdf.reset([parsed()]);const latest=await render({...empty,bankTransactionAccounts:[account]});await click('匯入銀行帳單');await files();await submitImport();await input('區段 1 帳戶','ledger');
+ const row=document.querySelector('.bank-preview-row'),details=row.querySelector('.bank-row-details'),action=box('區段 1 交易 1 分類規則');assert.equal(details.open,false);assert.ok(action);assert.ok(!action.closest('details:not([open])'),'category shortcut must be available while transaction fields are collapsed');
+ await act(()=>action.click());await input('規則關鍵字','Example transfer');await input('規則分類','excluded:自有帳戶轉帳');await click('取消規則');assert.equal(details.open,false);assert.equal(box('區段 1 選取 1').checked,true);assert.equal(latest().bankCategoryRules.length,0);
+ await act(()=>box('區段 1 交易 1 分類規則').click());await input('規則關鍵字','Example transfer');await input('規則分類','excluded:自有帳戶轉帳');await click('儲存規則');assert.match(row.querySelector('.bank-preview-overview').textContent,/自有帳戶轉帳/);assert.equal(details.open,false);assert.equal(latest().bankCategoryRules.length,1);assert.equal(latest().bankTransactions.length,0);
+ await act(()=>box('區段 1 交易 1 分類規則').click());assert.equal(box('規則關鍵字').value,'Example transfer');await input('規則分類','expense:購物');await click('儲存規則');assert.equal(latest().bankCategoryRules.length,1);assert.match(row.querySelector('.bank-preview-overview').textContent,/購物/);assert.equal(box('區段 1 選取 1').checked,true);
+ await click('檢查映射與重複');assert.match(box('銀行重複核對').textContent,/可新增 1 筆/);assert.equal(latest().bankTransactions.length,0);
+})
