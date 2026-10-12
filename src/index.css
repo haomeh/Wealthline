@@ -2690,9 +2690,31 @@ dialog.expense-rule-dialog { max-width: 440px; }
 .bank-account { display:flex; flex-wrap:wrap; align-items:end; gap:8px; padding:12px 0; }
 .bank-accounts ul { padding:0; list-style:none; }
 .bank-account .field { flex:1 1 180px; }
-.bank-records { display:grid; gap:0; }
-.bank-record { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:12px; border-top:1px solid var(--border); padding:18px 0; overflow-wrap:anywhere; }
-.bank-record > .row { grid-column:1/-1; flex-wrap:wrap; }
+.bank-records { display:grid; gap:20px; }
+.bank-record-group { min-width:0; }
+.bank-record-group-head { display:flex; align-items:center; gap:12px; min-width:0; margin-bottom:4px; color:var(--ink-2); font-size:12px; }
+.bank-record-group-head time { flex-shrink:0; font-variant-numeric:tabular-nums; }
+.bank-record-group-head span { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.bank-record { display:grid; grid-template-columns:minmax(0,1fr) 88px; align-items:start; gap:4px; border-bottom:1px solid var(--hairline); padding:4px 0; }
+.bank-record-details { min-width:0; }
+.bank-record-details > summary { display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:center; gap:8px; min-height:44px; cursor:pointer; list-style:none; border-radius:6px; }
+.bank-record-details > summary::-webkit-details-marker { display:none; }
+.bank-record-details > summary:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+.bank-record-description { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:14px; font-weight:500; }
+.bank-record-amount { display:flex; align-items:baseline; justify-content:end; gap:4px; white-space:nowrap; font-size:14px; font-variant-numeric:tabular-nums; }
+.bank-record-amount[data-direction="credit"] { color:var(--good); }
+.bank-record-currency { color:var(--ink-2); font-size:10px; }
+.bank-record-actions { display:flex; align-items:center; }
+.bank-record-actions button { display:inline-flex; align-items:center; justify-content:center; flex:0 0 44px; width:44px; min-height:44px; padding:0; border-color:transparent; background:transparent; color:var(--ink-2); }
+.bank-record-actions button:hover:not(:disabled) { color:var(--accent); background:var(--accent-wash); }
+.bank-record-rule[data-pending="true"] { background:var(--warn-wash); }
+.bank-record-content { padding:8px 0 12px; overflow-wrap:anywhere; font-size:13px; }
+.bank-record-content p { margin:0 0 12px; }
+.bank-record-content dl { margin:0; }
+.bank-record-content dt { margin-top:8px; color:var(--ink-2); font-size:11px; }
+.bank-record-content dd { margin:2px 0 0; }
+@media(max-width:600px) { .bank-record-panel { padding:16px; } }
+@media(max-width:360px) { .bank-record-description,.bank-record-amount { font-size:12px; } .bank-record-details > summary { gap:4px; } }
 .bank-section { border-top:1px solid var(--border); padding-top:18px; margin-top:18px; }
 .bank-preview-row { padding:16px 0; border-bottom:1px solid var(--border); }
 .bank-review-flag { border-left:3px solid currentColor; padding:4px 0 4px 12px; margin:12px 0; overflow-wrap:anywhere; }
@@ -2702,7 +2724,7 @@ dialog.expense-rule-dialog { max-width: 440px; }
 .bank-rules li button { margin-left:8px; }
 .bank-rule-dialog { width:min(calc(100% - 32px),640px); max-height:90dvh; overflow:auto; }
 .bank-rule-dialog::backdrop { background:rgb(0 0 0 / .45); }
-@media(max-width:480px) { .bank-record { grid-template-columns:minmax(0,1fr); } .bank-page .page-head,.bank-import .panel-head { flex-wrap:wrap; gap:12px; } .bank-page button { white-space:normal; } }
+@media(max-width:480px) { .bank-page .page-head,.bank-import .panel-head { flex-wrap:wrap; gap:12px; } .bank-page button { white-space:normal; } }
 
 
 /* Bank import: skim transactions first, expand only the row being reviewed. */
