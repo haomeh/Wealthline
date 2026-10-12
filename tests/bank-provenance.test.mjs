@@ -31,3 +31,14 @@ test('repeated equal rows and opposite directions or accounts retain separate id
  const repeated=await prepare('a','section-1',[row,row]);assert.equal(core.mergeBankTransactions([],repeated,accounts).added,2)
  const opposite=await prepare('b','section-1',[{...row,direction:'credit'}]);const counterpart=await prepare('a','section-2',[row],'bank-two');const all=[...repeated,...opposite,...counterpart];const r=core.mergeBankTransactions([],all,accounts);assert.equal(r.added,4);assert.equal(r.suspectedDuplicates,0)
 })
+test('narration review edits keep parser-original identity: same-file reimport skips, other document stays suspected',async()=>{
+ // Rows persisted by the earlier parser carried the truncated summary at this location.
+ const truncated={...row,description:'Second ref detail'},location=[{page:1,sectionKey:'section-1',rowKey:'row-7'}]
+ const persisted=await core.prepareBankTransactions([truncated],'bank-one','a'.repeat(64),location)
+ const reviewed={...truncated,description:'Second payment line Second ref detail'}
+ const again=await core.prepareBankTransactions([reviewed],'bank-one','a'.repeat(64),location,{},[truncated])
+ assert.equal(again[0].sourceKey,persisted[0].sourceKey);assert.equal(again[0].importKey,persisted[0].importKey)
+ const same=core.mergeBankTransactions(persisted,again,accounts,again);assert.equal(same.added,0);assert.equal(same.suspectedDuplicates,0)
+ const other=await core.prepareBankTransactions([reviewed],'bank-one','b'.repeat(64),location,{},[truncated])
+ const cross=core.mergeBankTransactions(persisted,other,accounts,other);assert.equal(cross.added,0);assert.equal(cross.suspectedDuplicates,1)
+})

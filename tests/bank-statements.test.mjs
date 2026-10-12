@@ -146,3 +146,36 @@ test('unlabeled HSBC own-account heading is transient privacy evidence, never dr
 test('explicit period metadata cannot override a conflicting printed E.SUN month',()=>{
  assert.equal(bank.parseBankStatement(observedEsun(),{periodStart:'2030-04-01',periodEnd:'2030-04-30'}).recognizedCount,0)
 })
+
+// Rereview P2-B / P3-C. Entirely synthetic narration and positions.
+const narration=r=>r.sections[0].rows.map(row=>row.ambiguousNarration)
+test('omitted-date multiline row keeps its amount line and exposes the unowned narration as a candidate on both neighbours',()=>{
+ const p=hsbc();p[0].items.push(item('Second payment line',103,655),item('Second ref detail',103,640),right('7.00',482,640));
+ const r=bank.parseBankStatement(p);assert.equal(r.status,'partial');assert.equal(r.recognizedCount,2);assert.equal(r.rejectedCount,1);
+ assert.deepEqual(r.sections[0].rows.map(row=>row.description),['Example payment Order 123456789012','Second ref detail']);
+ assert.deepEqual(narration(r),[{leading:[],trailing:['Second payment line']},{leading:['Second payment line'],trailing:[]}]);
+ // Location identity of rows emitted before this fix must not move.
+ assert.deepEqual(r.sections[0].rows.map(row=>row.rowKey),['row-4','row-7']);assert.equal(r.sections[0].rows[1].date,'2031-06-17');assert.equal(r.sections[0].rows[1].amount,7)
+})
+test('amount-only line after one unowned narration line still emits the second row with an empty summary awaiting review',()=>{
+ const p=hsbc();p[0].items.push(item('Second payment',103,655),right('7.00',482,640));
+ const r=bank.parseBankStatement(p);assert.equal(r.recognizedCount,2);assert.equal(r.rejectedCount,1);assert.equal(r.status,'partial');
+ assert.deepEqual(r.sections[0].warnings.map(w=>w.code),['ambiguous-trailing-narration']);
+ const second=r.sections[0].rows[1];assert.equal(second.description,'');assert.equal(second.direction,'debit');assert.equal(second.amount,7);assert.equal(second.date,'2031-06-17');
+ assert.deepEqual(narration(r),[{leading:[],trailing:['Second payment']},{leading:['Second payment'],trailing:[]}])
+})
+test('narration candidates use the recognized-identifier privacy boundary and never reach a following dated row',()=>{
+ const p=hsbc();p[0].items.push(item('Trailing ref 7700001111',103,655),item('18/06/2031',53,640),item('Dated payment',103,640),right('7.00',482,640));
+ const r=bank.parseBankStatement(p);assert.equal(r.recognizedCount,2);assert.ok(!JSON.stringify(r).includes('7700001111'));
+ assert.deepEqual(narration(r),[{leading:[],trailing:['Trailing ref [帳號已遮蔽]']},undefined]);assert.equal(r.sections[0].rows[1].description,'Dated payment')
+ // Unambiguous rows carry no review metadata at all.
+ for(const sg of [false,true])assert.equal('ambiguousNarration' in bank.parseBankStatement(hsbc(sg)).sections[0].rows[0],false)
+})
+test('undated money in a validated wrapped table below the footer boundary warns; footer numbers and balances do not',()=>{
+ const low=hsbc();low[0].items.push(right('7.00',482,90));
+ const r=bank.parseBankStatement(low);assert.equal(r.recognizedCount,1);assert.equal(r.status,'partial');assert.deepEqual(r.sections[0].warnings.map(w=>w.code),['activity-below-table-boundary']);
+ const footer=hsbc();footer[0].items.push(item('Page 1 of 3',280,40),item('Disclosure ref 20310617 12.00',40,60),right('987.00',573,90));
+ assert.equal(bank.parseBankStatement(footer).status,'recognized');
+ const closed=hsbc();closed[0].items.push(item('Closing Balance',103,640),right('7.00',482,90));assert.equal(bank.parseBankStatement(closed).status,'recognized');
+ const two=hsbc();two[0].items.push(right('7.00',482,90),right('7.00',402,90));assert.equal(bank.parseBankStatement(two).status,'recognized')
+})

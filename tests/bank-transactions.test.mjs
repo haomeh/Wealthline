@@ -52,6 +52,11 @@ test('short account labels are not identifiers while complete and transient iden
  assert.equal(privacy.protectBankText('Memo 123456',{accountIdentifiers:['123456']}),'Memo [帳號已遮蔽]')
  assert.equal(privacy.protectBankText('身分證 A123456789'),'身分證 [識別碼已遮蔽]')
 })
+test('bare A/C account context masks like the parser labeledAccount grammar while short labels stay',()=>{
+ for(const [text,masked] of [['A/C123456789','A/C[帳號已遮蔽]'],['A/C 123456789','A/C [帳號已遮蔽]'],['a/c: 1234-5678','a/c: [帳號已遮蔽]'],['Transfer A/C NO 123456789 fee','Transfer A/C NO [帳號已遮蔽] fee'],['A/C NUMBER 123456','A/C NUMBER [帳號已遮蔽]']])assert.equal(privacy.protectBankText(text),masked)
+ for(const text of ['A/C 12345','A/C fee 2.0','A/C1','Order 123456789'])assert.equal(privacy.protectBankText(text),text)
+ const once=privacy.protectBankText('A/C 123456789');assert.equal(privacy.protectBankText(once),once)
+})
 test('deterministic contextual and known-identifier protection retains numeric references', async () => {
   const text='帳號：１２３４－５６７８－９０１２ Order 987654321098 Reference 876543210123 身分證字號 A123456789'
   const masked=privacy.protectBankText(text)

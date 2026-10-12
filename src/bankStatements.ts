@@ -1,6 +1,6 @@
 import { protectBankText } from './bankTextPrivacy';
 import { spatialLines, tableHeader, isoDate, money, identifier, labeledAccount, currencies } from './bankStatements/common';
-import type { BankPage, BankSection, BankStatementMetadata, BankWarning, Layout, Table } from './bankStatements/common';
+import type { BankDraftRow, BankPage, BankSection, BankStatementMetadata, BankWarning, Layout, Table } from './bankStatements/common';
 import { layout as taiwan } from './bankStatements/hsbcTaiwan';
 import { layout as singapore } from './bankStatements/hsbcSingapore';
 import { layout as taishin } from './bankStatements/taishin';
@@ -25,6 +25,7 @@ interface Pending {
     page: number;
     rowKey: string;
     invalid: boolean;
+    leading?: string[];
 }
 /** Pure, synchronous positional parser. Input pages and all identifier evidence are transient. */
 export function parseBankStatement(pages: readonly BankPage[], metadata: BankStatementMetadata = {}): BankStatementResult {
@@ -187,6 +188,9 @@ export function parseBankStatement(pages: readonly BankPage[], metadata: BankSta
     const privacy = { accountIdentifiers: [...accounts].filter(a => !a.includes('*')), identityIdentifiers: [...identities] };
     let section: BankSection | undefined, table: Table | undefined, activeLayout = layout, account: string | undefined, currency = '', lastDate: string | undefined, pending: Pending | undefined;
     let context: string[] = [], contextAccount: string | undefined, continuation = false, lastPage = 0, closed = false;
+    // Unowned narration since the last completed transaction, and that transaction
+    // when it was emitted. Both are review candidates only, never description text.
+    let orphans: string[] = [], emitted: BankDraftRow | undefined;
     const issue = (page: number, code: string) => {
         (section?.warnings ?? warnings).push(warning(page, code));
     };
@@ -204,6 +208,7 @@ export function parseBankStatement(pages: readonly BankPage[], metadata: BankSta
             section.warnings.push(warning(lastPage, 'partial-outgoing-transfer-coverage'));
         lastDate = undefined;
         closed = false;
+        orphans = [];
     };
     for (const p of ordered) {
         const previousAccount = account, previousCurrency = currency;
@@ -211,6 +216,7 @@ export function parseBankStatement(pages: readonly BankPage[], metadata: BankSta
         table = undefined;
         context = [];
         contextAccount = undefined;
+        orphans = [];
         lastPage = p.page;
         if (!mayContinue) {
             discard('unfinished-transaction');
@@ -368,13 +374,18 @@ export function parseBankStatement(pages: readonly BankPage[], metadata: BankSta
                     discard('unfinished-transaction');
                     closed = true;
                 }
+                orphans = [];
                 continue;
             }
             if (l.y < 100) {
                 // Footer geometry is an exclusion, not evidence that no activity was lost.
+                // Warn only; never build a transaction from below the boundary.
                 const dateText = l.items.filter(i => i.x >= table!.dateX - 10 * table!.scale && i.x < table!.descriptionX - 8 * table!.scale).map(i => i.text).join(' ');
-                const hasMoney = l.items.some(i => (Math.abs(i.x + i.width - table!.debitEdge) < 18 * table!.scale || Math.abs(i.x + i.width - table!.creditEdge) < 18 * table!.scale) && money(i.text, !!activeLayout.decimalOnly) !== undefined);
-                if (isoDate(dateText, activeLayout.dateKind) && hasMoney)
+                const cells = l.items.filter(i => (Math.abs(i.x + i.width - table!.debitEdge) < 18 * table!.scale || Math.abs(i.x + i.width - table!.creditEdge) < 18 * table!.scale) && money(i.text, !!activeLayout.decimalOnly) !== undefined);
+                // A wrapped table prints same-day rows without a date: exactly one
+                // debit/credit cell in an open, already dated table is activity-shaped.
+                // Other footer numbers (page counts, balances, disclosures) are not.
+                if (cells.length && isoDate(dateText, activeLayout.dateKind) || cells.length === 1 && !dateText && activeLayout.wrapped && lastDate && !closed)
                     issue(p.page, 'activity-below-table-boundary');
                 continue;
             }
@@ -443,17 +454,25 @@ export function parseBankStatement(pages: readonly BankPage[], metadata: BankSta
             if (dateText) {
                 discard('missing-explicit-amount');
                 lastDate = date;
+                // A printed date starts a row: earlier unowned lines cannot begin it.
+                orphans = [];
                 pending = { date, description: [], page: p.page, rowKey: `row-${n + 1}`, invalid: !date };
             }
             // A narrative-only line after an already completed transaction has no
             // proven owner: it may trail that row or begin a new undated row.
-            // Never silently prepend it to the next transaction.
+            // Never silently attach it to either; keep it as a review candidate on
+            // both neighbours and leave the ownership decision to the preview.
             if (!pending && !dateText && narrative && !debit.length && !credit.length && activeLayout.wrapped && lastDate) {
                 issue(p.page, 'ambiguous-trailing-narration');
+                const candidate = protectBankText(narrative, privacy);
+                orphans.push(candidate);
+                if (emitted && section?.rows.at(-1) === emitted)
+                    (emitted.ambiguousNarration ??= { leading: [], trailing: [] }).trailing.push(candidate);
                 continue;
             }
             if (!pending && (date || ((debit.length || credit.length || narrative) && activeLayout.wrapped && lastDate))) {
-                pending = { date: date ?? lastDate, description: [], page: p.page, rowKey: `row-${n + 1}`, invalid: false };
+                pending = { date: date ?? lastDate, description: [], page: p.page, rowKey: `row-${n + 1}`, invalid: false, ...(orphans.length && { leading: orphans }) };
+                orphans = [];
             }
             if (!pending) {
                 if (debit.length || credit.length)
@@ -470,15 +489,20 @@ export function parseBankStatement(pages: readonly BankPage[], metadata: BankSta
             if (debit.length || credit.length) {
                 if (layout === esun && (!period || !pending.date || pending.date < period.start || pending.date > period.end))
                     pending.invalid = true;
+                emitted = undefined;
                 if (pending.invalid || !pending.date || !rowCurrency || !section || debit.length + credit.length !== 1 || (layout === esun && credit.length)) {
                     issue(p.page, 'ambiguous-transaction');
                 }
                 else {
                     const description = protectBankText(pending.description.join(' '), privacy);
-                    if (!description || description.length > 500)
+                    // An empty summary is acceptable only as a draft whose unowned
+                    // candidate lines are retained for explicit review.
+                    if ((!description && !pending.leading) || description.length > 500)
                         issue(p.page, 'invalid-description');
-                    else
-                        section.rows.push({ sectionKey: section.key, page: pending.page, rowKey: pending.rowKey, date: pending.date, description, currency: rowCurrency, direction: debit.length ? 'debit' : 'credit', amount: (debit[0] ?? credit[0]) });
+                    else {
+                        emitted = { sectionKey: section.key, page: pending.page, rowKey: pending.rowKey, date: pending.date, description, currency: rowCurrency, direction: debit.length ? 'debit' : 'credit', amount: (debit[0] ?? credit[0]), ...(pending.leading && { ambiguousNarration: { leading: pending.leading, trailing: [] } }) };
+                        section.rows.push(emitted);
+                    }
                 }
                 pending = undefined;
             }

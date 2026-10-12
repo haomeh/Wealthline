@@ -2695,6 +2695,8 @@ dialog.expense-rule-dialog { max-width: 440px; }
 .bank-record > .row { grid-column:1/-1; flex-wrap:wrap; }
 .bank-section { border-top:1px solid var(--border); padding-top:18px; margin-top:18px; }
 .bank-preview-row { padding:16px 0; border-bottom:1px solid var(--border); }
+.bank-review-flag { border-left:3px solid currentColor; padding:4px 0 4px 12px; margin:12px 0; overflow-wrap:anywhere; }
+.bank-review-flag li { margin:6px 0; }
 .bank-import li, .bank-rules li { overflow-wrap:anywhere; }
 .bank-rules li { padding:8px 0; }
 .bank-rules li button { margin-left:8px; }

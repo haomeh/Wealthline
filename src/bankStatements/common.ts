@@ -21,6 +21,17 @@ export interface BankDraftRow {
     currency: string;
     direction: 'debit' | 'credit';
     amount: number;
+    /**
+     * Transient preview-only review metadata; never persisted with the ledger.
+     * Narration lines printed next to this row whose owner is unproven: leading
+     * lines may begin this row or trail the previous one, trailing lines may trail
+     * this row or begin the next. They are NOT part of description, which may be
+     * empty when every narration line of the row is unowned.
+     */
+    ambiguousNarration?: {
+        leading: string[];
+        trailing: string[];
+    };
 }
 export interface BankWarning {
     page: number;
