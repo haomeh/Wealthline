@@ -1,5 +1,6 @@
 // Structural inputs only: this helper must not depend on model/history at runtime.
-export type DataVersion = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14
+// 15: the Drive data file is split into a main file and part files (dataParts.ts).
+export type DataVersion = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15
 export interface VersionedData {
   version: DataVersion
   bankStatementBalances?: unknown

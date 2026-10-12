@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { cashflowSummary, type CashflowInput, type CashflowPeriod, type CashflowReviewTotals } from '../cashflow'
+import { cashflowMonthList, cashflowSummary, type CashflowInput, type CashflowPeriod, type CashflowReviewTotals } from '../cashflow'
 import { fmt } from '../format'
 import { CashflowChart, CashflowCategories } from './CashflowChart'
 
@@ -20,7 +20,7 @@ export function CashflowSummary({now,onGoExpenses,onGoBankTransactions,...input}
   const [currency,setCurrency]=useState('')
   const [mode,setMode]=useState<'trend'|'income'|'expense'>('trend')
   const [selectedMonth,setSelectedMonth]=useState('')
-  const monthOptions=[...new Set([currentMonth,endMonth,...(input.expenses??[]).map(r=>r.date.slice(0,7)),...(input.bankTransactions??[]).map(r=>r.date.slice(0,7))])].sort().reverse()
+  const monthOptions=[...new Set([currentMonth,endMonth,...cashflowMonthList(input)])].sort().reverse()
   const groups=cashflowSummary(input,endMonth,period)
   const group=groups.find(g=>g.currency===currency)??groups[0]
   const selected=group?.months.find(m=>m.month===selectedMonth)??group?.months.at(-1)

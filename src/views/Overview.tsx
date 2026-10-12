@@ -23,6 +23,16 @@ import { colorize } from '../chartColors'
 import { ChangeSinceLast } from './AssetChange'
 import { Allocation, RankBars } from './charts'
 import { CashflowSummary } from './CashflowSummary'
+import type { CashflowMonthTotals } from '../cashflow'
+import type { Change, Snapshot } from '../history'
+
+// Earlier years of history that are not loaded: the last snapshot of each month, the edits
+// that carry holding quantities past them, and the first day the loaded history covers.
+export interface ArchiveSummary {
+  points: Snapshot[]
+  carried: Change[]
+  from: string
+}
 
 interface Props {
   data: WealthData
@@ -34,12 +44,20 @@ interface Props {
   onOpenAccount: (id: string) => void
   onGoExpenses?: () => void
   onGoBankTransactions?: () => void
+  // When transactions are not loaded: their monthly totals (dataSummary.ts).
+  cashflowMonths?: CashflowMonthTotals[]
+  // When earlier years of history are not loaded.
+  archive?: ArchiveSummary
+  onLoadHistory?: () => void
+  loadingHistory?: boolean
 }
 
-export function Overview({ data, onGoHistory, onGoRates, onGoLiabilities, onNewAccount, onImport, onOpenAccount, onGoExpenses, onGoBankTransactions }: Props) {
+export function Overview({ data: loaded, onGoHistory, onGoRates, onGoLiabilities, onNewAccount, onImport, onOpenAccount, onGoExpenses, onGoBankTransactions, cashflowMonths, archive, onLoadHistory, loadingHistory }: Props) {
   const now = useCalendarNow()
+  const data = archive ? { ...loaded, history: { ...loaded.history, snapshots: [...archive.points, ...loaded.history.snapshots], changes: [...archive.carried, ...loaded.history.changes] } } : loaded
   const estimated = data.liabilities?.some(d => d.schedule)
-  const historical = useHistoricalValuations(data)
+  // Without the earlier years, holding quantities are only known from where the loaded history starts.
+  const historical = useHistoricalValuations(data, archive?.from)
   const [selected, setSelected] = useState('current')
   const [mode, setMode] = useState<Mode>('total')
   const live = snapshotOf(data, now)
@@ -50,6 +68,8 @@ export function Overview({ data, onGoHistory, onGoRates, onGoLiabilities, onNewA
   const index = Math.max(0, keys.includes(selected) ? keys.indexOf(selected) : points.length - 1)
   const point = points[index]
   const current = keys[index] === 'current'
+  const cashflow = (cashflowMonths ? cashflowMonths.length > 0 : !!(data.expenses?.length || data.bankTransactions?.length)) &&
+    <CashflowSummary expenses={data.expenses} expenseRules={data.expenseCategoryRules} bankTransactions={data.bankTransactions} bankRules={data.bankCategoryRules} months={cashflowMonths} now={now} onGoExpenses={onGoExpenses} onGoBankTransactions={onGoBankTransactions}/>
   if (data.accounts.length === 0 && !data.liabilities?.length && points.length === 1) {
     return (
       <div className="overview"><section className="panel empty span-2">
@@ -65,7 +85,7 @@ export function Overview({ data, onGoHistory, onGoRates, onGoLiabilities, onNewA
           {onGoLiabilities && <button onClick={onGoLiabilities}>新增負債</button>}
           <button onClick={onImport}>從試算表匯入</button>
         </div>
-      </section>{!!(data.expenses?.length || data.bankTransactions?.length) && <CashflowSummary expenses={data.expenses} expenseRules={data.expenseCategoryRules} bankTransactions={data.bankTransactions} bankRules={data.bankCategoryRules} now={now} onGoExpenses={onGoExpenses} onGoBankTransactions={onGoBankTransactions}/>}</div>
+      </section>{cashflow}</div>
     )
   }
 
@@ -98,6 +118,7 @@ export function Overview({ data, onGoHistory, onGoRates, onGoLiabilities, onNewA
           <label className="field"><span>選擇時間節點</span><select value={keys[index]} onChange={e => setSelected(e.target.value)}>{points.map((p, i) => <option key={keys[i]} value={keys[i]}>{keys[i] === 'current' ? '目前資產' : `${p.date}${p.periodDerived ? ' · 期間推算' : p.manual ? ' · 補登' : ''}`}</option>)}</select></label>
         </div>
         <p className="muted small">拖動滑桿或選擇紀錄，查看當時的餘額與配置。原始快照保留原值；期間推算補上缺少快照的日期，單日補登優先。</p>
+        {archive && onLoadHistory && <p className="muted small">{archive.from.slice(0, 4)} 年以前只顯示每月最後一筆紀錄。<button className="link" disabled={loadingHistory} onClick={onLoadHistory}>{loadingHistory ? '載入中…' : '載入完整歷史'}</button></p>}
         {!!(data.history.quantityDays?.length || data.history.holdingPeriods?.length) && <button className="link" disabled={historical.loading} onClick={historical.refresh}>{historical.loading ? '查詢歷史行情中…' : '重新查詢歷史行情'}</button>}
         {historical.omittedDays > 0 && <p className="muted small">略過 {historical.omittedDays} 個數量不足的推算日，不代表資產為零。</p>}
         {historical.status && <p className="muted small" aria-live="polite">{historical.status}</p>}
@@ -124,7 +145,7 @@ export function Overview({ data, onGoHistory, onGoRates, onGoLiabilities, onNewA
           </p>
         )}
       </section>}
-      {!!(data.expenses?.length || data.bankTransactions?.length) && <CashflowSummary expenses={data.expenses} expenseRules={data.expenseCategoryRules} bankTransactions={data.bankTransactions} bankRules={data.bankCategoryRules} now={now} onGoExpenses={onGoExpenses} onGoBankTransactions={onGoBankTransactions}/>}
+      {cashflow}
       {current && <>
       <section className="panel stat" aria-label="總負債">
         <span className="eyebrow">{estimated ? '總負債（含預估）' : '總負債'}</span><strong>{totals.liabilities === null ? '尚無法換算' : `NT$ ${fmt(totals.liabilities, 0)}`}</strong>

@@ -2,6 +2,7 @@
 // The file lives in a visible "We Wealth" folder so the user can see, download or delete it.
 
 import type { AccessToken } from './auth'
+import { assertWritable, serializeData } from '../storageLimits'
 
 const API = 'https://www.googleapis.com/drive/v3/files'
 // v2 exposes the file ETag in JSON (v3 removed this field). Keep v3 discovery
@@ -20,6 +21,12 @@ export interface DriveVersion {
   fileId: string
   etag: string
 }
+
+// A written part file, with Drive's MD5 checksum of its content (null when Drive does not say).
+export interface PartVersion extends DriveVersion {
+  md5: string | null
+}
+const partVersionOf = (raw: { id?: string; etag?: string; md5Checksum?: string }): PartVersion => ({ ...versionOf(raw), md5: raw.md5Checksum ?? null })
 
 function versionOf(raw: { id?: string; etag?: string }): DriveVersion {
   if (!raw.id || !raw.etag || !/^"[^"]+"$/.test(raw.etag)) {
@@ -40,7 +47,9 @@ async function readVersion(token: AccessToken, fileId: string): Promise<DriveVer
 export const FOLDER_NAME = 'We Wealth'
 export const DATA_FILE_NAME = 'we-wealth-data.json'
 // Tags the app's own files so a search finds them even if the user renames them.
-const APP_PROP = { key: 'weWealth', folder: 'folder', data: 'data' }
+const APP_PROP = { key: 'weWealth', folder: 'folder', data: 'data', part: 'part' }
+// Part files (dataParts.ts) sit in subfolders of the app folder.
+const PART_FOLDERS = { ledger: { role: 'ledger-folder', name: '明細' }, history: { role: 'history-folder', name: '歷史' } }
 
 async function driveFetch(token: AccessToken, url: string, init: RequestInit = {}): Promise<Response> {
   const res = await fetch(url, {
@@ -65,16 +74,17 @@ async function findFile(token: AccessToken, role: string): Promise<string | null
   return files[0]?.id ?? null
 }
 
-async function ensureFolder(token: AccessToken): Promise<string> {
-  const existing = await findFile(token, APP_PROP.folder)
+async function ensureFolder(token: AccessToken, role = APP_PROP.folder, name = FOLDER_NAME, parent?: string): Promise<string> {
+  const existing = await findFile(token, role)
   if (existing) return existing
   const res = await driveFetch(token, `${API}?fields=id`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      name: FOLDER_NAME,
+      name,
       mimeType: 'application/vnd.google-apps.folder',
-      appProperties: { [APP_PROP.key]: APP_PROP.folder },
+      appProperties: { [APP_PROP.key]: role },
+      ...(parent && { parents: [parent] }),
     }),
   })
   return ((await res.json()) as { id: string }).id
@@ -93,30 +103,110 @@ export interface DriveFile<T> extends DriveVersion {
   data: T
 }
 
-// Returns null when the user has no data file yet. `parse` validates the file's contents.
-export async function loadData<T>(token: AccessToken, parse: (raw: unknown) => T): Promise<DriveFile<T> | null> {
-  const fileId = await findFile(token, APP_PROP.data)
-  if (!fileId) return null
+export interface DriveText extends DriveVersion {
+  text: string
+}
+
+// Reads one file's text together with the ETag of exactly that content.
+export async function readFile(token: AccessToken, fileId: string): Promise<DriveText> {
   const version = await readVersion(token, fileId)
   const res = await driveFetch(token, `${VERSIONED_API}/${fileId}?alt=media&revisionId=${encodeURIComponent(version.headRevisionId)}`, {
     // Media and metadata representations need not expose the same ETag.
     // Download exactly the revision paired with the metadata ETag, then recheck.
     cache: 'no-store',
   })
-  let raw: unknown
+  const text = await res.text()
+  const after = await readVersion(token, fileId)
+  if (after.etag !== version.etag || after.headRevisionId !== version.headRevisionId) throw new DriveConflictError()
+  return { fileId: version.fileId, etag: version.etag, text }
+}
+
+// The main data file's id, or null when the user has none yet.
+export const findDataFile = (token: AccessToken) => findFile(token, APP_PROP.data)
+
+export function parseJson(text: string): unknown {
   try {
-    raw = JSON.parse(await res.text())
+    return JSON.parse(text)
   } catch {
     throw new Error(`Drive 中的 ${DATA_FILE_NAME} 不是有效的 JSON，請修正或刪除該檔案後重新登入。`)
   }
-  const after = await readVersion(token, fileId)
-  if (after.etag !== version.etag || after.headRevisionId !== version.headRevisionId) throw new DriveConflictError()
-  return { fileId: version.fileId, etag: version.etag, data: parse(raw) }
 }
 
-// Creates the file on first save; afterwards overwrites the same file.
-export async function saveData<T>(token: AccessToken, data: T, version?: DriveVersion): Promise<DriveVersion> {
-  const content = JSON.stringify(data, null, 2)
+// Returns null when the user has no data file yet. `parse` validates the file's contents.
+export async function loadData<T>(token: AccessToken, parse: (raw: unknown) => T): Promise<DriveFile<T> | null> {
+  const fileId = await findDataFile(token)
+  if (!fileId) return null
+  const file = await readFile(token, fileId)
+  const raw = parseJson(file.text)
+  return { fileId: file.fileId, etag: file.etag, data: parse(raw) }
+}
+
+// The ids of every part file of data set `datasetId` (see dataParts.ts).
+// A part file as listed: its id, part name, size in bytes and MD5 checksum (null when Drive does not say).
+export interface ListedPart {
+  id: string
+  name: string
+  size: number | null
+  md5: string | null
+}
+
+export async function listParts(token: AccessToken, datasetId: string): Promise<ListedPart[]> {
+  if (!/^[A-Za-z0-9-]{1,64}$/.test(datasetId)) throw new Error('資料集識別碼無效，已停止載入。')
+  const q = `appProperties has { key='${APP_PROP.key}' and value='${APP_PROP.part}' } and appProperties has { key='dataset' and value='${datasetId}' } and trashed = false`
+  const parts: ListedPart[] = []
+  let page = ''
+  do {
+    const url = `${API}?q=${encodeURIComponent(q)}&spaces=drive&fields=files(id,appProperties,size,md5Checksum),nextPageToken&orderBy=createdTime&pageSize=1000${page && `&pageToken=${encodeURIComponent(page)}`}`
+    const { files, nextPageToken } = (await (await driveFetch(token, url, { cache: 'no-store' })).json()) as { files: { id: string; appProperties?: Record<string, string>; size?: string; md5Checksum?: string }[]; nextPageToken?: string }
+    for (const f of files) {
+      const size = Number(f.size)
+      parts.push({ id: f.id, name: f.appProperties?.part ?? '', size: f.size !== undefined && Number.isFinite(size) ? size : null, md5: f.md5Checksum ?? null })
+    }
+    page = nextPageToken ?? ''
+  } while (page)
+  return parts
+}
+
+// Creates part file `name` (e.g. ledger-2026-Q4) in its subfolder. Refuses oversized content.
+export async function createPart(token: AccessToken, name: string, fileName: string, datasetId: string, content: string): Promise<PartVersion> {
+  assertWritable(content)
+  const folder = PART_FOLDERS[name.startsWith('ledger-') ? 'ledger' : 'history']
+  const parent = await ensureFolder(token, folder.role, folder.name, await ensureFolder(token))
+  const { body, contentType } = multipartBody(
+    {
+      title: fileName,
+      mimeType: 'application/json',
+      parents: [{ id: parent }],
+      properties: [
+        { key: APP_PROP.key, value: APP_PROP.part, visibility: 'PRIVATE' },
+        { key: 'dataset', value: datasetId, visibility: 'PRIVATE' },
+        { key: 'part', value: name, visibility: 'PRIVATE' },
+      ],
+    },
+    content,
+  )
+  const res = await driveFetch(token, `${UPLOAD}?uploadType=multipart&fields=id,etag,md5Checksum`, { method: 'POST', headers: { 'Content-Type': contentType }, body })
+  return partVersionOf(await res.json())
+}
+
+// Replaces a part file's content, only if it is still at `version`.
+export async function updatePart(token: AccessToken, version: DriveVersion, content: string): Promise<PartVersion> {
+  assertWritable(content)
+  versionOf({ id: version.fileId, etag: version.etag })
+  const res = await driveFetch(token, `${UPLOAD}/${version.fileId}?uploadType=media&fields=id,etag,md5Checksum`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', 'If-Match': version.etag },
+    body: content,
+  })
+  return partVersionOf(await res.json())
+}
+
+// Refuses, before any request, a file over the size limit (storageLimits.ts).
+export const saveData = <T>(token: AccessToken, data: T, version?: DriveVersion) => saveDataText(token, serializeData(data), version)
+
+// Writes the main data file's text: creates it on first save, afterwards overwrites the same file.
+export async function saveDataText(token: AccessToken, content: string, version?: DriveVersion): Promise<DriveVersion> {
+  assertWritable(content)
   if (version) {
     versionOf({ id: version.fileId, etag: version.etag })
     // A concurrent first creation may have appeared after this session loaded.

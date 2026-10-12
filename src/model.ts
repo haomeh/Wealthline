@@ -180,7 +180,7 @@ export function parseWealthData(raw: unknown, source: keyof typeof SOURCES = 'dr
     throw new Error(`${SOURCES[source][0]}格式不正確：${why}。${SOURCES[source][1]}`)
   }
   const obj = (typeof raw === 'object' && raw !== null ? raw : fail('不是 JSON 物件')) as Record<string, unknown>
-  if (obj.version !== 1 && obj.version !== 2 && obj.version !== 3 && obj.version !== 4 && obj.version !== 5 && obj.version !== 6 && obj.version !== 7 && obj.version !== 8 && obj.version !== 9 && obj.version !== 10 && obj.version !== 11 && obj.version !== 12 && obj.version !== 13 && obj.version !== 14) fail(`不支援的版本 ${String(obj.version)}`)
+  if (!(typeof obj.version === 'number' && Number.isInteger(obj.version) && obj.version >= 1 && obj.version <= 15)) fail(`不支援的版本 ${String(obj.version)}`)
   if (!Array.isArray(obj.accounts)) fail('缺少 accounts 陣列')
 
   const str = (v: unknown, fallback = '') => (typeof v === 'string' ? v.trim() : fallback)
