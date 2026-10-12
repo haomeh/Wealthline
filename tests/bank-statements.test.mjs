@@ -316,3 +316,26 @@ test('DBS currency evidence comes from the date column, excluding nearby descrip
  const nearby=dbsSg();nearby[1].items.push(item('Currency: US DOLLAR',113,565));
  const r=bank.parseBankStatement(nearby);assert.equal(r.bank,'DBS Singapore');assert.equal(r.recognizedCount,2);
 })
+
+
+test('DBS SG retains the explicit dated closing cash balance separately from transactions',()=>{
+ const p=dbsSg();p[0].items.push(item('as at 30 Sep 2031',231,508));const r=bank.parseBankStatement(p);
+ assert.deepEqual(r.balances??[],[{bank:'DBS Singapore',date:'2031-09-30',currency:'SGD',quantity:987684.82}]);assert.equal(r.recognizedCount,2);assert.ok(!JSON.stringify(r).includes('271-000111-7'));
+})
+test('closing balance needs an unambiguous date and an actual balance cell, never a deposit total',()=>{
+ for(const kind of ['missing-date','conflicting-date','missing-balance','malformed-balance','only-running-balance']){
+  const p=dbsSg();if(kind!=='missing-date')p[0].items.push(item('as at 30 Sep 2031',231,508));if(kind==='conflicting-date')p[0].items.push(item('as at 31 Oct 2031',231,488));
+  if(kind==='missing-balance')p[1].items=p[1].items.filter(i=>!(i.y===122&&i.x>474));
+  if(kind==='malformed-balance')p[1].items.find(i=>i.y===122&&i.x>474).text='987684.xx';
+  if(kind==='only-running-balance')p[1].items=p[1].items.filter(i=>i.y!==122);
+  assert.deepEqual(bank.parseBankStatement(p).balances??[],[],kind);
+ }
+})
+
+
+test('closing dates reject conflicting labels on the same cover line and invalid month names',()=>{
+ for(const label of ['Statement Date: 30 Sep 2031 as at 31 Oct 2031','as at 30 Sepgarble 2031']){
+  const p=dbsSg();p[0].items.push(item(label,231,508));assert.deepEqual(bank.parseBankStatement(p).balances??[],[],label);
+ }
+ const p=dbsSg();p[0].items.push(item('Statement Date: 30 September 2031 as at 30 Sep 2031',231,508));assert.equal(bank.parseBankStatement(p).balances[0].date,'2031-09-30');
+})
