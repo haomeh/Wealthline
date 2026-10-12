@@ -1,7 +1,8 @@
 // Structural inputs only: this helper must not depend on model/history at runtime.
-export type DataVersion = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13
+export type DataVersion = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14
 export interface VersionedData {
   version: DataVersion
+  bankStatementBalances?: unknown
   bankTransactionAccounts?: unknown
   bankTransactions?: unknown
   bankCategoryRules?: unknown
@@ -19,7 +20,8 @@ export interface DataVersionOptions {
 }
 export function dataVersion(data: VersionedData, options: DataVersionOptions = {}): DataVersion {
   let version = Math.max(data.version, options.minimumVersion ?? 1, options.persistedVersion ?? 1)
-  if (data.bankTransactionAccounts !== undefined || data.bankTransactions !== undefined || data.bankCategoryRules !== undefined) version = 13
+  if (data.bankTransactionAccounts !== undefined || data.bankTransactions !== undefined || data.bankCategoryRules !== undefined) version = Math.max(version, 13)
+  if (data.bankStatementBalances !== undefined) version = Math.max(version, 14)
   if (data.statementPasswords !== undefined) version = Math.max(version, 12)
   if (data.expenseCategoryRules !== undefined) version = Math.max(version, 11)
   if (data.expenses !== undefined) version = Math.max(version, 10)
