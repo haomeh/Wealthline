@@ -20,14 +20,17 @@ export function BankStatementImport({accounts,existing,rules,passwords,passwordS
  function patch(id:string,change:Partial<PreviewSection>){setError('');setSections(list=>list.map(s=>s.id===id?{...s,...change}:s));setReview(null);setKeep(false)}
  function patchRow(id:string,index:number,draft:BankTransaction){setError('');setSections(list=>list.map(s=>s.id===id?{...s,rows:s.rows.map((r,i)=>i===index?{...r,draft,confirmed:r.confirmed&&draft.description===r.draft.description}:r)}:s));setReview(null);setKeep(false)}
  async function parse(e:FormEvent){e.preventDefault();if(locked||!files.length)return;if(sections.length && !confirm('重新解析會捨棄目前預覽、手動補登、帳戶映射及選取狀態。確定捨棄並重新解析？'))return;controller.current?.abort();const abort=new AbortController();controller.current=abort;setParsing(true);setError('');setReview(null);const secret=password;setPassword('');const outcomes:string[]=[],next:PreviewSection[]=[]
+ let stage:BankImportStage='setup'
  try{
- const stored=await unlockStatementPasswords(passwordScope??'',passwords)
+ let stored:Awaited<ReturnType<typeof unlockStatementPasswords>>={values:[],unavailable:0}
+ try{stored=await unlockStatementPasswords(passwordScope??'',passwords)}
+ catch{if(abort.signal.aborted)return;outcomes.push(BANK_PDF_ERRORS.passwordStore)}
  if(abort.signal.aborted)return
  const candidates=[...stored.values,...secret.split(',').map(x=>x.trim()).filter(Boolean)]
  if(stored.unavailable)outcomes.push(`${stored.unavailable} 組密碼無法在此瀏覽器解鎖，請重新設定或手動輸入。`)
  for(let index=0;index<files.length;index++){
  if(abort.signal.aborted)return
- let stage:BankImportStage='fileRead'
+ stage='fileRead'
  try{
  const file=files[index];if(file.size>20*1024*1024)throw new Error(BANK_PDF_ERRORS.size)
  const bytes=new Uint8Array(await file.arrayBuffer());if(abort.signal.aborted)return
@@ -51,8 +54,9 @@ export function BankStatementImport({accounts,existing,rules,passwords,passwordS
  next.push(...fileSections);outcomes.push(...fileReports)
  }catch(e){if(abort.signal.aborted)return;outcomes.push(`檔案 ${index+1} · 無法解析：${bankStatementErrorMessage(e,stage).replace(/。$/, '')}。未加入任何此檔資料。`)}
  }
+ stage='result'
  if(!abort.signal.aborted){setReports(outcomes);setSections(next);setFiles([])}
- }catch{if(!abort.signal.aborted)setError('無法解鎖或讀取帳單，請重新設定密碼或手動輸入。')}finally{if(!abort.signal.aborted)setParsing(false)}
+ }catch(e){if(!abort.signal.aborted)setError(bankStatementErrorMessage(e,stage))}finally{if(!abort.signal.aborted)setParsing(false)}
  }
  async function prepare(){if(locked)return;const abort=new AbortController();controller.current=abort;setParsing(true);setError('');setKeep(false)
  try{

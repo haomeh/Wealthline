@@ -182,3 +182,31 @@ test('wrapped worker failure reaches the import report safely and later files st
  const report=document.querySelector('[aria-label="銀行解析結果"]').textContent;
  assert.match(report,/BANK-OPEN-INTERNAL/);assert.match(report,/解析程式或檔案格式/);assert.ok(!report.includes('SECRET'));assert.match(report,/檔案 2.*有效 1 筆/);assert.equal(document.querySelectorAll('.bank-preview-row').length,1);assert.equal(latest().bankTransactions.length,0);
 })
+
+
+test('PDF diagnostics never throw when an Error has a non-string message or inaccessible fields',async()=>{
+ const {bankStatementErrorMessage}=await server.ssrLoadModule('/src/bankStatementErrors.ts');
+ for(const message of [undefined,null,42,{},Object('SECRET RESOURCE')]){
+  const error=Object.assign(new Error(),{message});const diagnostic=bankStatementErrorMessage(error,'open');assert.match(diagnostic,/BANK-OPEN/);assert.ok(!diagnostic.includes('SECRET'));
+ }
+ for(const field of ['message','name']){
+  const error=new Error('SECRET RESOURCE');Object.defineProperty(error,field,{get(){throw new Error('SECRET FIELD ACCESS')}});
+  const diagnostic=bankStatementErrorMessage(error,'open');assert.match(diagnostic,/BANK-OPEN/);assert.ok(!diagnostic.includes('SECRET'));
+ }
+})
+test('malformed reader error stays a file failure instead of becoming a vault failure',async()=>{
+ const readerError=Object.assign(new Error(),{message:undefined,name:'AbortException'});pdf.reset([readerError,parsed()]);
+ const latest=await render();await click('匯入銀行帳單');await files(2);await submitImport();
+ assert.ok(!document.querySelector('[role="alert"]'),document.querySelector('[role="alert"]')?.textContent);
+ const report=document.querySelector('[aria-label="銀行解析結果"]')?.textContent??'';
+ assert.match(report,/檔案 1.*BANK-OPEN/);assert.match(report,/檔案 2.*有效 1 筆/);assert.ok(!document.querySelector('[role="alert"]'));assert.equal(document.querySelectorAll('.bank-preview-row').length,1);assert.equal(latest().bankTransactions.length,0);
+})
+
+
+for(const manual of ['', 'synthetic-manual-fallback'])test(`unexpected vault rejection still allows ${manual?'manual password':'unencrypted PDF'} import`,async()=>{
+ // Fail at the vault boundary before its normal per-key recovery, without test hooks in production.
+ const passwords=new Proxy([],{get(target,key,receiver){if(key==='length')throw new Error('SECRET VAULT REJECTION');return Reflect.get(target,key,receiver)}});
+ pdf.reset([parsed()]);const latest=await render({...empty,statementPasswords:passwords});await click('匯入銀行帳單');await files();if(manual)await input('銀行 PDF 密碼',manual);await submitImport();
+ assert.ok(!document.querySelector('[role="alert"]'),document.querySelector('[role="alert"]')?.textContent);
+ const report=document.querySelector('[aria-label="銀行解析結果"]')?.textContent??'';assert.match(report,/BANK-PASSWORDS/);assert.ok(!report.includes('SECRET'));assert.match(report,/有效 1 筆/);assert.deepEqual(pdf.calls[0].password,manual?[manual]:[]);assert.equal(document.querySelectorAll('.bank-preview-row').length,1);assert.equal(document.querySelector('[aria-label="銀行 PDF 密碼"]').value,'');assert.equal(latest().bankTransactions.length,0);
+})
