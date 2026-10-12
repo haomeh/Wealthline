@@ -10,6 +10,8 @@ const EFFECTIVE = '2026 年 10 月 10 日'
 // The privacy policy has its own date, which also drives the in-app notice (site.ts).
 const [UPDATED_Y, UPDATED_M, UPDATED_D] = PRIVACY_UPDATED.split('-').map(Number)
 const PRIVACY_EFFECTIVE = `${UPDATED_Y} 年 ${UPDATED_M} 月 ${UPDATED_D} 日`
+const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
+const PRIVACY_EFFECTIVE_EN = `${MONTHS[UPDATED_M - 1]} ${UPDATED_D}, ${UPDATED_Y}`
 const DATA_PATH = `我的雲端硬碟 / ${FOLDER_NAME} / ${DATA_FILE_NAME}`
 const LEDGER_PATH = `${FOLDER_NAME} / ${LEDGER_FOLDER_NAME}`
 const HISTORY_PATH = `${FOLDER_NAME} / ${HISTORY_FOLDER_NAME}`
@@ -145,7 +147,7 @@ function Privacy() {
       <Section title="五、資料存放在哪裡、保存多久">
         <ul>
           <li>
-            <strong>資產資料</strong>：以 JSON 檔存放在你的 Google Drive 的「{FOLDER_NAME}」資料夾。主資料檔是 <code>{DATA_PATH}</code>；消費明細與銀行流水依日期每季存成一個分檔，放在 <code>{LEDGER_PATH}</code>，往年的快照與修改紀錄每年存成一個分檔，放在 <code>{HISTORY_PATH}</code>。開啟時只讀取主資料檔，進入需要的頁面時才讀取分檔。這些檔案由你自己保管，直到你刪除為止。瀏覽器執行期間也會在記憶體中處理資料；帳號選單的「下載完整備份」會把所有檔案的資料合成一個 JSON 檔，存放在你選擇的位置。
+            <strong>資產資料</strong>：以 JSON 檔存放在你的 Google Drive 的「{FOLDER_NAME}」資料夾。主資料檔是 <code>{DATA_PATH}</code>；消費明細與銀行流水依日期每季存成一個分檔，放在 <code>{LEDGER_PATH}</code>，往年的快照與修改紀錄每年存成一個分檔，放在 <code>{HISTORY_PATH}</code>。開啟時通常只讀取主資料檔，進入需要的頁面時才讀取分檔。這些檔案由你自己保管，直到你刪除為止。瀏覽器執行期間也會在記憶體中處理資料；帳號選單的「下載完整備份」會把所有檔案的資料合成一個 JSON 檔，存放在你選擇的位置。
           </li>
           <li>
             <strong>登入資訊</strong>：存取權杖只存放在目前分頁的 sessionStorage：重新整理頁面仍保持登入，通常在關閉分頁後清除；瀏覽器的工作階段復原功能可能保留它，因此共用裝置請務必登出。localStorage 只保存帳號識別碼、電子郵件、名稱與大頭貼網址，供下次繼續登入，另記錄你最後看過的隱私權政策版本。登出立即清除本機登入資訊，並嘗試向 Google 撤銷權杖；若網路失敗，可至 Google 帳戶撤銷授權。
@@ -284,7 +286,7 @@ function PrivacyEnglish() {
   return (
     <section className="legal-en" lang="en" id="english">
       <h2>Wealthline Privacy Policy (English)</h2>
-      <p className="muted small">Effective date: October 8, 2026 · Last updated: October 11, 2026 · App: Wealthline · Website: {SITE_URL} · Operator: {OPERATOR} ({OPERATOR_URL})</p>
+      <p className="muted small">Effective date: October 8, 2026 · Last updated: {PRIVACY_EFFECTIVE_EN} · App: Wealthline · Website: {SITE_URL} · Operator: {OPERATOR} ({OPERATOR_URL})</p>
       <p>
         This privacy policy explains how <strong>Wealthline</strong> (<a href={SITE_URL}>{SITE_HOST}</a>), a free, open-source personal asset tracking web app,
         accesses, uses, stores, shares and deletes Google user data. Wealthline lets you record bank balances, stocks, funds and crypto holdings and shows your
@@ -312,7 +314,7 @@ function PrivacyEnglish() {
       <p>Google user data is used only to provide the features you see in the app:</p>
       <ul>
         <li>your email, name and picture are shown in the account menu so you know which account is signed in, and your email lets you sign in again with one click;</li>
-        <li>the Drive files are read to calculate assets, debts, net worth, allocation, historical values, categorized bank/card income and consumption, and repayment estimates. Opening the app reads only the main file; part files are read when you open a page that needs them. The files are updated when you save changes or historical edits, and the main file may also be updated automatically to record the day’s first snapshot when you open an existing account.</li>
+        <li>the Drive files are read to calculate assets, debts, net worth, allocation, historical values, categorized bank/card income and consumption, and repayment estimates. Opening the app usually reads only the main file; part files are read when you open a page that needs them. The files are updated when you save changes or historical edits, and may also be updated automatically to record the day’s first snapshot when you open an existing account.</li>
       </ul>
       <p>
         Wealthline does not use Google user data for advertising, does not sell it, does not use it for credit or lending decisions, does not build user

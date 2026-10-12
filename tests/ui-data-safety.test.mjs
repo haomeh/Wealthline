@@ -2099,3 +2099,14 @@ test('a split Drive file opens from its main file; the transaction and history p
   await click(button('歷史明細'));await settle()
   assert.ok(reads(from).includes('history-2025'))
 })
+
+test('both language versions of the privacy policy show the date the in-app notice uses',async()=>{
+  const {PRIVACY_UPDATED}=await server.ssrLoadModule('/src/site.ts')
+  const [y,m,d]=PRIVACY_UPDATED.split('-').map(Number)
+  window.history.replaceState(null,'','/privacy')
+  await render(App)
+  const text=document.body.textContent
+  assert.ok(text.includes(`最後更新：${y} 年 ${m} 月 ${d} 日`))
+  const month=new Date(Date.UTC(y,m-1,d)).toLocaleString('en-US',{month:'long',timeZone:'UTC'})
+  assert.ok(text.includes(`Last updated: ${month} ${d}, ${y}`), 'English date matches')
+})

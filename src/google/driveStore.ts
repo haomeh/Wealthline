@@ -59,6 +59,9 @@ export interface DriveState {
   summary: DataSummary
   // The category rules in the main file, which the transaction summaries are counted with.
   rules: Rules
+  // Set once parts were read after another device changed the main file: their records may not
+  // match this session's main file, so no later read shows them until the page is reloaded.
+  stale?: boolean
 }
 
 export const emptyDriveState = (): DriveState => ({ datasetId: newId(), split: false, parts: new Map(), summary: emptySummary(), rules: {} })
@@ -204,10 +207,18 @@ const rulesFrom = (raw: Record<string, unknown>): Rules => ({ expenseCategoryRul
 // session holds (another device saved since), with records that refer to accounts it lacks:
 // then this stops and asks for a reload.
 export async function readGroup(token: AccessToken, state: DriveState, group: PartGroup): Promise<Part[]> {
+  if (state.stale) throw new DriveConflictError(RELOAD_NEEDED)
   const names = [...state.parts.keys()].filter((name) => partGroup(name) === group)
   const unread = names.some((name) => !state.parts.get(name)!.part)
   const parts = await eachLimited(names, (name) => readPart(token, state, name))
-  if (unread && state.main) await assertCurrent(token, state.main, RELOAD_NEEDED)
+  if (unread && state.main) {
+    try {
+      await assertCurrent(token, state.main, RELOAD_NEEDED)
+    } catch (e) {
+      if (e instanceof DriveConflictError) state.stale = true
+      throw e
+    }
+  }
   await refreshSummary(token, state)
   return parts
 }

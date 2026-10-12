@@ -194,6 +194,9 @@ test('parts read after another device saved stop with a reload message instead o
   assert.ok(error)
   assert.match(error.message, /重新載入頁面/)
   assert.doesNotMatch(error.message, /刪除/)
+  // Trying again, or another page, still asks for a reload instead of showing the newer parts.
+  await assert.rejects(store.readGroup(token, a.state, 'ledger'), /重新載入頁面/)
+  await assert.rejects(store.readGroup(token, a.state, 'history'), /重新載入頁面/)
 })
 
 test('a part that does not join with the main file is reported without asking to delete Drive files', () => {
