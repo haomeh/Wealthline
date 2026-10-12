@@ -111,7 +111,7 @@ export function Landing({ returning, hasLocal, busy, message, onSignIn, onResume
                 exposure and daily trend.
               </p>
               <p>
-                Google sign-in is used to save your data in <strong>your own Google Drive</strong>. Wealthline requests <code>openid</code>, <code>email</code> and <code>profile</code> to identify the signed-in account, plus <code>drive.file</code> to create and update its own folder and data file. It does not request access to your entire Drive. See the{' '}
+                Google sign-in is used to save your data in <strong>your own Google Drive</strong>. Wealthline requests <code>openid</code>, <code>email</code> and <code>profile</code> to identify the signed-in account, plus <code>drive.file</code> to create and update its own folders and data files. It does not request access to your entire Drive. See the{' '}
                 <Link to={PAGES.privacy.path}>privacy policy</Link>.
               </p>
             </div>
