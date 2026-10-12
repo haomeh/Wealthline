@@ -1,3 +1,4 @@
+import { BANK_PDF_ERRORS } from './bankStatementErrors';
 import { protectBankText } from './bankTextPrivacy';
 import { spatialLines, tableHeader, isoDate, money, identifier, labeledAccount, currencies } from './bankStatements/common';
 import type { BankDraftRow, BankPage, BankSection, BankStatementMetadata, BankWarning, Layout, Table } from './bankStatements/common';
@@ -564,6 +565,8 @@ export function parseBankStatement(pages: readonly BankPage[], metadata: BankSta
 }
 /** Lazy browser-local neutral reader; never enters the card OCR/scoping adapter. */
 export async function readBankStatementPdf(bytes: Uint8Array, password: string | readonly string[], signal: AbortSignal) {
-    const { readBankDocument } = await import('./statementDocument');
-    return readBankDocument(bytes, password, signal);
+    let reader: typeof import('./statementDocument');
+    try { reader = await import('./statementDocument'); }
+    catch { throw new Error(BANK_PDF_ERRORS.module); }
+    return reader.readBankDocument(bytes, password, signal);
 }

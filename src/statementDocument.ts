@@ -1,7 +1,7 @@
 import { GlobalWorkerOptions, getDocument, PasswordException } from 'pdfjs-dist/legacy/build/pdf.mjs';
 import workerUrl from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url';
 import { statementPasswordHandler } from './statements';
-import { BANK_PDF_ERRORS, bankStatementErrorMessage } from './bankStatementErrors';
+import { BANK_PDF_ERRORS, bankStatementErrorMessage, type BankImportStage } from './bankStatementErrors';
 import type { BankPage } from './bankStatements/common';
 GlobalWorkerOptions.workerSrc = workerUrl;
 // Both document modes use local assets; no remote character-map/font fetches.
@@ -38,19 +38,24 @@ export async function readBankDocument(bytes: Uint8Array, password: string | rea
 }> {
     if (signal.aborted)
         throw new Error('已取消解析');
-    const task = openStatementDocument('bank', bytes, password), cancel = () => { void task.destroy(); };
-    signal.addEventListener('abort', cancel, { once: true });
+    let task: ReturnType<typeof openStatementDocument> | undefined;
+    let stage: BankImportStage = 'open', failed = false, cleanupFailure: string | undefined;
+    const pages: BankPage[] = [];
+    const cancel = () => { void task?.destroy().catch(() => {}); };
     try {
+        task = openStatementDocument('bank', bytes, password);
+        signal.addEventListener('abort', cancel, { once: true });
         const pdf = await task.promise;
         if (pdf.numPages > 100)
             throw new Error(BANK_PDF_ERRORS.pages);
-        const pages: BankPage[] = [];
         let chars = 0;
         for (let n = 1; n <= pdf.numPages; n++) {
             if (signal.aborted)
                 throw new Error('已取消解析');
+            stage = 'page';
             const page = await pdf.getPage(n);
             try {
+                stage = 'text';
                 const viewport = page.getViewport({ scale: 1 }), text = await page.getTextContent();
                 if (signal.aborted)
                     throw new Error('已取消解析');
@@ -70,19 +75,27 @@ export async function readBankDocument(bytes: Uint8Array, password: string | rea
         }
         if (!chars)
             throw new Error(BANK_PDF_ERRORS.noText);
-        return { pages, mode: 'bank' };
     }
     catch (e) {
+        failed = true;
         if (signal.aborted)
             throw new Error('已取消解析');
         if (e instanceof PasswordException) {
             const hasPassword = typeof password === 'string' ? password.split(',').some(p => p.trim()) : password.some(p => p.length > 0);
             throw new Error(hasPassword ? BANK_PDF_ERRORS.passwordIncorrect : BANK_PDF_ERRORS.passwordRequired);
         }
-        throw new Error(bankStatementErrorMessage(e));
+        throw new Error(bankStatementErrorMessage(e, stage));
     }
     finally {
         signal.removeEventListener('abort', cancel);
-        await task.destroy();
+        // A teardown error must not replace the original failure or leak raw PDF errors.
+        try { await task?.destroy(); }
+        catch (e) {
+            if (!failed && !signal.aborted)
+                cleanupFailure = bankStatementErrorMessage(e, 'cleanup');
+        }
     }
+    if (signal.aborted) throw new Error('已取消解析');
+    if (cleanupFailure) throw new Error(cleanupFailure);
+    return { pages, mode: 'bank' };
 }

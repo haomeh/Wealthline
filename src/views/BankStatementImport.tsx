@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
-import { BANK_PDF_ERRORS, bankStatementErrorMessage } from '../bankStatementErrors'
+import { BANK_PDF_ERRORS, bankStatementErrorMessage, type BankImportStage } from '../bankStatementErrors'
 import { sha256 } from '../expenses'
 import { mergeBankTransactions, prepareBankTransactions, validateBankLedger, type BankTransaction, type BankTransactionAccount, type BankTransactionRow, type BankCategoryRule, type BankRowProvenance } from '../bankTransactions'
 import { protectBankText } from '../bankTextPrivacy'
@@ -25,25 +25,31 @@ export function BankStatementImport({accounts,existing,rules,passwords,passwordS
  if(abort.signal.aborted)return
  const candidates=[...stored.values,...secret.split(',').map(x=>x.trim()).filter(Boolean)]
  if(stored.unavailable)outcomes.push(`${stored.unavailable} 組密碼無法在此瀏覽器解鎖，請重新設定或手動輸入。`)
- const {readBankStatementPdf,parseBankStatement}=await import('../bankStatements')
  for(let index=0;index<files.length;index++){
  if(abort.signal.aborted)return
+ let stage:BankImportStage='fileRead'
  try{
  const file=files[index];if(file.size>20*1024*1024)throw new Error(BANK_PDF_ERRORS.size)
  const bytes=new Uint8Array(await file.arrayBuffer());if(abort.signal.aborted)return
  if(new TextDecoder().decode(bytes.slice(0,5))!=='%PDF-')throw new Error(BANK_PDF_ERRORS.format)
- const hash=await sha256(bytes),document=await readBankStatementPdf(bytes,candidates,abort.signal)
+ stage='fingerprint';const hash=await sha256(bytes)
+ stage='module';const {readBankStatementPdf,parseBankStatement}=await import('../bankStatements')
+ stage='open';const document=await readBankStatementPdf(bytes,candidates,abort.signal)
  if(abort.signal.aborted)return
+ stage='parse'
  const result:BankStatementResult=parseBankStatement(document.pages)
- outcomes.push(`檔案 ${index+1} · ${result.bank??'未辨識'} · ${result.status==='unsupported'?'不支持／未辨識':result.status==='partial'?'局部覆蓋':'已辨識'} · 有效 ${result.recognizedCount} 筆 · 解析問題事件 ${result.rejectedCount}（不是漏列筆數）`)
- for(const warning of summarizeBankWarnings(result.warnings))outcomes.push(`檔案 ${index+1} · ${warning.text} · ${warning.count} 個事件`)
+ stage='preview';const fileReports:string[]=[],fileSections:PreviewSection[]=[]
+ fileReports.push(`檔案 ${index+1} · ${result.bank??'未辨識'} · ${result.status==='unsupported'?'不支持／未辨識':result.status==='partial'?'局部覆蓋':'已辨識'} · 有效 ${result.recognizedCount} 筆 · 解析問題事件 ${result.rejectedCount}（不是漏列筆數）`)
+ for(const warning of summarizeBankWarnings(result.warnings))fileReports.push(`檔案 ${index+1} · ${warning.text} · ${warning.count} 個事件`)
  result.sections.forEach((s:BankSection)=>{
- const id=crypto.randomUUID();outcomes.push(`檔案 ${index+1} · ${s.currency} 帳戶區段 ${next.length+1} · ${s.noTransactions?'已證明無交易':`${s.rows.length} 筆已辨識`} ${s.partial?'· 僅局部轉出明細，不是完整月流水':''}`)
- next.push({id,bank:s.bank,currency:s.currency,hash,accountId:'',newId:crypto.randomUUID(),label:'',noTransactions:s.noTransactions,partial:s.partial,warnings:summarizeBankWarnings(s.warnings),rows:s.rows.map(r=>({draft:{id:crypto.randomUUID(),accountId:'',date:r.date,description:protectBankText(r.description),currency:r.currency,direction:r.direction,amount:r.amount},original:{date:r.date,description:protectBankText(r.description)||BANK_SUMMARY_PENDING,currency:r.currency,direction:r.direction,amount:r.amount},provenance:{page:r.page,sectionKey:r.sectionKey,rowKey:r.rowKey},selected:true,
+ const id=crypto.randomUUID();fileReports.push(`檔案 ${index+1} · ${s.currency} 帳戶區段 ${next.length+fileSections.length+1} · ${s.noTransactions?'已證明無交易':`${s.rows.length} 筆已辨識`} ${s.partial?'· 僅局部轉出明細，不是完整月流水':''}`)
+ fileSections.push({id,bank:s.bank,currency:s.currency,hash,accountId:'',newId:crypto.randomUUID(),label:'',noTransactions:s.noTransactions,partial:s.partial,warnings:summarizeBankWarnings(s.warnings),rows:s.rows.map(r=>({draft:{id:crypto.randomUUID(),accountId:'',date:r.date,description:protectBankText(r.description),currency:r.currency,direction:r.direction,amount:r.amount},original:{date:r.date,description:protectBankText(r.description)||BANK_SUMMARY_PENDING,currency:r.currency,direction:r.direction,amount:r.amount},provenance:{page:r.page,sectionKey:r.sectionKey,rowKey:r.rowKey},selected:true,
  // Candidates stay preview-only metadata under the same protection as summaries.
  ...(r.ambiguousNarration && {narration:{leading:r.ambiguousNarration.leading.map(t=>protectBankText(t)),trailing:r.ambiguousNarration.trailing.map(t=>protectBankText(t))}})}))})
  })
- }catch(e){if(abort.signal.aborted)return;outcomes.push(`檔案 ${index+1} · 無法解析：${bankStatementErrorMessage(e).replace(/。$/, '')}。未加入任何此檔資料。`)}
+ // Commit one file only after every section has been prepared successfully.
+ next.push(...fileSections);outcomes.push(...fileReports)
+ }catch(e){if(abort.signal.aborted)return;outcomes.push(`檔案 ${index+1} · 無法解析：${bankStatementErrorMessage(e,stage).replace(/。$/, '')}。未加入任何此檔資料。`)}
  }
  if(!abort.signal.aborted){setReports(outcomes);setSections(next);setFiles([])}
  }catch{if(!abort.signal.aborted)setError('無法解鎖或讀取帳單，請重新設定密碼或手動輸入。')}finally{if(!abort.signal.aborted)setParsing(false)}

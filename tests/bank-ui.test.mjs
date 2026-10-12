@@ -7,7 +7,7 @@ import { statementKeyStore } from './helpers/statement-key-store.mjs'
 let server,dom,root,createRoot,Page,routes,pdf,App,appHook,auth,model
 const originalFetch=globalThis.fetch
 const appMock=`import {createElement} from 'react';import {BankTransactions as Real} from '/src/views/BankTransactions.tsx';export let change,data;export function BankTransactions(props){change=props.onChange;data=props.data;return createElement(Real,props)}`
-const pdfMock=`let results=[],hold=false,resolve;export let calls=[];export function reset(next){results=next;calls=[];hold=false}export function pause(){hold=true}export function isPaused(){return hold}export function release(){resolve?.()}export async function readBankStatementPdf(bytes,password,signal){calls.push({password,signal});if(hold)await new Promise(r=>resolve=r);if(signal.aborted)throw new Error('abort');const next=results.shift();if(next instanceof Error)throw next;return {pages:next}}export function parseBankStatement(pages){return pages}`
+const pdfMock=`let results=[],hold=false,resolve;export let calls=[];export function reset(next){results=next;calls=[];hold=false}export function pause(){hold=true}export function isPaused(){return hold}export function release(){resolve?.()}export async function readBankStatementPdf(bytes,password,signal){calls.push({password,signal});if(hold)await new Promise(r=>resolve=r);if(signal.aborted)throw new Error('abort');const next=results.shift();if(next instanceof Error)throw next;return {pages:next}}export function parseBankStatement(pages){if(pages.parseError)throw pages.parseError;return pages}`
 before(async()=>{dom=new JSDOM('<div id="root"></div>',{url:'https://wealthline.test/'});for(const k of ['window','document','HTMLElement','Event','MouseEvent','KeyboardEvent','PopStateEvent','localStorage','sessionStorage'])globalThis[k]=dom.window[k];globalThis.IS_REACT_ACT_ENVIRONMENT=true;globalThis.ResizeObserver=class{observe(){}disconnect(){}};globalThis.requestAnimationFrame=callback=>setTimeout(callback,0);window.scrollTo=()=>{};window.HTMLDialogElement.prototype.showModal=function(){this.open=true};({createRoot}=await import('react-dom/client'));server=await createServer({cacheDir:'node_modules/.vite-bank-ui',configFile:false,envDir:false,plugins:[{name:'bank-pdf-mock',enforce:'pre',resolveId(id,importer){if(id==='bank-app-test-hook'||id==='./views/BankTransactions'&&importer?.endsWith('/src/App.tsx'))return '\0bank-app-mock';if(id.endsWith('/bankStatements')||id==='/src/bankStatements.ts')return '\0bank-pdf-mock'},load(id){if(id==='\0bank-app-mock')return appMock;if(id==='\0bank-pdf-mock')return pdfMock}}],server:{middlewareMode:true,watch:null,hmr:false,ws:false}});pdf=await server.ssrLoadModule('/src/bankStatements.ts');routes=await server.ssrLoadModule('/src/routes.ts');({BankTransactions:Page}=await server.ssrLoadModule('/src/views/BankTransactions.tsx'));App=(await server.ssrLoadModule('/src/App.tsx')).default;appHook=await server.ssrLoadModule('bank-app-test-hook');auth=await server.ssrLoadModule('/src/google/auth.ts');model=await server.ssrLoadModule('/src/model.ts')})
 afterEach(async()=>{if(root)await act(()=>root.unmount());root=null;globalThis.fetch=originalFetch;localStorage.clear();sessionStorage.clear();window.history.replaceState(null,'','/');delete globalThis.confirm;delete globalThis.indexedDB})
 after(async()=>{await server?.close();dom?.window.close()})
@@ -118,7 +118,7 @@ test('bank import reports safe, actionable file failures and preserves successfu
  pdf.reset([new Error(errors.BANK_PDF_ERRORS.passwordRequired),new Error(errors.BANK_PDF_ERRORS.passwordIncorrect),new Error('SECRET RAW CUSTOMER password'),parsed()]);
  const latest=await render();await click('匯入銀行帳單');await files(4);await submitImport();
  const report=document.querySelector('[aria-label="銀行解析結果"]').textContent;
- assert.ok(report.includes(errors.BANK_PDF_ERRORS.passwordRequired));assert.ok(report.includes(errors.BANK_PDF_ERRORS.passwordIncorrect));assert.ok(report.includes(errors.BANK_PDF_ERRORS.unreadable));assert.ok(!report.includes('SECRET'));assert.match(report,/檔案 4.*有效 1 筆/);
+ assert.ok(report.includes(errors.BANK_PDF_ERRORS.passwordRequired));assert.ok(report.includes(errors.BANK_PDF_ERRORS.passwordIncorrect));assert.ok(report.includes(errors.BANK_PDF_ERRORS.open));assert.ok(!report.includes('SECRET'));assert.match(report,/檔案 4.*有效 1 筆/);
  assert.equal(document.querySelectorAll('.bank-preview-row').length,1);assert.equal(latest().bankTransactions.length,0);
 })
 test('bank import rejects size and non-PDF files with distinct messages before opening reader',async()=>{
@@ -134,4 +134,31 @@ test('bank PDF diagnostic messages reject raw errors even with a known prefix',a
  const {BANK_PDF_ERRORS,bankStatementErrorMessage}=await server.ssrLoadModule('/src/bankStatementErrors.ts');
  for(const value of Object.values(BANK_PDF_ERRORS))assert.equal(bankStatementErrorMessage(new Error(value)),value);
  for(const error of [new Error(BANK_PDF_ERRORS.textLimit+' SECRET CUSTOMER'),new Error('密碼 SECRET'),{message:BANK_PDF_ERRORS.passwordRequired},'SECRET',null])assert.equal(bankStatementErrorMessage(error),BANK_PDF_ERRORS.unreadable);
+})
+
+
+test('unreadable selected file reports file stage, keeps later files and never echoes raw errors',async()=>{
+ pdf.reset([parsed()]);const latest=await render();await click('匯入銀行帳單');await files(2);
+ const el=document.querySelector('[aria-label="銀行帳單 PDF"]');el.files[0].arrayBuffer=async()=>{throw new Error('SECRET FILE PROVIDER')};
+ await submitImport();const report=document.querySelector('[aria-label="銀行解析結果"]').textContent;
+ assert.match(report,/BANK-FILE/);assert.ok(!report.includes('SECRET'));assert.match(report,/檔案 2.*有效 1 筆/);assert.equal(document.querySelectorAll('.bank-preview-row').length,1);assert.equal(latest().bankTransactions.length,0);
+})
+test('fingerprint failure is distinct from PDF opening and leaves ledger untouched',async()=>{
+ pdf.reset([parsed()]);const latest=await render();await click('匯入銀行帳單');await files();const original=Object.getOwnPropertyDescriptor(crypto.subtle,'digest');Object.defineProperty(crypto.subtle,'digest',{configurable:true,value:async()=>{throw new Error('SECRET CRYPTO FAILURE')}});
+ try{await submitImport();const report=document.querySelector('[aria-label="銀行解析結果"]').textContent;assert.match(report,/BANK-HASH/);assert.ok(!report.includes('SECRET'));assert.ok(!document.querySelector('.bank-preview-row'));assert.equal(latest().bankTransactions.length,0)}finally{if(original)Object.defineProperty(crypto.subtle,'digest',original);else delete crypto.subtle.digest}
+})
+test('transaction parser failure reports parsing stage without raw PDF text',async()=>{
+ pdf.reset([{parseError:new Error('SECRET PARSER TEXT')}]);const latest=await render();await click('匯入銀行帳單');await files();await submitImport();const report=document.querySelector('[aria-label="銀行解析結果"]').textContent;assert.match(report,/BANK-PARSE/);assert.ok(!report.includes('SECRET'));assert.ok(!document.querySelector('.bank-preview-row'));assert.equal(latest().bankTransactions.length,0);
+})
+test('preview construction failure rolls back all sections and success reports of that file',async()=>{
+ const first=parsed();pdf.reset([{...first,recognizedCount:2,sections:[first.sections[0],{...first.sections[0],key:'section-2'}]},parsed()]);const latest=await render();await click('匯入銀行帳單');await files(2);
+ const original=Object.getOwnPropertyDescriptor(crypto,'randomUUID'),uuid=crypto.randomUUID.bind(crypto);let calls=0;Object.defineProperty(crypto,'randomUUID',{configurable:true,value:()=>{if(++calls===4)throw new Error('SECRET PREVIEW FAILURE');return uuid()}});
+ try{await submitImport();const reports=[...document.querySelectorAll('[aria-label="銀行解析結果"] li')].map(n=>n.textContent);assert.ok(reports.some(r=>r.includes('檔案 1')&&r.includes('BANK-PREVIEW')));assert.ok(!reports.some(r=>r.includes('檔案 1')&&r.includes('已辨識')));assert.ok(!reports.join('').includes('SECRET'));assert.equal(document.querySelectorAll('.bank-preview-row').length,1);assert.equal(latest().bankTransactions.length,0)}finally{if(original)Object.defineProperty(crypto,'randomUUID',original);else delete crypto.randomUUID}
+})
+
+test('PDF opening distinguishes worker, runtime and document failures using only fixed diagnostics',async()=>{
+ const {bankStatementErrorMessage}=await server.ssrLoadModule('/src/bankStatementErrors.ts');
+ for(const [error,code] of [[new Error('Setting up fake worker failed: SECRET https://private.test/path'),'BANK-OPEN-WORKER'],[new TypeError('SECRET runtime variable'),'BANK-OPEN-RUNTIME'],[new ReferenceError('SECRET missing variable'),'BANK-OPEN-RUNTIME'],[Object.assign(new Error('SECRET document bytes'),{name:'InvalidPDFException'}),'BANK-OPEN-DOCUMENT']]){
+  const message=bankStatementErrorMessage(error,'open');assert.ok(message.includes(code));assert.ok(!message.includes('SECRET'));assert.ok(!message.includes('private.test'));assert.ok(!message.includes('variable'));
+ }
 })
