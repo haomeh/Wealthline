@@ -84,7 +84,8 @@ test('same-day saves keep the manual records winning while recording the day and
  assert.equal(finished.history.quantityDays,current.history.quantityDays)
  assert.equal(finished.history.changes,persisted.history.changes)
  assert.equal(finished.accounts[0].positions[0].quantity,3)
- assert.equal(h.totalPoints(finished,now).find(s=>s.date===date).total,null)
+ // The unknown quantity keeps the value of the day's own snapshot.
+ const point=h.totalPoints(finished,now).find(s=>s.date===date);assert.equal(point.total,persisted.history.snapshots.find(s=>s.date===date).total);assert.deepEqual(point.filled,[{id:'synthetic-a',from:date,reason:'no-record'}])
  assert.deepEqual(m.parseWealthData(JSON.parse(JSON.stringify(persisted))).history.quantityDays,persisted.history.quantityDays)
 })
 test('duplicate current account/position IDs reject; old schemas remain readable without invented quantity history',()=>{

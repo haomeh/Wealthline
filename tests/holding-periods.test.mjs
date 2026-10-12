@@ -112,7 +112,8 @@ test('review: period projection preserves known snapshots, while explicit day ov
  const original=d.history.snapshots
  const edited=q.applyQuantityDay(d,{...explicit('2026-10-05',0),sparse:true})
  assert.equal(h.totalPoints(edited,now).find(x=>x.date==='2026-10-05').manual,true)
- assert.equal(h.totalPoints(edited,now).find(x=>x.date==='2026-10-05').total,null)
+ // The other account keeps its value from that day's original snapshot.
+ const filled=h.totalPoints(edited,now).find(x=>x.date==='2026-10-05');assert.equal(filled.total,1000);assert.deepEqual(filled.filled,[{id:'b',from:'2026-10-05',reason:'no-record'}])
  const removed={...edited,history:{...edited.history,quantityDays:[]}}
  assert.equal(h.totalPoints(removed,now).find(x=>x.date==='2026-10-05').total,1100)
  assert.equal(removed.history.snapshots,original)
@@ -212,7 +213,8 @@ test('yellow review: genuine price/FX failure, explicit unknown and known zero r
  const unknownValues=await q.valueDays(p.expandPeriodDays(d,now),async()=>prices())
  const unknown=h.totalPoints({...d,history:{...d.history,valuedQuantityDays:unknownValues}},now)
  assert.equal(unknown.find(x=>x.date==='2026-10-06').manual,true)
- assert.equal(unknown.find(x=>x.date==='2026-10-08').total,null)
+ // With no earlier value for either account, the unknown quantities count as 0 and are listed.
+ assert.equal(unknown.find(x=>x.date==='2026-10-08').total,0);assert.deepEqual(unknown.find(x=>x.date==='2026-10-08').filled.map(f=>f.from),[null,null])
  assert.equal(unknownValues.find(x=>x.date==='2026-10-08').quantityEvidence,'explicit-unknown')
  // Absent inventory already makes the total unknown; a market error on the same day
  // adds nothing, so the day stays omitted rather than reappearing as a gap.

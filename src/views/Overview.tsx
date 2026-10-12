@@ -124,7 +124,7 @@ export function Overview({ data: loaded, onGoHistory, onGoRates, onGoLiabilities
         {historical.status && <p className="muted small" aria-live="polite">{historical.status}</p>}
         {historical.error && <p role="alert" className="banner error">{historical.error}</p>}
       </section>
-      {!current ? <SnapshotDetails accounts={data.accounts} point={point} day={historical.data.history.valuedQuantityDays?.find(d => d.date === point.date)} /> :
+      {!current ? <SnapshotDetails data={data} point={point} day={historical.data.history.valuedQuantityDays?.find(d => d.date === point.date)} onBackfill={onGoHistory} /> :
       <section className="panel hero">
         <span className="eyebrow">總資產</span>
         <div className="hero-figure">
