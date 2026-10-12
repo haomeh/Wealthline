@@ -173,6 +173,8 @@ const SOURCES = {
   drive: ['Drive 中的資料檔', '請修正或刪除該檔案後重新登入。'],
   file: ['上傳的資料檔', '請確認選的是 Wealthline 的 JSON 資料檔。'],
   browser: ['此瀏覽器保存的資料', '可以上傳備份的資料檔取代它。'],
+  // Records of a part file read after opening, joined with the main file this session holds.
+  part: ['Drive 中的分檔資料', '可能是其他裝置剛更新了資料，請重新載入頁面；不需要修改或刪除 Drive 中的檔案。'],
 } as const
 
 export function parseWealthData(raw: unknown, source: keyof typeof SOURCES = 'drive'): WealthData {

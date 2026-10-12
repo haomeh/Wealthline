@@ -1,18 +1,18 @@
 # Wealthline
 
-> Wealthline（個人資產統計）is a free, open-source personal asset tracker web app. Users sign in with Google, and financial records are processed in the browser and saved as a JSON file in their own Google Drive. There is no financial records database on the operator's servers. Sign-in hints and short-lived tokens use browser storage; market requests send symbols and history start dates to the quote relay and providers. Interface language: Traditional Chinese (zh-Hant); base currency: New Taiwan Dollar (TWD).
+> Wealthline（個人資產統計）is a free, open-source personal asset tracker web app. Users sign in with Google, and financial records are processed in the browser and saved as JSON files in their own Google Drive. There is no financial records database on the operator's servers. Sign-in hints and short-lived tokens use browser storage; market requests send symbols and history start dates to the quote relay and providers. Interface language: Traditional Chinese (zh-Hant); base currency: New Taiwan Dollar (TWD).
 
 Key facts:
 
 - Sign-in: Google account via Google Identity Services. Requested scopes: openid, email, profile and `drive.file`, which lets the app reach only the files it created, not the rest of the user's Drive.
-- Data location: `My Drive / We Wealth / we-wealth-data.json` in the user's own Google Drive, visible to the user, who can open, download, back up or delete it at any time.
+- Data location: the `My Drive / We Wealth` folder in the user's own Google Drive: the main data file `we-wealth-data.json`, plus part files for card expenses and bank transactions (one per quarter, in the `明細` subfolder) and earlier years of history (one per year, in the `歷史` subfolder). They are visible to the user, who can open, download a full backup of, or delete them at any time.
 - Features: define bank and investment accounts, record cash balances per currency, record holdings by ticker and quantity only (prices from Yahoo Finance, crypto from CoinGecko), automatic exchange rates to TWD (ExchangeRate-API), allocation charts, daily total snapshots, a change log, per-holding value history, liabilities and repayment estimates.
 - Cost: free. No registration or installation needed.
 - License: PolyForm Noncommercial 1.0.0. Commercial use requires written permission.
 - Operator: the GitHub organization haomeh. Source code: https://github.com/haomeh/Wealthline
 - Quotes, exchange rates and totals are for reference only and are not investment advice.
 
-Signed-in overview: `/app`; public notices do not require login. The JSON file has no additional end-to-end encryption by Wealthline; production traffic uses HTTPS.
+Signed-in overview: `/app`; public notices do not require login. The JSON files have no additional end-to-end encryption by Wealthline; production traffic uses HTTPS.
 
 ## Pages
 

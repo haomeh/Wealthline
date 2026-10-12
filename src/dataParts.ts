@@ -112,6 +112,33 @@ export function parsePart(text: string, datasetId: string): Part {
   return { name, sequence, content }
 }
 
+// One record's identity within a part: transactions by id, snapshots by date (one per day),
+// edit records by content.
+export const rowKey = (key: keyof PartContent, row: Row) =>
+  `${key}:${key === 'snapshots' ? String(row.date) : typeof row.id === 'string' ? row.id : JSON.stringify(row)}`
+
+// One part from several files of the same part name (two creates of one part, for example a
+// create whose reply was lost and was then sent again). Every record of every copy is kept once,
+// from the copy written last.
+export function mergeCopies(copies: Part[]): Part {
+  const sorted = [...copies].sort((a, b) => b.sequence - a.sequence)
+  const name = sorted[0].name
+  const content: PartContent = {}
+  for (const key of name.startsWith('ledger-') ? LEDGER_KEYS : HISTORY_KEYS) {
+    if (!sorted.some((c) => c.content[key])) continue
+    const seen = new Set<string>()
+    const rows: Row[] = []
+    for (const c of sorted) for (const row of c.content[key] ?? []) {
+      const k = rowKey(key, row)
+      if (seen.has(k)) continue
+      seen.add(k)
+      rows.push(row)
+    }
+    content[key] = rows
+  }
+  return { name, sequence: sorted[0].sequence, content }
+}
+
 // Which copy of each transaction is kept when a record is found twice, which an interrupted
 // save that moved it between files can leave: the copy written last, then the copy in the part
 // of its own date. Returns, by part name ('' for the main file), the rows kept there.

@@ -210,6 +210,16 @@ test('an invalid upload shows why and changes nothing', async () => {
   assert.equal(window.location.pathname, '/')
 })
 
+test('the Drive main file of split data is refused as an upload, since it lacks the transactions and earlier years', async () => {
+  seed(JSON.stringify(fixture()))
+  const before = idbRaw()
+  await render()
+  await uploadFile(JSON.stringify({ ...fixture(), version: 15, datasetId: 'set-1', expenses: [], summary: { parts: {} } }))
+  assert.match(document.querySelector('.signin-box .error').textContent, /Google Drive 中的主檔.*下載完整備份/)
+  assert.equal(idbRaw(), before)
+  assert.equal(window.location.pathname, '/')
+})
+
 test('declining the replace prompt keeps the stored data', async () => {
   seed(JSON.stringify(fixture()))
   const before = idbRaw()

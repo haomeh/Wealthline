@@ -7,6 +7,7 @@ const later = (fn) => setTimeout(fn, 0)
 export function createFakeIndexedDB() {
   const databases = new Map() // name -> { version, stores: Map<storeName, Map> }
   let writeError = null
+  let replacement = null // { value }: the next put stores this value instead
 
   function connection(db) {
     return {
@@ -31,7 +32,12 @@ export function createFakeIndexedDB() {
         })
         tx.objectStore = () => ({
           get: (key) => op(() => data.get(key)),
-          put: (value, key) => write(() => { data.set(key, value); return key }),
+          put: (value, key) => write(() => {
+            const stored = replacement ? replacement.value : value
+            replacement = null
+            data.set(key, stored)
+            return key
+          }),
           delete: (key) => write(() => { data.delete(key) }),
         })
         later(() => {
@@ -88,5 +94,7 @@ export function createFakeIndexedDB() {
     reset() { for (const db of databases.values()) for (const store of db.stores.values()) store.clear() },
     // The next write fails with `error`, as a full disk would.
     failNextWrite(error) { writeError = error },
+    // The next put reports success but stores `value`, as a broken storage layer could.
+    replaceNextWrite(value) { replacement = { value } },
   }
 }

@@ -118,7 +118,7 @@ export function Overview({ data: loaded, onGoHistory, onGoRates, onGoLiabilities
           <label className="field"><span>選擇時間節點</span><select value={keys[index]} onChange={e => setSelected(e.target.value)}>{points.map((p, i) => <option key={keys[i]} value={keys[i]}>{keys[i] === 'current' ? '目前資產' : `${p.date}${p.periodDerived ? ' · 期間推算' : p.manual ? ' · 補登' : ''}`}</option>)}</select></label>
         </div>
         <p className="muted small">拖動滑桿或選擇紀錄，查看當時的餘額與配置。原始快照保留原值；期間推算補上缺少快照的日期，單日補登優先。</p>
-        {archive && onLoadHistory && <p className="muted small">{archive.from.slice(0, 4)} 年以前只顯示每月最後一筆紀錄。<button className="link" disabled={loadingHistory} onClick={onLoadHistory}>{loadingHistory ? '載入中…' : '載入完整歷史'}</button></p>}
+        {archive && onLoadHistory && <p className="muted small">{archive.from.slice(0, 4)} 年以前只顯示每月最後一筆原始快照，不含補登與期間推算。<button className="link" disabled={loadingHistory} onClick={onLoadHistory}>{loadingHistory ? '載入中…' : '載入完整歷史'}</button></p>}
         {!!(data.history.quantityDays?.length || data.history.holdingPeriods?.length) && <button className="link" disabled={historical.loading} onClick={historical.refresh}>{historical.loading ? '查詢歷史行情中…' : '重新查詢歷史行情'}</button>}
         {historical.omittedDays > 0 && <p className="muted small">略過 {historical.omittedDays} 個數量不足的推算日，不代表資產為零。</p>}
         {historical.status && <p className="muted small" aria-live="polite">{historical.status}</p>}
