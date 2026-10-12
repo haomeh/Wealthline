@@ -2735,7 +2735,7 @@ dialog.expense-rule-dialog { max-width: 440px; }
 .bank-account .field { flex:1 1 180px; }
 @media (max-width: 640px) { .bank-record-panel { padding: 16px; } }
 .bank-section { border-top:1px solid var(--border); padding-top:18px; margin-top:18px; }
-.bank-preview-row { padding:16px 0; border-bottom:1px solid var(--border); }
+.bank-preview-row { padding:8px 0; border-bottom:1px solid var(--border); }
 .bank-review-flag { border-left:3px solid currentColor; padding:4px 0 4px 12px; margin:12px 0; overflow-wrap:anywhere; }
 .bank-review-flag li { margin:6px 0; }
 .bank-import li, .bank-rules li { overflow-wrap:anywhere; }
@@ -2771,20 +2771,25 @@ dialog.expense-rule-dialog { max-width: 440px; }
 .bank-section-warning .bank-help { margin-bottom: 0; }
 .bank-account-mapping { margin: 16px 0; }
 .bank-preview-list { border-top: 1px solid var(--border); }
-.bank-preview-row { padding: 14px 0; min-width: 0; }
-.bank-preview-overview { display: grid; grid-template-columns: 32px minmax(0, 1fr) minmax(70px, auto); align-items: start; gap: 12px; }
-.bank-preview-select { display: flex; align-items: center; flex-direction: column; gap: 4px; padding-top: 2px; min-height: 44px; cursor: pointer; }
+.bank-preview-row { padding: 6px 0; min-width: 0; }
+.bank-preview-overview { display: grid; grid-template-columns: 32px auto minmax(0, 1fr) auto; align-items: center; column-gap: 10px; row-gap: 2px; }
+.bank-preview-select { grid-row: 1 / 3; align-self: start; display: flex; align-items: center; flex-direction: column; gap: 2px; min-height: 44px; cursor: pointer; }
 .bank-preview-select input, .bank-summary-check input { width: 20px; height: 20px; margin: 0; flex: none; }
-.bank-preview-copy { min-width: 0; }
-.bank-preview-copy > strong { display: block; margin-top: 3px; font-size: .92rem; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-.bank-preview-tags { display: flex; align-items: center; gap: 4px 8px; flex-wrap: wrap; margin-top: 7px; font-size: .72rem; color: var(--ink-2); }
-.bank-preview-category { display: inline-flex; align-items: center; gap: 5px; min-width: 0; max-width: 100%; min-height: 32px; padding: 4px 8px; border: 0; border-radius: 6px; background: var(--accent-wash); color: var(--accent); font-size: .75rem; }
+.bank-preview-copy { display: contents; }
+.bank-preview-copy > time { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.bank-preview-copy > strong { min-width: 0; font-size: .9rem; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.bank-preview-tags { grid-column: 2 / 5; grid-row: 2; display: flex; align-items: center; gap: 4px 8px; flex-wrap: wrap; padding-right: 48px; font-size: .72rem; color: var(--ink-2); }
+.bank-preview-category { display: inline-flex; align-items: center; gap: 5px; min-width: 0; max-width: 100%; min-height: 32px; padding: 2px 8px; border: 0; border-radius: 6px; background: var(--accent-wash); color: var(--accent); font-size: .75rem; }
 .bank-preview-category > span { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .bank-preview-category svg { flex: none; width: 14px; height: 14px; }
 .bank-summary-pending { background: var(--warn-wash); color: var(--ink); border-radius: 5px; padding: 1px 6px; }
-.bank-preview-amount { display: grid; justify-items: end; text-align: right; gap: 2px; max-width: 135px; }
-.bank-preview-amount strong { font-size: 1rem; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
-.bank-row-details > summary { display: flex; align-items: center; justify-content: flex-end; gap: 7px; min-height: 44px; cursor: pointer; list-style: none; font-size: .82rem; color: var(--accent); }
+.bank-preview-amount { grid-column: 4; grid-row: 1; display: flex; align-items: baseline; justify-content: flex-end; gap: 6px; white-space: nowrap; }
+.bank-preview-amount strong { font-size: .95rem; font-variant-numeric: tabular-nums; }
+/* Closed edit toggle floats into the tag line as an icon button; open, it returns to flow above the editor. */
+.bank-row-details:not([open]) { margin-top: -40px; pointer-events: none; }
+.bank-row-details > summary { display: flex; align-items: center; justify-content: flex-end; gap: 7px; min-height: 40px; cursor: pointer; list-style: none; font-size: .82rem; color: var(--accent); }
+.bank-row-details:not([open]) > summary { pointer-events: auto; margin-left: auto; width: 44px; min-height: 40px; justify-content: center; }
+.bank-row-details:not([open]) .bank-row-expand { display: none; }
 .bank-row-details > summary::-webkit-details-marker { display: none; }
 .bank-row-details > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 6px; }
 .bank-row-details[open] > summary { border-bottom: 1px solid var(--border); }
@@ -2813,8 +2818,8 @@ dialog.expense-rule-dialog { max-width: 440px; }
   .bank-upload-fields { grid-template-columns: minmax(0, 1fr); }
   .bank-upload-actions { flex-wrap: wrap; gap: 8px; }
   .bank-upload-actions button { min-height: 44px; }
-  .bank-preview-overview { grid-template-columns: 24px minmax(0, 1fr) minmax(64px, auto); gap: 8px; }
-  .bank-preview-amount { max-width: 105px; }
+  .bank-preview-overview { grid-template-columns: 24px auto minmax(0, 1fr) auto; column-gap: 8px; }
+  .bank-preview-copy > time { font-size: .7rem; }
   .bank-fields input, .bank-fields select { min-height: 44px; font-size: 16px; }
   .bank-row-editor .bank-date-field { grid-column: 1 / -1; }
   .bank-fields input[type="date"], .bank-fields input[type="month"] { display: block; min-width: 0; max-width: 100%; }

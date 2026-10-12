@@ -4,10 +4,11 @@ import { fmt } from '../format'
 import { dataVersion } from '../dataVersion'
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { mergeExpenses, isUnrecognizedMerchant, parseExpense, prepareExpenses, sha256, expenseCategory, parseExpenseCategoryRules, EXPENSE_CATEGORIES, type ExpenseCategoryRule, type ExpenseCategory, type Expense } from '../expenses'
+import { pdfFormatError } from '../bankStatementErrors'
 import { assertCreditCardFile, parseStatement, statementMetadata } from '../statements'
 import { ExpenseCategoryRules, CategoryRuleButton, CategoryRuleDialog } from './ExpenseCategoryRules'
 import { StatementPasswordSettings } from './StatementPasswordSettings'
-import { parseStatementPasswords, statementPasswordStatus, unlockStatementPasswords, type StatementPassword } from '../statementPasswords'
+import { mergeStatementPasswords, parseStatementPasswords, statementPasswordStatus, unlockStatementPasswords, type StatementPassword } from '../statementPasswords'
 import type { WealthData } from '../model'
 
 export function Expenses({data,onChange,busy,passwordScope}: {passwordScope?:string;data:WealthData;onChange:(next:WealthData)=>void;busy:boolean}) {
@@ -19,7 +20,7 @@ export function Expenses({data,onChange,busy,passwordScope}: {passwordScope?:str
   const expenses = data.expenses ?? []
   const rules = data.expenseCategoryRules ?? []
   const passwords = data.statementPasswords ?? []
-  const passwordDialog = managingPasswords && passwordScope && <StatementPasswordSettings scope={passwordScope} passwords={passwords} busy={busy} onClose={()=>setManagingPasswords(false)} onSave={p=>onChange({...data,version:dataVersion(data, {minimumVersion:12}),statementPasswords:parseStatementPasswords(passwords.some(x=>x.id===p.id)?passwords.map(x=>x.id===p.id?p:x):[...passwords,p])})} onRemove={id=>onChange({...data,version:dataVersion(data, {minimumVersion:12}),statementPasswords:passwords.filter(p=>p.id!==id)})}/>
+  const passwordDialog = managingPasswords && passwordScope && <StatementPasswordSettings scope={passwordScope} passwords={passwords} busy={busy} onClose={()=>setManagingPasswords(false)} onSave={rows=>onChange({...data,version:dataVersion(data, {minimumVersion:12}),statementPasswords:parseStatementPasswords(mergeStatementPasswords(passwords,rows))})} onRemove={id=>onChange({...data,version:dataVersion(data, {minimumVersion:12}),statementPasswords:passwords.filter(p=>p.id!==id)})}/>
 
   const ruleDialog = ruleExpense && <CategoryRuleDialog expense={ruleExpense.expense} rule={ruleExpense.index===undefined?undefined:rules[ruleExpense.index]} busy={busy} onCancel={()=>setRuleExpense(null)} onSave={rule=>{
     onChange({...data,version:dataVersion(data, {minimumVersion:11}),expenseCategoryRules:parseExpenseCategoryRules(ruleExpense.index===undefined?[...rules,rule]:rules.map((r,i)=>i===ruleExpense.index?rule:r))})
@@ -125,7 +126,8 @@ function StatementImport({existing,busy,onCancel,onImport,rules,onAddRule,passwo
           if(file.size > 20*1024*1024) throw new Error('帳單超過 20 MB，請拆分後再匯入')
           const bytes = new Uint8Array(await file.arrayBuffer())
           if(abort.signal.aborted) return
-          if(new TextDecoder().decode(bytes.slice(0,5)) !== '%PDF-') throw new Error('請選擇有效的 PDF 檔案')
+          const formatError = pdfFormatError(bytes)
+          if(formatError) throw new Error(formatError.replace('原始銀行對帳單','原始信用卡帳單'))
           const fileHash = await sha256(bytes)
           const {readStatementPdf} = await import('../statementPdf')
           if(abort.signal.aborted) return

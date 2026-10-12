@@ -66,3 +66,10 @@ test('password settings are validated, source errors are contextual and all save
   delete globalThis.indexedDB
   await assert.rejects(()=>vault.saveStatementPassword('google:a','Synthetic card','synthetic-password'),/設定未保存/)
 })
+
+test('password input splits on commas and merges new rows after stored ones',()=>{
+  assert.deepEqual(vault.splitStatementPasswords(' a b , c,,a b, '),['a b','c'])
+  assert.deepEqual(vault.splitStatementPasswords(' , '),[])
+  const row=id=>({id,label:id,keyId:'k',iv:'',ciphertext:''})
+  assert.deepEqual(vault.mergeStatementPasswords([row('1'),row('2')],[{...row('2'),label:'new'},row('3')]).map(p=>`${p.id}:${p.label}`),['1:1','2:new','3:3'])
+})

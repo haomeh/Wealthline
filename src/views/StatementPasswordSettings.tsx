@@ -1,14 +1,21 @@
 import { useEffect, useRef, useState } from 'react'
-import { saveStatementPassword, statementPasswordStatus, type StatementPassword } from '../statementPasswords'
+import { saveStatementPassword, splitStatementPasswords, statementPasswordStatus, type StatementPassword } from '../statementPasswords'
 
-export function StatementPasswordSettings({scope,passwords,busy,onSave,onRemove,onClose}: {scope:string;passwords:StatementPassword[];busy:boolean;onSave:(p:StatementPassword)=>void;onRemove:(id:string)=>void;onClose:()=>void}) {
+const AUTO_LABEL = /^密碼 (\d+)$/
+/** Labels are optional for the user; keep a stored label because older clients require one. */
+function autoLabels(passwords:readonly StatementPassword[],count:number) {
+  const used=new Set(passwords.map(p=>AUTO_LABEL.exec(p.label)?.[1]).filter(Boolean).map(Number)),labels:string[]=[]
+  for(let n=1;labels.length<count;n++)if(!used.has(n))labels.push(`密碼 ${n}`)
+  return labels
+}
+
+export function StatementPasswordSettings({scope,passwords,busy,onSave,onRemove,onClose}: {scope:string;passwords:StatementPassword[];busy:boolean;onSave:(rows:StatementPassword[])=>void;onRemove:(id:string)=>void;onClose:()=>void}) {
   const ref = useRef<HTMLDialogElement>(null)
   const active = useRef(true)
   const save = useRef(onSave)
   useEffect(()=>{save.current=onSave},[onSave])
   const [available,setAvailable] = useState<string[]>([])
   const [id,setId] = useState<string|undefined>()
-  const [label,setLabel] = useState('')
   const [password,setPassword] = useState('')
   const [saving,setSaving] = useState(false)
   const [error,setError] = useState('')
@@ -18,25 +25,29 @@ export function StatementPasswordSettings({scope,passwords,busy,onSave,onRemove,
   return <dialog ref={ref} className="review statement-password-dialog" aria-label="帳單密碼設定" onCancel={e=>{e.preventDefault();if(!locked)onClose()}}>
     <div className="panel-head"><h3>帳單密碼設定</h3><button disabled={locked} onClick={onClose}>關閉</button></div>
     <p className="muted small">密碼加密後隨個人資料保存，解密金鑰只留在此瀏覽器。新裝置或清除網站資料後，請重新設定。修改後需按「儲存變更」。</p>
-    {!!passwords.length && <ul className="statement-password-list">{passwords.map(p=><li key={p.id}><div><strong>{p.label}</strong><small className="muted">{available.includes(p.id)?'已設定 · 此瀏覽器可用':'需在此瀏覽器重新設定'}</small></div><div className="row"><button disabled={locked} onClick={()=>{setId(p.id);setLabel(p.label);setPassword('');setError('')}} aria-label={`重新設定 ${p.label} 密碼`}>重新設定</button><button disabled={locked} onClick={()=>{onRemove(p.id);if(id===p.id){setId(undefined);setLabel('');setPassword('')}}} aria-label={`移除 ${p.label} 密碼`}>移除</button></div></li>)}</ul>}
+    {!!passwords.length && <ul className="statement-password-list">{passwords.map(p=><li key={p.id}><div><strong>{p.label}</strong><small className="muted">{available.includes(p.id)?'已設定 · 此瀏覽器可用':'需在此瀏覽器重新設定'}</small></div><div className="row"><button disabled={locked} onClick={()=>{setId(p.id);setPassword('');setError('')}} aria-label={`重新設定 ${p.label} 密碼`}>重新設定</button><button disabled={locked} onClick={()=>{onRemove(p.id);if(id===p.id){setId(undefined);setPassword('')}}} aria-label={`移除 ${p.label} 密碼`}>移除</button></div></li>)}</ul>}
     <form className="form" onSubmit={async e=>{
       e.preventDefault();if(locked)return
-      setError('');setSaving(true)
-      const secret=password;setPassword('')
+      const secrets=splitStatementPasswords(password)
+      // Validation errors keep the typed value so the user can correct it.
+      if(!secrets.length) {setError('請填寫帳單密碼。');return}
+      if(id && secrets.length!==1) {setError('重新設定時只能填一個密碼。');return}
+      if(!id && passwords.length+secrets.length>20) {setError(`最多 20 組，目前還能新增 ${20-passwords.length} 組。`);return}
+      setError('');setSaving(true);setPassword('')
       try {
-        const result=await saveStatementPassword(scope,label,secret,id)
-        if(active.current){save.current(result);setId(undefined);setLabel('')}
-      } catch {if(active.current)setError('密碼設定未保存。請確認名稱、密碼與瀏覽器儲存權限，或改用手動輸入。')}
+        const current=passwords.find(p=>p.id===id),labels=id?[current?.label??autoLabels(passwords,1)[0]]:autoLabels(passwords,secrets.length)
+        const result=await Promise.all(secrets.map((secret,i)=>saveStatementPassword(scope,labels[i],secret,id)))
+        if(active.current){save.current(result);setId(undefined)}
+      } catch {if(active.current)setError('密碼設定未保存。請確認密碼與瀏覽器儲存權限，或改用手動輸入。')}
       finally {if(active.current)setSaving(false)}
     }}>
       <h4>{id?'重新設定密碼':'新增密碼'}</h4>
       <fieldset disabled={locked || (!id && passwords.length>=20)} className="expense-fields">
-        <label className="field"><span>密碼設定名稱</span><input required maxLength={100} value={label} placeholder="例如：匯豐 (SG)" onChange={e=>setLabel(e.target.value)}/></label>
-        <label className="field"><span>帳單 PDF 密碼</span><input type="password" autoComplete="new-password" required maxLength={256} value={password} onChange={e=>setPassword(e.target.value)}/></label>
+        <label className="field"><span>{id?'帳單 PDF 密碼':'帳單 PDF 密碼（多組用逗號分隔）'}</span><input aria-label="帳單 PDF 密碼" type="password" autoComplete="new-password" required maxLength={id?256:5400} value={password} onChange={e=>setPassword(e.target.value)}/></label>
       </fieldset>
       {error && <p role="alert" className="banner error">{error}</p>}
-      <div className="row"><button className="primary" disabled={locked || (!id && passwords.length>=20)}>{saving?'正在加密…':id?'更新密碼設定':'新增密碼設定'}</button>{id && <button type="button" disabled={locked} onClick={()=>{setId(undefined);setLabel('');setPassword('');setError('')}}>取消修改</button>}</div>
-      <p className="muted small">最多 20 組；每組只填一個密碼，逗號會視為密碼的一部分。匯入時會自動嘗試已設定的密碼。</p>
+      <div className="row"><button className="primary" disabled={locked || (!id && passwords.length>=20)}>{saving?'正在加密…':id?'更新密碼':'新增密碼'}</button>{id && <button type="button" disabled={locked} onClick={()=>{setId(undefined);setPassword('');setError('')}}>取消修改</button>}</div>
+      <p className="muted small">最多 20 組，不用取名稱；一次可填多組，用逗號分隔，前後空白會略過，因此密碼本身不能含逗號。匯入時每份帳單都會自動逐一嘗試已設定的密碼。</p>
     </form>
   </dialog>
 }
