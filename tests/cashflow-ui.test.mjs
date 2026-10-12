@@ -31,11 +31,12 @@ const rows=[bank('salary','credit',1000,{kind:'income',category:'薪資'}),bank(
 test('unified totals, directional review, investment and separate source navigation',async()=>{
  let bankNav=0,cardNav=0
  await render(Summary,{expenses:[card],bankTransactions:rows,now:'2026-01-25',onGoBankTransactions:()=>bankNav++,onGoExpenses:()=>cardNav++})
- assert.match(document.querySelector('[data-cashflow-metric="income"]').textContent,/950/)
+ // The unclassified 500 credit counts as income.
+ assert.match(document.querySelector('[data-cashflow-metric="income"]').textContent,/1,450/)
  assert.match(document.querySelector('[data-cashflow-metric="consumption"]').textContent,/180/)
- assert.match(document.querySelector('[data-cashflow-metric="difference"]').textContent,/770/)
+ assert.match(document.querySelector('[data-cashflow-metric="difference"]').textContent,/1,270/)
  assert.match(document.body.textContent,/可能包含投入本金，不代表投資收益/)
- assert.match(document.body.textContent,/待確認.*500/)
+ assert.match(document.body.textContent,/未分類.*500/)
  assert.match(document.body.textContent,/信用卡繳款/)
  await click(button('銀行流水'));await click(button('信用卡消費'));assert.equal(bankNav,1);assert.equal(cardNav,1)
  assert.match(document.body.textContent,/不是帳戶餘額或淨資產/)
@@ -55,7 +56,7 @@ test('nested rings normalize separately and preserve signed and zero categories'
  assert.equal(salary.getAttribute('stroke'),document.querySelector('[aria-label="TWD 收入分類"] i').style.background)
  assert.doesNotMatch(document.body.innerHTML,/NaN/)
 })
-test('refund-only and pending-only records never turn into positive arcs',async()=>{
+test('refund-only and zero unclassified records never turn into positive arcs',async()=>{
  await render(Summary,{bankTransactions:[bank('negative','credit',80,{kind:'expense',category:'購物'})],now:'2026-01-25'})
  assert.equal(document.querySelectorAll('[data-cashflow-slice]').length,0)
  assert.match(document.body.textContent,/-80/);assert.match(document.body.textContent,/沒有正值分類/)
@@ -63,7 +64,7 @@ test('refund-only and pending-only records never turn into positive arcs',async(
  await act(()=>root.unmount());root=null
  await render(Summary,{bankTransactions:[bank('pending','debit',0,{kind:'pending'})],now:'2026-01-25'})
  for(const key of ['income','consumption','difference'])assert.equal(document.querySelector(`[data-cashflow-metric="${key}"]`).textContent,'0')
- assert.match(document.body.textContent,/待確認 · 1 筆/)
+ assert.match(document.body.textContent,/未分類 · 1 筆/)
  assert.equal(document.querySelectorAll('[data-cashflow-slice]').length,0)
  assert.doesNotMatch(document.body.textContent,/這段期間無紀錄/)
 })
@@ -107,7 +108,7 @@ test('Overview uses one unified section in empty and populated asset branches fo
   await picker()
   while(!document.querySelector('.cashflow-picker-year').textContent.includes('2026 年')) await click(document.querySelector('[aria-label="前一年"]'))
   await selectMonth(1);await click(button('套用'))
-  assert.match(document.querySelector('[data-cashflow-metric="income"]').textContent,source==='card'?/^0$/:/950/)
+  assert.match(document.querySelector('[data-cashflow-metric="income"]').textContent,source==='card'?/^0$/:/1,450/)
   assert.match(document.querySelector('[data-cashflow-metric="consumption"]').textContent,source==='bank'?/-20/:source==='card'?/200/:/180/)
   if(populated)assert.ok(document.querySelector('[aria-label="資產時間線"]'))
   else assert.match(document.body.textContent,/開始記錄你的資產/)
@@ -179,7 +180,9 @@ test('the overview opens on the latest recorded month when the current month has
  assert.doesNotMatch(document.body.textContent,/這段期間無紀錄/)
  const note=document.querySelector('[data-cashflow-pending]')
  assert.ok(note,'unclassified rows are named outside the collapsed review')
- assert.match(note.textContent,/2 筆銀行流水未分類，不計入收入或消費/)
+ assert.match(note.textContent,/2 筆銀行流水未分類，已依入帳／支出計入收支/)
+ assert.equal(document.querySelector('[data-cashflow-metric="income"]').textContent,'0.23')
+ assert.equal(document.querySelector('[data-cashflow-metric="consumption"]').textContent,'1,060.03')
  await click([...note.querySelectorAll('button')].find(el=>el.textContent==='前往分類'));assert.equal(bankNav,1)
  // An empty month offers the latest recorded month.
  await picker();while(!document.querySelector('.cashflow-picker-year').textContent.includes('2026 年')) await click(document.querySelector('[aria-label="後一年"]'))

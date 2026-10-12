@@ -12,7 +12,7 @@
 // - fileId: the Drive file the entry was made from. Drive allows two files with the same part
 //   name (two creates of one part); this says which one the main file was saved with.
 // Transaction entries also depend on the category rules: `rules` is the hash of the rules they
-// were counted with.
+// were counted with, and of the way they were counted (COUNTING).
 
 import { cashflowMonths, type CashflowMonthTotals } from './cashflow'
 import { parseHistory, type Change, type Snapshot } from './history'
@@ -41,7 +41,10 @@ export interface Rules {
   expenseCategoryRules?: ExpenseCategoryRule[]
   bankCategoryRules?: BankCategoryRule[]
 }
-export const rulesOf = (r: Rules) => [r.expenseCategoryRules ?? null, r.bankCategoryRules ?? null]
+// How the transaction entries are counted. A change makes every stored entry outdated, so the
+// summaries are counted again when the data is opened. 2: unclassified bank records count by direction.
+const COUNTING = 2
+export const rulesOf = (r: Rules) => [r.expenseCategoryRules ?? null, r.bankCategoryRules ?? null, COUNTING]
 
 // The overview content of one part's records.
 export function partSummary(name: string, content: PartContent, rules: Rules): Pick<PartSummary, 'cashflow' | 'points' | 'carried'> {

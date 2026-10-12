@@ -74,16 +74,16 @@ export function CashflowSummary({now,onGoExpenses,onGoBankTransactions,...input}
       {latestMonth && <button onClick={()=>setSelection(monthSelection(latestMonth))}>查看 {Number(latestMonth.slice(0,4))} 年 {Number(latestMonth.slice(5,7))} 月</button>}
     </div>:groups.map(group=><section className="cashflow-currency" key={group.currency} aria-label={`${group.currency} 收支`}>
       <div className="cashflow-currency-heading"><strong>{group.currency}</strong><span className="muted small">{group.coverage.recordCount} 筆紀錄</span></div>
-      {group.pending.count>0 && <p className="notice small cashflow-pending" role="note" data-cashflow-pending><span>{group.pending.count} 筆銀行流水未分類，不計入收入或消費；分類後才會計入。</span>{onGoBankTransactions && <button className="link" onClick={onGoBankTransactions}>前往分類</button>}</p>}
+      {group.pending.count>0 && <p className="notice small cashflow-pending" role="note" data-cashflow-pending><span>{group.pending.count} 筆銀行流水未分類，已依入帳／支出計入收支；轉帳或繳卡費請設為不計收支。</span>{onGoBankTransactions && <button className="link" onClick={onGoBankTransactions}>前往分類</button>}</p>}
       <CashflowChart group={group}/>
       {group.investmentRecovery.hasRecords && <p className="notice small" role="note">投資回收款：可能包含投入本金，不代表投資收益</p>}
-      <details className="cashflow-review"><summary>待確認 {group.pending.count} 筆 · 已排除 {group.excluded.count} 筆</summary>
-        <Review label="待確認" total={group.pending} currency={group.currency}/>
-        <Review label="已排除" total={group.excluded} currency={group.currency}/>
+      <details className="cashflow-review"><summary>未分類 {group.pending.count} 筆 · 不計收支 {group.excluded.count} 筆</summary>
+        <Review label="未分類" total={group.pending} currency={group.currency}/>
+        <Review label="不計收支" total={group.excluded} currency={group.currency}/>
         {group.exclusions.map(t=><Review key={t.reason} label={t.reason} total={t} currency={group.currency}/>)}
         {onGoBankTransactions && <button className="link" onClick={onGoBankTransactions}>前往銀行流水修正分類</button>}
       </details>
-      <details className="cashflow-sources"><summary>查看來源 · 明細分開管理</summary><div><h4>銀行流水 · {group.coverage.bankCount} 筆</h4><p className="muted small">依銀行記帳日；收入沖回從收入扣除，消費退款從消費扣除。待確認與排除只列示，不計入收支。</p>{onGoBankTransactions && <button onClick={onGoBankTransactions}>查看銀行流水明細</button>}</div><div><h4>信用卡消費 · {group.coverage.cardCount} 筆</h4><p className="muted small">依原交易日期與帶符號金額；信用卡退款扣除消費。此入口僅含信用卡，不混入銀行流水。</p>{onGoExpenses && <button onClick={onGoExpenses}>查看信用卡消費明細</button>}</div></details>
+      <details className="cashflow-sources"><summary>查看來源 · 明細分開管理</summary><div><h4>銀行流水 · {group.coverage.bankCount} 筆</h4><p className="muted small">依銀行記帳日；收入沖回從收入扣除，消費退款從消費扣除。未分類依入帳／支出計入收支；不計收支的只列示。</p>{onGoBankTransactions && <button onClick={onGoBankTransactions}>查看銀行流水明細</button>}</div><div><h4>信用卡消費 · {group.coverage.cardCount} 筆</h4><p className="muted small">依原交易日期與帶符號金額；信用卡退款扣除消費。此入口僅含信用卡，不混入銀行流水。</p>{onGoExpenses && <button onClick={onGoExpenses}>查看信用卡消費明細</button>}</div></details>
     </section>)}
     <p className="cashflow-footnote muted small">依已匯入紀錄，不代表完整月份。{selection.range==='month' && selection.year===date.getFullYear() && selection.month===date.getMonth()+1?'本月尚未結束。':''}收支差額不是帳戶餘額或淨資產；金額統一換算 TWD，依各月月底已完成匯率；本月採最新已完成匯率（最多回溯 7 日）。</p>
   </section>
