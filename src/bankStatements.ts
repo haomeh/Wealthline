@@ -1,3 +1,5 @@
+import { statementClosingDate, closingCashAmount } from './bankStatements/balances';
+import type { StatementCashBalance } from './bankStatementAssets';
 import { BANK_PDF_ERRORS } from './bankStatementErrors';
 import { protectBankText } from './bankTextPrivacy';
 import { spatialLines, tableHeader, isoDate, money, identifier, labeledAccount, currencies } from './bankStatements/common';
@@ -16,6 +18,7 @@ export interface BankStatementResult {
     warnings: BankWarning[];
     recognizedCount: number;
     rejectedCount: number;
+    balances?: StatementCashBalance[];
 }
 const warning = (page: number, code: string): BankWarning => ({ page, code, count: 1 });
 const nonActivity = /^(?:期初|期末|開戶|Closing Balance|Opening Balance|Balance Brought Forward|Balance Carried Forward|結餘|餘額|合計|總計|交易筆數|Transaction (?:total|count)|Total (?:deposits|withdrawals))/i;
@@ -79,6 +82,8 @@ export function parseBankStatement(pages: readonly BankPage[], metadata: BankSta
         }
     }
     const period = periods.size === 1 ? [...periods.values()][0] : undefined;
+    const balanceDate=periods.size>1?undefined:statementClosingDate(ordered[0]?.lines??[],period?.end);
+    const closing=new Map<string,{currency:string;quantity:number}>(),invalidClosing=new Set<string>(),cashScopes=new Map<string,string>();
     const masthead = ordered[0]?.lines.filter(l => l.y > ordered[0].height - 160 && !/Disclosure|注意|說明|優惠|投資|mentions/i.test(l.text)).map(l => l.text).join(' ') ?? '';
     let layout: Layout | undefined;
     if (/HSBC|匯豐|滙豐/i.test(masthead)) {
@@ -361,6 +366,7 @@ export function parseBankStatement(pages: readonly BankPage[], metadata: BankSta
                 closed = true;
                 continue;
             }
+            if(section&&account&&currency){const scope=JSON.stringify([account,currency]);cashScopes.set(scope,currency);if(balanceDate){const quantity=closingCashAmount(l,table,activeLayout);if(quantity!==undefined){if(closing.has(scope)&&closing.get(scope)!.quantity!==quantity)invalidClosing.add(scope);else closing.set(scope,{currency,quantity});}}}
             const role = l.items.find(i => i.x >= table!.descriptionX - 4 && i.x < table!.descriptionEnd)?.text ?? '';
             // Fubon's own account is printed on the opening-balance row only.
             // Retain that structural identity while discarding every balance value.
@@ -561,7 +567,9 @@ export function parseBankStatement(pages: readonly BankPage[], metadata: BankSta
     const supported = recognizedCount > 0 || sections.some(s => s.noTransactions);
     if (!supported)
         warnings.push(warning(ordered[0]?.page ?? 1, 'unsupported-activity-layout'));
-    return { status: !supported ? 'unsupported' : layout.partial || rejectedCount ? 'partial' : 'recognized', bank: layout.bank, sections, warnings, recognizedCount, rejectedCount };
+    const balances:StatementCashBalance[]=[];
+    if(balanceDate)for(const curr of new Set(cashScopes.values())){const scopes=[...cashScopes].filter(([,c])=>c===curr).map(([key])=>key);if(scopes.length&&scopes.every(key=>closing.has(key)&&!invalidClosing.has(key)))balances.push({bank:layout.bank,date:balanceDate,currency:curr,quantity:scopes.reduce((n,key)=>n+closing.get(key)!.quantity,0)});}
+    return { ...(balances.length&&{balances}), status: !supported ? 'unsupported' : layout.partial || rejectedCount ? 'partial' : 'recognized', bank: layout.bank, sections, warnings, recognizedCount, rejectedCount };
 }
 /** Lazy browser-local neutral reader; never enters the card OCR/scoping adapter. */
 export async function readBankStatementPdf(bytes: Uint8Array, password: string | readonly string[], signal: AbortSignal) {

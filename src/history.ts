@@ -1,3 +1,4 @@
+import { parseBankStatementBalances } from './bankStatementAssets'
 // History kept inside the data file: every edit to a balance or holding, and one
 // value snapshot per day, so the user can see how their assets change over time.
 
@@ -223,6 +224,7 @@ export function recordSave(saved: WealthData | null, next: WealthData): WealthDa
       ...(next.bankCategoryRules !== undefined && { bankCategoryRules: ledger.rules }),
     }
   }
+  if(next.bankStatementBalances!==undefined)next={...next,bankStatementBalances:parseBankStatementBalances(next.bankStatementBalances,next.bankTransactionAccounts??[])}
   const at = next.updatedAt
   let snapshots = next.history.snapshots
   // Files saved before history existed: keep their last state as the starting point.

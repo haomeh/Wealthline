@@ -1,5 +1,5 @@
 // Reads and writes the user's data as a main file plus part files in Google Drive (dataParts.ts).
-// A version 13 or older single file loads as before and is split by its next save.
+// A version 14 or older single file loads as before and is split by its next save.
 
 import type { AccessToken } from './auth'
 import { DriveConflictError, createPart, findDataFile, listParts, parseJson, readFile, saveDataText, updatePart, type DriveVersion } from './drive'
@@ -16,7 +16,7 @@ interface StoredFile extends DriveVersion {
 export interface DriveState {
   datasetId: string
   main?: StoredFile
-  // Version 14 main file: its parts belong to `datasetId`. Before that, the single file holds everything.
+  // Version 15 main file: its parts belong to `datasetId`. Before that, the single file holds everything.
   split: boolean
   parts: Map<string, StoredPart>
 }
@@ -52,7 +52,7 @@ export async function loadDrive(token: AccessToken, parse: (raw: unknown) => Wea
   if (!fileId) return null
   const main = await readFile(token, fileId)
   const raw = parseJson(main.text) as Record<string, unknown>
-  const datasetId = raw?.version === 14 && typeof raw.datasetId === 'string' && raw.datasetId ? raw.datasetId : ''
+  const datasetId = raw?.version === 15 && typeof raw.datasetId === 'string' && raw.datasetId ? raw.datasetId : ''
   // An older file, or one without a data set (a restored backup), holds everything itself.
   if (!datasetId) return { data: parse(raw), state: { ...emptyDriveState(), main } }
   const files = await eachLimited(await listParts(token, datasetId), (id) => readFile(token, id))
@@ -118,7 +118,7 @@ export async function saveDrive(token: AccessToken, data: WealthData, state: Dri
     state.main = { ...written, text: mainText }
   }
   state.split = true
-  return { ...data, version: 14 }
+  return { ...data, version: 15 }
 }
 
 export { DriveConflictError }

@@ -51,7 +51,7 @@ test('split: transactions by quarter of their date, earlier years of history to 
   assert.deepEqual(split.get('ledger-2026-Q3').bankTransactions.map((t) => t.id), ['t1'])
   assert.deepEqual(split.get('history-2025').snapshots.map((s) => s.date), ['2025-06-01'])
   assert.deepEqual(split.get('history-2025').changes.map((c) => c.at), ['2025-03-01T00:00:00.000Z'])
-  assert.equal(main.version, 14)
+  assert.equal(main.version, 15)
   assert.equal(main.datasetId, 'set-1')
   assert.deepEqual(main.expenses, [])
   assert.deepEqual(main.bankTransactions, [])
@@ -78,7 +78,7 @@ test('part files hold one record per line, read back the same, and refuse anothe
 
 test('join keeps one copy of a record an interrupted move left in two parts, preferring the copy written last', () => {
   const moved = expense('e1', '2026-04-02', 20)
-  const main = { version: 14, history: { snapshots: [snapshot('2026-06-01')], changes: [], liabilityChanges: [] } }
+  const main = { version: 15, history: { snapshots: [snapshot('2026-06-01')], changes: [], liabilityChanges: [] } }
   const joined = parts.joinData(main, [
     { name: 'ledger-2026-Q1', sequence: 1, content: { expenses: [expense('e1', '2026-03-31', 10)] } },
     { name: 'ledger-2026-Q2', sequence: 2, content: { expenses: [moved] } },
@@ -100,8 +100,8 @@ test('a version 13 single file loads as before; its next save splits it and relo
   assert.equal(loaded.data.version, 13)
   assert.equal(loaded.state.split, false)
   const written = await store.saveDrive(token, loaded.data, loaded.state, NOW)
-  assert.equal(written.version, 14)
-  assert.equal(drive.main().version, 14)
+  assert.equal(written.version, 15)
+  assert.equal(drive.main().version, 15)
   assert.deepEqual(drive.main().expenses, [])
   assert.deepEqual(drive.parts().map((f) => f.appProperties.part).sort(), ['history-2025', 'ledger-2025-Q4', 'ledger-2026-Q1', 'ledger-2026-Q3', 'ledger-2026-Q4'])
   assert.ok(drive.parts().every((f) => f.name === `wealthline-${f.appProperties.part}.json`))
@@ -109,7 +109,7 @@ test('a version 13 single file loads as before; its next save splits it and relo
   assert.equal(writtenParts().at(-1), 'main')
 
   const reloaded = await store.loadDrive(token, model.parseWealthData)
-  assert.deepEqual(byId(reloaded.data), byId(model.parseWealthData({ ...v13(), version: 14 })))
+  assert.deepEqual(byId(reloaded.data), byId(model.parseWealthData({ ...v13(), version: 15 })))
   assert.equal(reloaded.state.split, true)
 })
 

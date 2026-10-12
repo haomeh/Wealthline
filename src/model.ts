@@ -1,3 +1,4 @@
+import { parseBankStatementBalances, type BankStatementBalance } from './bankStatementAssets'
 // Shape of the JSON file stored in the user's Drive. Bump `version` on breaking changes.
 
 import { dataVersion, type DataVersion } from './dataVersion'
@@ -89,6 +90,7 @@ export interface WealthData {
   expenses?: Expense[]
   expenseCategoryRules?: ExpenseCategoryRule[]
   statementPasswords?: StatementPassword[]
+  bankStatementBalances?: BankStatementBalance[]
   bankTransactionAccounts?: BankTransactionAccount[]
   bankTransactions?: BankTransaction[]
   bankCategoryRules?: BankCategoryRule[]
@@ -178,7 +180,7 @@ export function parseWealthData(raw: unknown, source: keyof typeof SOURCES = 'dr
     throw new Error(`${SOURCES[source][0]}格式不正確：${why}。${SOURCES[source][1]}`)
   }
   const obj = (typeof raw === 'object' && raw !== null ? raw : fail('不是 JSON 物件')) as Record<string, unknown>
-  if (!(typeof obj.version === 'number' && Number.isInteger(obj.version) && obj.version >= 1 && obj.version <= 14)) fail(`不支援的版本 ${String(obj.version)}`)
+  if (!(typeof obj.version === 'number' && Number.isInteger(obj.version) && obj.version >= 1 && obj.version <= 15)) fail(`不支援的版本 ${String(obj.version)}`)
   if (!Array.isArray(obj.accounts)) fail('缺少 accounts 陣列')
 
   const str = (v: unknown, fallback = '') => (typeof v === 'string' ? v.trim() : fallback)
@@ -251,8 +253,10 @@ export function parseWealthData(raw: unknown, source: keyof typeof SOURCES = 'dr
       bankLedger = validateBankLedger(obj.bankTransactionAccounts === undefined ? [] : obj.bankTransactionAccounts, obj.bankTransactions === undefined ? [] : obj.bankTransactions, obj.bankCategoryRules === undefined ? [] : obj.bankCategoryRules)
     } catch { fail('銀行流水資料無效（帳戶、交易或分類規則）') }
   }
+  let bankStatementBalances:BankStatementBalance[]|undefined
+  if(obj.bankStatementBalances!==undefined)try{bankStatementBalances=parseBankStatementBalances(obj.bankStatementBalances,bankLedger?.accounts??[])}catch{fail('銀行帳單餘額資料無效')}
   return {
-    version: dataVersion({ version: obj.version as DataVersion, expenses, expenseCategoryRules, statementPasswords, bankTransactionAccounts: obj.bankTransactionAccounts, bankTransactions: obj.bankTransactions, bankCategoryRules: obj.bankCategoryRules }, { legacyHistory: false }),
+    version: dataVersion({ bankStatementBalances, version: obj.version as DataVersion, expenses, expenseCategoryRules, statementPasswords, bankTransactionAccounts: obj.bankTransactionAccounts, bankTransactions: obj.bankTransactions, bankCategoryRules: obj.bankCategoryRules }, { legacyHistory: false }),
     updatedAt: str(obj.updatedAt) || new Date().toISOString(),
     fxRates,
     fxManual,
@@ -262,6 +266,7 @@ export function parseWealthData(raw: unknown, source: keyof typeof SOURCES = 'dr
     ...(expenses !== undefined && {expenses}),
     ...(expenseCategoryRules !== undefined && {expenseCategoryRules}),
     ...(statementPasswords !== undefined && {statementPasswords}),
+    ...(bankStatementBalances !== undefined && {bankStatementBalances}),
     ...(obj.bankTransactionAccounts !== undefined && {bankTransactionAccounts: bankLedger!.accounts}),
     ...(obj.bankTransactions !== undefined && {bankTransactions: bankLedger!.transactions}),
     ...(obj.bankCategoryRules !== undefined && {bankCategoryRules: bankLedger!.rules}),

@@ -1,4 +1,4 @@
-// Version 14 splits the Drive data file so that no file grows past the upload limit
+// Version 15 splits the Drive data file so that no file grows past the upload limit
 // (storageLimits.ts) and a save only uploads the files it changed:
 // - the main file keeps the current state, the rules and this year's history;
 // - card expenses and bank transactions go to one part file per calendar quarter of their date;
@@ -57,7 +57,7 @@ export function splitData(data: WealthData, datasetId: string, now: string, arch
   }
   // The main file keeps an empty list for each ledger the data has, so a ledger without records
   // still reads back as an empty list.
-  const main: Row = { ...data, version: 14, datasetId, history: { ...data.history, ...keep } }
+  const main: Row = { ...data, version: 15, datasetId, history: { ...data.history, ...keep } }
   for (const key of LEDGER_KEYS) {
     if (data[key]) main[key] = []
     else delete main[key]

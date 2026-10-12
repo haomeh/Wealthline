@@ -2813,7 +2813,8 @@ dialog.expense-rule-dialog { max-width: 440px; }
 .bank-import-actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 10px; padding-top: 20px; }
 .bank-import-actions > span { margin-right: auto; }
 .bank-import-review { margin-top: 16px; }
-.bank-import-review > button { margin-top: 12px; }
+.bank-import-confirm-actions { margin-top: 12px; flex-wrap: wrap; }
+.bank-closing-balances, .bank-import-review { overflow-wrap: anywhere; }
 @media (max-width: 600px) {
   .bank-import { padding: 16px; }
   .bank-upload-fields { grid-template-columns: minmax(0, 1fr); }
