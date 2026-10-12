@@ -1,15 +1,7 @@
 import type { CashflowCategoryTotal, CashflowCurrencySummary } from '../cashflow'
 import { fmt } from '../format'
-import { INCOME_CATEGORIES } from '../bankTransactions'
-import { EXPENSE_CATEGORIES } from '../expenses'
+import { cashflowColor } from '../cashflowColor'
 
-function color(category:string, income:boolean) {
-  const categories:readonly string[]=income?INCOME_CATEGORIES:EXPENSE_CATEGORIES
-  const index=categories.indexOf(category)
-  const palette=income?[1,3,7,6]:[2,5,4,8]
-  const base=`var(--s${palette[index%4]})`
-  return index<4?base:`color-mix(in srgb, ${base} ${index<8?65:40}%, var(--ink-2))`
-}
 const positiveTotal = (categories:readonly CashflowCategoryTotal<string>[])=>categories.reduce((sum,c)=>sum+Math.max(0,c.net),0)
 
 export function CashflowChart({group}: {group:CashflowCurrencySummary}) {
@@ -28,7 +20,7 @@ export function CashflowChart({group}: {group:CashflowCurrencySummary}) {
                 if(c.net<=0) return null
                 const fraction=c.net/denominator, start=offset
                 offset+=fraction
-                return <circle key={c.category} data-cashflow-slice={c.category} cx="130" cy="130" r={ring.radius} fill="none" stroke={color(c.category,ring.key==='income')} strokeWidth="19" pathLength="100" strokeDasharray={`${fraction*100} ${100-fraction*100}`} strokeDashoffset={-start*100} transform="rotate(-90 130 130)"><title>{ring.position} · {c.category} {group.currency} {fmt(c.net)} · {(fraction*100).toFixed(1)}%</title></circle>
+                return <circle key={c.category} data-cashflow-slice={c.category} cx="130" cy="130" r={ring.radius} fill="none" stroke={cashflowColor(c.category,ring.key==='income')} strokeWidth="19" pathLength="100" strokeDasharray={`${fraction*100} ${100-fraction*100}`} strokeDashoffset={-start*100} transform="rotate(-90 130 130)"><title>{ring.position} · {c.category} {group.currency} {fmt(c.net)} · {(fraction*100).toFixed(1)}%</title></circle>
               })}
             </g>
           })}
@@ -41,7 +33,7 @@ export function CashflowChart({group}: {group:CashflowCurrencySummary}) {
       const denominator=positiveTotal(ring.categories)
       return <section className="cashflow-ring-group" key={ring.key} aria-label={`${group.currency} ${ring.label}分類`}>
         <div className="cashflow-ring-heading"><h4><small>{ring.position}</small>{ring.label}</h4><strong data-cashflow-metric={ring.key}>{fmt(ring.total)}</strong></div>
-        <ul>{ring.categories.map(c=><li key={c.category}><span><i aria-hidden="true" style={{background:color(c.category,ring.key==='income')}}/>{c.category}<small> · {c.count} 筆</small></span><span>{fmt(c.net)}</span><small aria-label={c.net>0?'正值占比':'不計入圓環'}>{c.net>0?`${(c.net/denominator*100).toFixed(1)}%`:'—'}</small></li>)}</ul>
+        <ul>{ring.categories.map(c=><li key={c.category}><span><i aria-hidden="true" style={{background:cashflowColor(c.category,ring.key==='income')}}/>{c.category}<small> · {c.count} 筆</small></span><span>{fmt(c.net)}</span><small aria-label={c.net>0?'正值占比':'不計入圓環'}>{c.net>0?`${(c.net/denominator*100).toFixed(1)}%`:'—'}</small></li>)}</ul>
         {!ring.categories.length && <p className="muted small">沒有這類紀錄</p>}
         {!!ring.categories.length && denominator===0 && <p className="muted small">沒有正值分類</p>}
       </section>

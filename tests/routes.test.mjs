@@ -19,6 +19,7 @@ test('each signed-in page has its own URL that parses back to the same page', ()
     [{ tab: 'accounts', page: 'detail', id: 'a b/c' }, '/accounts/a%20b%2Fc'],
     [{ tab: 'accounts', page: 'edit', id: 'abc' }, '/accounts/abc/edit'],
     [{ tab: 'liabilities' }, '/liabilities'],
+    [{ tab: 'cashflow' }, '/cashflow'],
     [{ tab: 'expenses' }, '/expenses'],
     [{ tab: 'rates' }, '/rates'],
     [{ tab: 'history' }, '/history'],
@@ -29,6 +30,8 @@ test('each signed-in page has its own URL that parses back to the same page', ()
     assert.deepEqual(routes.parseRoute(path), route)
   }
   for (const t of Object.keys(routes.TABS)) assert.equal(routes.parseRoute(routes.tabPath(t)).tab, t)
+  // Every page appears in the sidebar exactly once.
+  assert.deepEqual(routes.NAV_GROUPS.flatMap((g) => g.tabs).sort(), Object.keys(routes.TABS).sort())
 })
 
 test('unknown paths fall back to the overview', () => {

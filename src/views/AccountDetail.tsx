@@ -17,6 +17,9 @@ import { displaySymbol, lookupQuote } from '../quotes'
 import { ChangeList } from './History'
 import { NumberInput } from './NumberInput'
 import { PositionHistory } from './PositionHistory'
+import { Sparkline } from './Sparkline'
+import { accountChange, accountSeries } from '../accountTrend'
+import { useCalendarNow } from '../useCalendarNow'
 
 interface Props {
   data: WealthData
@@ -33,154 +36,193 @@ export function AccountDetail({ data, account: a, onChange, onEdit, onBack, onRe
   const [refreshing, setRefreshing] = useState(false)
   // The holding whose daily values are shown under its row.
   const [open, setOpen] = useState<string | null>(null)
+  const [allChanges, setAllChanges] = useState(false)
+  const now = useCalendarNow()
   const setPositions = (positions: Position[]) => onChange({ ...a, positions })
   const setPosition = (p: Position) => setPositions(a.positions.map((x) => (x.id === p.id ? p : x)))
   const cash = a.positions.filter((p) => p.type === 'cash')
   const holdings = a.positions.filter((p) => p.type === 'holding')
 
+  const value = accountBaseValue(data, a)
+  const series = accountSeries(data, a, now)
+  const change = accountChange(data, a, now)
+  const changes = data.history.changes.filter((c) => c.accountId === a.id)
+  const quoted = holdings.map((p) => p.priceUpdatedAt).filter((t): t is string => !!t).sort().at(-1)
+
+  const balances = (
+    <section className="panel">
+      <h3>{a.kind === 'bank' ? '餘額' : '可用金額'}</h3>
+      {cash.length === 0 && <p className="muted">尚未設定幣別，請按「編輯帳戶」選擇持有幣別。</p>}
+      {cash.map((p) => (
+        <div className="balance" key={p.id}>
+          <span className="ccy-badge">{p.currency}</span>
+          <NumberInput className="amount-input" value={p.quantity} onCommit={(v) => setPosition({ ...p, quantity: v })} aria-label={`${p.currency} 餘額`} />
+          <span className="balance-side">
+            <span className="muted num">
+              {p.currency === BASE_CURRENCY
+                ? ''
+                : Number.isFinite(baseValue(data, p))
+                  ? `≈ ${BASE_CURRENCY} ${fmt(baseValue(data, p), 0)}`
+                  : '尚未設定匯率'}
+            </span>
+            <TrendToggle open={open === p.id} onClick={() => setOpen(open === p.id ? null : p.id)} />
+          </span>
+        </div>
+      ))}
+      {cash
+        .filter((p) => p.id === open)
+        .map((p) => (
+          <PositionHistory key={p.id} data={data} account={a} position={p} onClose={() => setOpen(null)} />
+        ))}
+    </section>
+  )
+
   return (
     <>
-      <button className="link back" onClick={onBack}>
-        ← 所有帳戶
-      </button>
-      <section className="panel account-head">
+      <div className="page-head detail-head">
         <div>
+          <button className="back-link" onClick={onBack}>‹ 帳戶</button>
           <h2>{a.name}</h2>
-          <div className="meta">
-            <span className="tag">{ACCOUNT_KINDS[a.kind]}</span>
-            {a.country && <span className="tag">{countryLabel(a.country)}</span>}
-            <span className="tag">{a.category}</span>
-          </div>
         </div>
-        <div className="total">
-          <span className="eyebrow">合計</span>
-          <strong>NT$ {fmt(accountBaseValue(data, a), 0)}</strong>
-          <button className="ghost small" onClick={onEdit}>
-            編輯帳戶設定
-          </button>
-        </div>
-      </section>
-
-      <section className="panel">
-        <h3>{a.kind === 'bank' ? '餘額' : '可用金額'}</h3>
-        {cash.length === 0 && <p className="muted">尚未設定幣別，請按「編輯帳戶設定」選擇持有幣別。</p>}
-        {cash.map((p) => (
-          <div className="balance" key={p.id}>
-            <span className="ccy-badge">{p.currency}</span>
-            <NumberInput className="amount-input" value={p.quantity} onCommit={(v) => setPosition({ ...p, quantity: v })} aria-label={`${p.currency} 餘額`} />
-            <span className="balance-side">
-              <span className="muted num">
-                {p.currency === BASE_CURRENCY
-                  ? ''
-                  : Number.isFinite(baseValue(data, p))
-                    ? `≈ ${BASE_CURRENCY} ${fmt(baseValue(data, p), 0)}`
-                    : '尚未設定匯率'}
-              </span>
-              <TrendToggle open={open === p.id} onClick={() => setOpen(open === p.id ? null : p.id)} />
-            </span>
-          </div>
-        ))}
-        {cash
-          .filter((p) => p.id === open)
-          .map((p) => (
-            <PositionHistory key={p.id} data={data} account={a} position={p} onClose={() => setOpen(null)} />
-          ))}
-      </section>
-
-      {(a.kind === 'investment' || holdings.length > 0) && (
-        <section className="panel">
-          <div className="panel-head">
-            <h3>持有標的</h3>
-            {holdings.some((p) => !p.priceManual) && (
-              <button
-                className="small"
-                disabled={refreshing}
-                onClick={async () => {
-                  setRefreshing(true)
-                  await onRefreshPrices()
-                  setRefreshing(false)
-                }}
-              >
-                {refreshing ? '更新中…' : '更新報價'}
-              </button>
-            )}
-          </div>
-          {priceError && <p className="notice">{priceError}</p>}
-          {holdings.length > 0 && (
-            <div className="scroll">
-              <table className="data holdings">
-                <thead>
-                  <tr>
-                    <th>標的</th>
-                    <th className="num">數量</th>
-                    <th className="num">價格</th>
-                    <th className="num">市值</th>
-                    <th className="num">{BASE_CURRENCY}</th>
-                    <th />
-                  </tr>
-                </thead>
-                <tbody>
-                  {holdings.map((p) => (
-                    <tr key={p.id} className={open === p.id ? 'open' : ''}>
-                      <td>
-                        <button
-                          className="link symbol"
-                          aria-expanded={open === p.id}
-                          title={open === p.id ? '收起每日價值' : '查看每日價值'}
-                          onClick={() => setOpen(open === p.id ? null : p.id)}
-                        >
-                          <span className="chevron" aria-hidden>
-                            {open === p.id ? '▾' : '▸'}
-                          </span>
-                          <strong>{displaySymbol(p.symbol)}</strong>
-                        </button>
-                        {p.name && p.name !== p.symbol && <div className="muted small ellipsis">{p.name}</div>}
-                        {p.addedAt && <div className="muted small">{shortDay(p.addedAt)} 加入</div>}
-                      </td>
-                      <td className="num">
-                        <NumberInput className="cell-input" value={p.quantity} onCommit={(v) => setPosition({ ...p, quantity: v })} size={10} />
-                      </td>
-                      <td className="num">
-                        <PriceCell position={p} onChange={setPosition} />
-                      </td>
-                      <td className="num">
-                        {fmt(positionValue(p))} <span className="muted small">{p.currency}</span>
-                      </td>
-                      <td className="num">{fmt(baseValue(data, p), 0)}</td>
-                      <td className="row-actions">
-                        <button
-                          className="icon"
-                          aria-label="刪除"
-                          onClick={() => setPositions(a.positions.filter((x) => x.id !== p.id))}
-                        >
-                          ×
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+      </div>
+      <div className="detail-grid">
+        <div className="detail-main">
+          <section className="panel account-value" aria-label="台幣價值">
+            <div className="tile-stat">
+              <span>台幣價值</span>
+              <strong className="figure">NT$ {fmt(value, 0)}</strong>
+              {change !== null && <small className={change > 0.0005 ? 'change up' : change < -0.0005 ? 'change down' : 'muted'}>
+                {change > 0.0005 ? '↑' : change < -0.0005 ? '↓' : ''} {Math.abs(change * 100).toFixed(1)}% · 30 天
+              </small>}
             </div>
-          )}
-          {holdings
-            .filter((p) => p.id === open)
-            .map((p) => (
-              <PositionHistory key={p.id} data={data} account={a} position={p} onClose={() => setOpen(null)} />
-            ))}
-          <AddHolding account={a} onAdd={(p) => setPositions([...a.positions, p])} />
-        </section>
-      )}
+            <Sparkline values={series.map((p) => p.value)} label={`${a.name} 每日價值，${series[0].date} 到今天`} />
+          </section>
 
-      {data.history.changes.some((c) => c.accountId === a.id) && (
-        <section className="panel">
-          <h3>異動紀錄</h3>
-          <ChangeList changes={data.history.changes.filter((c) => c.accountId === a.id)} showAccount={false} limit={20} />
-        </section>
-      )}
+          {(a.kind === 'investment' || holdings.length > 0) && (
+            <section className="panel">
+              <div className="panel-head">
+                <h3>持有標的</h3>
+                {holdings.some((p) => !p.priceManual) && (
+                  <button
+                    className="small"
+                    disabled={refreshing}
+                    onClick={async () => {
+                      setRefreshing(true)
+                      await onRefreshPrices()
+                      setRefreshing(false)
+                    }}
+                  >
+                    {refreshing ? '更新中…' : '更新報價'}
+                  </button>
+                )}
+              </div>
+              {priceError && <p className="notice">{priceError}</p>}
+              {holdings.length > 0 && (
+                <div className="scroll">
+                  <table className="data holdings">
+                    <thead>
+                      <tr>
+                        <th>標的</th>
+                        <th className="num">數量</th>
+                        <th className="num">價格</th>
+                        <th className="num">市值</th>
+                        <th className="num">{BASE_CURRENCY}</th>
+                        <th />
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {holdings.map((p) => (
+                        <tr key={p.id} className={open === p.id ? 'open' : ''}>
+                          <td>
+                            <button
+                              className="link symbol"
+                              aria-expanded={open === p.id}
+                              title={open === p.id ? '收起每日價值' : '查看每日價值'}
+                              onClick={() => setOpen(open === p.id ? null : p.id)}
+                            >
+                              <span className="chevron" aria-hidden>
+                                {open === p.id ? '▾' : '▸'}
+                              </span>
+                              <strong>{displaySymbol(p.symbol)}</strong>
+                            </button>
+                            {p.name && p.name !== p.symbol && <div className="muted small ellipsis">{p.name}</div>}
+                            {p.addedAt && <div className="muted small">{shortDay(p.addedAt)} 加入</div>}
+                          </td>
+                          <td className="num">
+                            <NumberInput className="cell-input" value={p.quantity} onCommit={(v) => setPosition({ ...p, quantity: v })} size={10} />
+                          </td>
+                          <td className="num">
+                            <PriceCell position={p} onChange={setPosition} />
+                          </td>
+                          <td className="num">
+                            {fmt(positionValue(p))} <span className="muted small">{p.currency}</span>
+                          </td>
+                          <td className="num num-serif">{fmt(baseValue(data, p), 0)}</td>
+                          <td className="row-actions">
+                            <button
+                              className="icon"
+                              aria-label="刪除"
+                              onClick={() => setPositions(a.positions.filter((x) => x.id !== p.id))}
+                            >
+                              ×
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+              {holdings
+                .filter((p) => p.id === open)
+                .map((p) => (
+                  <PositionHistory key={p.id} data={data} account={a} position={p} onClose={() => setOpen(null)} />
+                ))}
+              <AddHolding account={a} onAdd={(p) => setPositions([...a.positions, p])} />
+            </section>
+          )}
+
+          {balances}
+
+          {allChanges && changes.length > 0 && (
+            <section className="panel" id="account-changes">
+              <div className="panel-head"><h3>異動紀錄</h3><button className="link small" onClick={() => setAllChanges(false)}>收起</button></div>
+              <ChangeList changes={changes} showAccount={false} limit={20} />
+            </section>
+          )}
+        </div>
+
+        <div className="detail-side">
+          <section className="panel account-facts" aria-label="帳戶設定">
+            <dl>
+              <dt>類型</dt><dd>{ACCOUNT_KINDS[a.kind]}</dd>
+              <dt>國家</dt><dd>{a.country ? countryLabel(a.country) : '未設定'}</dd>
+              <dt>類別</dt><dd>{a.category}</dd>
+              {quoted && <><dt>報價</dt><dd>{new Date(quoted).toLocaleString('zh-TW', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false })}</dd></>}
+            </dl>
+            <button className="link" onClick={onEdit}>編輯帳戶</button>
+          </section>
+          {changes.length > 0 && (
+            <section className="panel recent-changes" aria-label="最近異動">
+              <h3>最近異動</h3>
+              <ul>
+                {[...changes].sort((x, y) => y.at.localeCompare(x.at)).slice(0, 4).map((c, i) => (
+                  <li key={`${c.at}-${i}`}>
+                    <span className="muted">{shortDate(c.at)}</span>
+                    <span>{c.type === 'cash' ? `${c.symbol} 餘額` : displaySymbol(c.symbol)} {c.before ? fmt(c.before.quantity) : '新增'} → {c.after ? fmt(c.after.quantity) : '移除'}</span>
+                  </li>
+                ))}
+              </ul>
+              {!allChanges && <button className="link small" onClick={() => setAllChanges(true)}>查看全部 {changes.length} 筆</button>}
+            </section>
+          )}
+        </div>
+      </div>
     </>
   )
 }
 
+const shortDate = (iso: string) => new Date(iso).toLocaleDateString('zh-TW', { month: 'numeric', day: 'numeric' })
 const shortDay = (iso: string) => new Date(iso).toLocaleDateString('zh-TW', { year: 'numeric', month: 'numeric', day: 'numeric' })
 
 // Opens or closes a balance's or holding's daily value chart.

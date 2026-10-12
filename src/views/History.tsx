@@ -47,6 +47,7 @@ export function HistoryView({ initialDate, data, dirty, busy, onSave, onChange, 
   }, [initialDate])
 
   // Accounts that have since been deleted keep their name from the last snapshot they appear in.
+  const dayChanges = sourcePoint ? [...changes].filter((c) => localDate(c.at) === sourcePoint.date).sort((a, b) => b.at.localeCompare(a.at)) : []
   const accountNames = new Map<string, string>()
   for (const s of points) for (const a of s.accounts) accountNames.set(a.id, a.name)
 
@@ -75,6 +76,19 @@ export function HistoryView({ initialDate, data, dirty, busy, onSave, onChange, 
         {historical.status && <p className="muted small" aria-live="polite">{historical.status}</p>}
         {historical.error && <p role="alert" className="banner error">{historical.error}</p>}
       </section>
+      {sourcePoint && <div className="tiles history-day-tiles">
+        <section className="panel deep tile-stat span-2" aria-label="當日資產">
+          <span>{sourcePoint.date.replace(/-/g, '/')} · 總資產 · TWD</span>
+          <strong>{sourcePoint.total === null ? '資料不完整' : fmt(sourcePoint.total, 0)}</strong>
+          <small>淨資產 {money(sourcePoint.netWorth)} · 總負債 {money(sourcePoint.liabilityTotal)}{sourcePoint.liabilityEstimated ? '（預估）' : ''}</small>
+        </section>
+        <section className="panel span-2 history-day-changes" aria-label="當日異動">
+          <h3>這天的異動</h3>
+          {dayChanges.length ? <ul>{dayChanges.slice(0, 4).map((c, i) => <ChangeRow key={`${c.at}-${i}`} c={c} showAccount />)}</ul>
+            : <p className="muted small">這天沒有異動紀錄。若當時的持倉不同，可在下方每日紀錄按「編輯數量」補登這天。</p>}
+          {dayChanges.length > 4 && <p className="muted small">另有 {dayChanges.length - 4} 筆，見下方異動紀錄。</p>}
+        </section>
+      </div>}
       {sourcePoint && <section ref={sourcePanel} className="panel" aria-label="快照資料明細" tabIndex={-1}>
         <div className="panel-head"><h3>快照資料明細</h3><label className="field"><span>明細日期</span><select value={sourcePoint.date} onChange={e => setSourceDate(e.target.value)}>{[...points].reverse().map(p => <option key={p.date} value={p.date}>{p.date}</option>)}</select></label></div>
         {initialDate && !points.some(p => p.date === initialDate) && <p className="notice">{initialDate} 沒有可展示的快照，先顯示最近紀錄。</p>}
@@ -192,6 +206,7 @@ export function HistoryView({ initialDate, data, dirty, busy, onSave, onChange, 
   )
 }
 
+const money = (n: number | null | undefined) => n === undefined ? '未記錄' : n === null ? '無法換算' : `NT$ ${fmt(n, 0)}`
 const signed = (n: number, digits: number) => `${n >= 0 ? '+' : '−'}${fmt(Math.abs(n), digits)}`
 
 export function ChangeRow({
@@ -200,12 +215,14 @@ export function ChangeRow({
   onOpenAccount,
   showTime = true,
   extra,
+  className = '',
 }: {
   c: Change
   showAccount: boolean
   onOpenAccount?: (id: string) => void
   showTime?: boolean
   extra?: ReactNode
+  className?: string
 }) {
   const what = c.type === 'cash' ? `${c.currency} 餘額` : displaySymbol(c.symbol)
   const time = new Date(c.at).toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit', hour12: false })
@@ -241,7 +258,7 @@ export function ChangeRow({
     )
   }
   return (
-    <li className={showTime ? '' : 'no-time'}>
+    <li className={`${showTime ? '' : 'no-time'} ${className}`.trim()}>
       {showTime && <span className="when muted small">{time}</span>}
       <span className="what">
         {showAccount &&
