@@ -268,7 +268,7 @@ export function QuantityRecord({ entry, actions }: { entry: QuantityEntry; actio
   const value = entryValue(entry)
   const title = `${accountLabel({name:entry.account,country:entry.country})} · ${entry.symbol || entry.currency}${entry.symbol ? ` · ${entry.currency}` : ''}`
   return <DetailRecord className="quantity-record" title={title} label={`查看來源 ${title}`} actions={actions}
-    value={<strong className={value === null ? 'record-unknown' : ''}>{value === null ? '估值未知' : `NT$ ${fmt(value, 2)}`}</strong>}>
+    value={value === null ? <strong className="record-unknown">估值未知</strong> : <span className="record-money"><small>NT$</small><strong>{fmt(value, 2)}</strong></span>}>
     <p>{title}</p>
     <p>數量 {entry.quantity === null ? '未知' : fmt(entry.quantity, 8)}{entry.quantityAsOf && ` · 數量基準 ${entry.quantityAsOf}`}</p>
     <Valuation entry={entry} showValue={false} />
