@@ -1,4 +1,4 @@
-import { bankStatementIdentity, statementAccountLabel, statementLedgerAccount, importStatementBalances, statementBalanceRevision, type StatementBalanceCandidate } from '../bankStatementAssets'
+import { bankStatementIdentity, statementAccountLabel, statementBalanceConfirmation, statementLedgerAccount, importStatementBalances, statementBalanceRevision, type StatementBalanceCandidate } from '../bankStatementAssets'
 import type { WealthData } from '../model'
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { BANK_PDF_ERRORS, bankStatementErrorMessage, type BankImportStage } from '../bankStatementErrors'
@@ -14,7 +14,7 @@ import { BANK_SUMMARY_PENDING, BANK_TEXT_NOTICE, classificationLabel, summarizeB
 
 type PreviewRow={draft:BankTransaction;original:BankTransactionRow;provenance:BankRowProvenance;selected:boolean;manual?:boolean;narration?:{leading:string[];trailing:string[]}}
 type PreviewSection={automatic?:boolean;id:string;bank:string;currency:string;hash:string;rows:PreviewRow[];accountId:string;newId:string;label:string;noTransactions:boolean;partial:boolean;warnings:ReturnType<typeof summarizeBankWarnings>}
-type Review={balances:StatementBalanceCandidate[];balanceCount:number;balanceRevision:string;accounts:BankTransactionAccount[];rows:BankTransaction[];context:BankTransaction[]}
+type Review={balanceConfirmations:NonNullable<ReturnType<typeof statementBalanceConfirmation>>[];balances:StatementBalanceCandidate[];balanceCount:number;balanceRevision:string;accounts:BankTransactionAccount[];rows:BankTransaction[];context:BankTransaction[]}
 export function BankStatementImport({data,accounts,existing,rules,passwords,passwordScope,busy,onCancel,onImport,onManagePasswords,onAddRule}: {data:WealthData;accounts:BankTransactionAccount[];existing:BankTransaction[];rules:BankCategoryRule[];passwords:StatementPassword[];passwordScope?:string;busy:boolean;onCancel:()=>void;onManagePasswords:()=>void;onAddRule:(row:BankTransaction)=>void;onImport:(review:Review,keep:boolean)=>void}) {
  const [files,setFiles]=useState<File[]>([]),[password,setPassword]=useState(''),[parsing,setParsing]=useState(false),[sections,setSections]=useState<PreviewSection[]>([]),[reports,setReports]=useState<string[]>([]),[error,setError]=useState(''),[review,setReview]=useState<Review|null>(null),[keep,setKeep]=useState(false)
  const [balances,setBalances]=useState<(StatementBalanceCandidate & {sectionId:string})[]>([])
@@ -53,7 +53,7 @@ export function BankStatementImport({data,accounts,existing,rules,passwords,pass
  const identity=bankStatementIdentity(s.bank),available=[...latest.current.accounts,...[...next,...fileSections].filter(p=>p.accountId==='new').map(p=>({id:p.newId,label:p.label,bank:p.bank}))],matched=statementLedgerAccount(s.bank,available)
  const automatic=!!identity&&(!!matched||!available.some(a=>bankStatementIdentity(a.bank)?.label===identity.label))
  const id=crypto.randomUUID();fileReports.push(`檔案 ${index+1} · ${s.currency} 帳戶區段 ${next.length+fileSections.length+1} · ${s.noTransactions?'已證明無交易':`${s.rows.length} 筆已辨識`} ${s.partial?'· 僅局部轉出明細，不是完整月流水':''}`)
- fileSections.push({automatic,id,bank:s.bank,currency:s.currency,hash,accountId:automatic?(matched?.id??'new'):'',newId:crypto.randomUUID(),label:identity?statementAccountLabel(s.bank,latest.current.data.accounts):'',noTransactions:s.noTransactions,partial:s.partial,warnings:summarizeBankWarnings(s.warnings),rows:s.rows.map(r=>({draft:{id:crypto.randomUUID(),accountId:'',date:r.date,description:protectBankText(r.description),currency:r.currency,direction:r.direction,amount:r.amount},original:{date:r.date,description:protectBankText(r.description)||BANK_SUMMARY_PENDING,currency:r.currency,direction:r.direction,amount:r.amount},provenance:{page:r.page,sectionKey:r.sectionKey,rowKey:r.rowKey},selected:true,
+ fileSections.push({automatic,id,bank:s.bank,currency:s.currency,hash,accountId:automatic?(matched?.id??'new'):'',newId:crypto.randomUUID(),label:identity?statementAccountLabel(s.bank):'',noTransactions:s.noTransactions,partial:s.partial,warnings:summarizeBankWarnings(s.warnings),rows:s.rows.map(r=>({draft:{id:crypto.randomUUID(),accountId:'',date:r.date,description:protectBankText(r.description),currency:r.currency,direction:r.direction,amount:r.amount},original:{date:r.date,description:protectBankText(r.description)||BANK_SUMMARY_PENDING,currency:r.currency,direction:r.direction,amount:r.amount},provenance:{page:r.page,sectionKey:r.sectionKey,rowKey:r.rowKey},selected:true,
  // Candidates stay preview-only metadata under the same protection as summaries.
  ...(r.ambiguousNarration && {narration:{leading:r.ambiguousNarration.leading.map(t=>protectBankText(t)),trailing:r.ambiguousNarration.trailing.map(t=>protectBankText(t))}})}))})
  })
@@ -85,17 +85,21 @@ export function BankStatementImport({data,accounts,existing,rules,passwords,pass
  // have no source provenance and must not enter validation/merge context.
  manualRows.filter(r=>r.selected).forEach(r=>{const row={...r.draft,accountId,description:protectBankText(r.draft.description)};context.push(row);rows.push(row)})
  }
- const cashBalances=balances.map(({sectionId,...balance})=>{const s=sections.find(s=>s.id===sectionId)!;return {...balance,ledgerAccountId:s.accountId==='new'?s.newId:s.accountId}})
- if(!rows.length&&!cashBalances.length)throw new Error('empty')
  const current=latest.current
+ // Preview the correspondence, then require one explicit final confirmation before any write.
+ const cashBalances=balances.map(({sectionId,...balance})=>{const s=sections.find(s=>s.id===sectionId)!,confirmation=statementBalanceConfirmation(balance.bank,current.data.accounts);return {...balance,ledgerAccountId:s.accountId==='new'?s.newId:s.accountId,...(confirmation&&{confirmedAccountId:confirmation.accountId})}})
+ if(!rows.length&&!cashBalances.length)throw new Error('empty')
  const validated=validateBankLedger([...current.accounts,...additions],[...current.existing,...rows],rules)
  const balanceResult=importStatementBalances({...current.data,bankTransactionAccounts:validated.accounts},cashBalances)
- if(!abort.signal.aborted)setReview({accounts:validated.accounts,rows,context,balances:cashBalances,balanceCount:balanceResult.added,balanceRevision:statementBalanceRevision(current.data)})
- }catch(e){if(!abort.signal.aborted)setError(e instanceof Error&&['同日同銀行幣別的帳單餘額不一致，請分批匯入並核對。','同銀行與國家有多個資產帳戶，請先整併帳戶後再匯入餘額。','既有帳單的歷史帳戶與資產帳戶不同，請先核對歷史帳戶後再匯入餘額。','不可補登未來日期'].includes(e.message)?e.message+' 未修改任何資料。':e instanceof Error&&e.message==='summary'?'請填寫已選交易的摘要，或取消勾選該筆。未修改任何資料。':'請明確選擇每個已選區段的獨立帳戶，並檢查標籤及所有交易欄位。未修改任何資料。')}finally{if(!abort.signal.aborted)setParsing(false)}
+ const balanceConfirmations=new Map<string,NonNullable<ReturnType<typeof statementBalanceConfirmation>>>()
+ for(const b of balanceResult.data.bankStatementBalances?.slice(current.data.bankStatementBalances?.length??0)??[]){const confirmation=statementBalanceConfirmation(b.bank,current.data.accounts);if(confirmation)balanceConfirmations.set(confirmation.accountId,confirmation)}
+ if(!abort.signal.aborted)setReview({accounts:validated.accounts,rows,context,balances:cashBalances,balanceCount:balanceResult.added,balanceRevision:statementBalanceRevision(current.data),balanceConfirmations:[...balanceConfirmations.values()]})
+ }catch(e){if(!abort.signal.aborted)setError(e instanceof Error&&['帳單銀行名稱與資產帳戶不同，請先確認對應帳戶。','同日同銀行幣別的帳單餘額不一致，請分批匯入並核對。','同銀行與國家有多個資產帳戶，請先整併帳戶後再匯入餘額。','既有帳單的歷史帳戶與資產帳戶不同，請先核對歷史帳戶後再匯入餘額。','不可補登未來日期'].includes(e.message)?e.message+' 未修改任何資料。':e instanceof Error&&e.message==='summary'?'請填寫已選交易的摘要，或取消勾選該筆。未修改任何資料。':'請明確選擇每個已選區段的獨立帳戶，並檢查標籤及所有交易欄位。未修改任何資料。')}finally{if(!abort.signal.aborted)setParsing(false)}
  }
  let result:ReturnType<typeof mergeBankTransactions>|undefined
  let reviewError=''
  if(review)try{result=mergeBankTransactions(existing,review.rows,review.accounts,review.context,{keepSuspectedDuplicates:keep})}catch{reviewError='無法核對重複，請檢查已選交易與帳戶，或重新檢查匯入。未修改任何資料。'}
+ function finishImport(transactionsOnly=false){if(!review||latest.current.busy)return;try{onImport(transactionsOnly?{...review,balances:[],balanceCount:0,balanceConfirmations:[]}:review,keep)}catch{setError('確認失敗，資料可能已變更；請重新核對。未新增孤兒帳戶。')}}
  const previewCount=sections.reduce((n,s)=>n+s.rows.length,0)
  const selectedCount=sections.reduce((n,s)=>n+s.rows.filter(r=>r.selected).length,0)
  const narrationCount=sections.reduce((n,s)=>n+s.rows.filter(r=>r.selected&&r.narration).length,0)
@@ -117,9 +121,9 @@ export function BankStatementImport({data,accounts,existing,rules,passwords,pass
    <summary><span>解析報告</span><span className="muted">{previewCount} 筆 · {sections.length} 個區段</span></summary>
    <ul aria-label="銀行解析結果">{reports.map((r,i)=><li key={i}>{r}</li>)}</ul>
   </details>}
-  {balances.length>0 && <section className="notice bank-closing-balances" aria-label="帳單期末餘額"><h3>補入資產歷史</h3><p className="muted small">只補入帳單日期的現金餘額；目前持倉不變，其他資產不推算。</p>{balances.map((b,i)=><p key={i}><strong>{statementAccountLabel(b.bank,data.accounts)}</strong> · {b.date} · {b.currency==='TWD'?'NT$':b.currency} {fmt(b.quantity,2)}</p>)}</section>}
+  {balances.length>0 && <section className="notice bank-closing-balances" aria-label="帳單期末餘額"><h3>補入資產歷史</h3><p className="muted small">只補入帳單日期的現金餘額；目前持倉不變，其他資產不推算。</p>{balances.map((b,i)=>{const confirmation=statementBalanceConfirmation(b.bank,data.accounts);return <div key={i}><p><strong>{statementAccountLabel(b.bank)}</strong> · {b.date} · {b.currency==='TWD'?'NT$':b.currency} {fmt(b.quantity,2)}</p>{confirmation && <p className="muted small">既有資產帳戶為 {confirmation.assetLabel}，補登前會請你確認對應。</p>}</div>})}</section>}
   {sections.map((s,index)=><section key={s.id} className="bank-section" aria-label={`帳戶區段 ${index+1}`}>
-   <div className="bank-section-head"><h3>{statementAccountLabel(s.bank,data.accounts)}</h3><span className="muted small">{s.currency} · 區段 {index+1} · {s.rows.length} 筆</span></div>
+   <div className="bank-section-head"><h3>{statementAccountLabel(s.bank)}</h3><span className="muted small">{s.currency} · 區段 {index+1} · {s.rows.length} 筆</span></div>
    {s.partial && <p role="status" className="bank-section-note">僅局部紀錄／轉出明細；不是完整月流水。</p>}
    {s.noTransactions && <p>此區段已有無交易證據；不捏造零金額交易。</p>}
    {s.warnings.length>0 && <div role="status" aria-label={`區段 ${index+1} 解析警告`} className="bank-review-flag bank-section-warning">
@@ -129,7 +133,7 @@ export function BankStatementImport({data,accounts,existing,rules,passwords,pass
      <ul>{s.warnings.map(w=><li key={w.code}>{w.text} · {w.count} 個事件</li>)}</ul>
     </details>
    </div>}
-   {s.automatic ? <p className="bank-section-note">自動記入 {statementAccountLabel(s.bank,data.accounts)}，同銀行與國家沿用既有流水。</p> : <div className="bank-fields bank-account-mapping">
+   {s.automatic ? <p className="bank-section-note">自動記入 {statementAccountLabel(s.bank)}，同銀行與國家沿用既有流水。</p> : <div className="bank-fields bank-account-mapping">
     {s.rows.every(r=>r.manual) && <label className="field"><span>銀行名稱</span><input aria-label={`區段 ${index+1} 銀行`} disabled={locked} maxLength={100} value={s.bank} onChange={e=>patch(s.id,{bank:e.target.value})}/></label>}
     <label className="field"><span>選擇獨立流水帳戶</span><select aria-label={`區段 ${index+1} 帳戶`} disabled={locked} value={s.accountId} onChange={e=>patch(s.id,{accountId:e.target.value})}><option value="">請選擇流水帳戶</option>{accounts.map(a=><option key={a.id} value={a.id}>{a.label} · {a.bank}</option>)}<option value="new">新增獨立帳戶標籤</option></select></label>
     {s.accountId==='new' && <label className="field"><span>新帳戶標籤</span><input aria-label={`區段 ${index+1} 新標籤`} disabled={locked} maxLength={100} value={s.label} onChange={e=>patch(s.id,{label:e.target.value})}/></label>}
@@ -165,6 +169,6 @@ export function BankStatementImport({data,accounts,existing,rules,passwords,pass
    <button disabled={locked} onClick={()=>{const draft:BankTransaction={id:crypto.randomUUID(),accountId:'',date:'',description:'',currency:'TWD',direction:'debit',amount:0};setSections(list=>[...list,{id:crypto.randomUUID(),bank:'手動輸入',currency:'TWD',hash:'0'.repeat(64),accountId:'',newId:crypto.randomUUID(),label:'',noTransactions:false,partial:true,warnings:[],rows:[{draft,original:draft,provenance:{page:1,sectionKey:'manual',rowKey:'manual'},selected:true,manual:true}]}]);setReview(null)}}>手動補登區段</button>
    {!!sections.length && <button className="primary" disabled={locked} onClick={()=>void prepare()}>檢查匯入</button>}
   </div>
-  {review && result && <section className="notice bank-import-review" aria-label="銀行重複核對">{review.balances.length>0 && <p>期末餘額可補入 {review.balanceCount} 筆 · 已匯入的帳單餘額會略過。</p>}<p>可新增 {result.added} 筆 · 略過 {result.duplicates} 筆 · 疑似重複 {result.suspectedDuplicates} 筆。跨帳單同值交易沒有銀行 reference 時無法保證準確。</p>{narrationCount>0 && <p>{narrationCount} 筆有補充敘述；確認匯入會使用目前摘要，可返回預覽修改。</p>}{result.suspectedDuplicateRows.length>0 && <><ul>{result.suspectedDuplicateRows.map(r=><li key={r.id}>{r.date} · {r.description} · {r.direction} · {r.currency} {r.amount}</li>)}</ul><label className="bank-summary-check"><input type="checkbox" aria-label="保留疑似重複" disabled={locked} checked={keep} onChange={e=>setKeep(e.target.checked)}/><span>我已核對，保留疑似重複（相同文件位置仍略過）</span></label></>}<button disabled={locked||(!result.added&&!review.balanceCount)} className="primary" onClick={()=>{if(latest.current.busy)return;try{onImport(review,keep)}catch{setError('確認失敗，資料可能已變更；請重新核對。未新增孤兒帳戶。')}}}>確認銀行匯入</button></section>}
+  {review && result && <section className="notice bank-import-review" aria-label="銀行重複核對">{review.balances.length>0 && <p>期末餘額可補入 {review.balanceCount} 筆 · 已匯入的帳單餘額會略過。</p>}<p>可新增 {result.added} 筆 · 略過 {result.duplicates} 筆 · 疑似重複 {result.suspectedDuplicates} 筆。跨帳單同值交易沒有銀行 reference 時無法保證準確。</p>{narrationCount>0 && <p>{narrationCount} 筆有補充敘述；確認匯入會使用目前摘要，可返回預覽修改。</p>}{result.suspectedDuplicateRows.length>0 && <><ul>{result.suspectedDuplicateRows.map(r=><li key={r.id}>{r.date} · {r.description} · {r.direction} · {r.currency} {r.amount}</li>)}</ul><label className="bank-summary-check"><input type="checkbox" aria-label="保留疑似重複" disabled={locked} checked={keep} onChange={e=>setKeep(e.target.checked)}/><span>我已核對，保留疑似重複（相同文件位置仍略過）</span></label></>}{review.balanceConfirmations.length>0 && <div aria-label="餘額帳戶對應"><p><strong>銀行名稱不同，請確認是同一個帳戶</strong></p><ul>{review.balanceConfirmations.map(c=><li key={c.accountId}><strong>{c.statementLabel}</strong> → {c.assetLabel}</li>)}</ul><p className="muted small">確認後補入右側帳戶的歷史餘額；既有帳戶名稱不變。若不是同一帳戶，可先只匯入流水。</p></div>}<div className="row bank-import-confirm-actions">{review.balanceConfirmations.length>0 && result.added>0 && <button disabled={locked} onClick={()=>finishImport(true)}>只匯入流水</button>}<button disabled={locked||(!result.added&&!review.balanceCount)} className="primary" onClick={()=>finishImport()}>{review.balanceConfirmations.length?'確認對應並匯入':'確認銀行匯入'}</button></div></section>}
  </section>
 }

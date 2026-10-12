@@ -133,7 +133,7 @@ test('bank balances reuse suffixed asset names and reject ambiguous institution 
  const helper=await server.ssrLoadModule('/src/bankStatementAssets.ts');const candidate={bank:'HSBC Singapore',date:'2025-09-30',currency:'SGD',quantity:100,fileHash:'a'.repeat(64),ledgerAccountId:account.id};
  for(const name of ['HSBC SG','HSBC (SG)','匯豐 SG']){
   const d={...model.emptyData(),bankTransactionAccounts:[{...account,bank:candidate.bank}],accounts:[{id:'asset-hsbc',name,country:'SG',kind:'bank',category:'現金與外幣活存',positions:[]}]};
-  const next=helper.importStatementBalances(d,[candidate]).data;assert.equal(next.history.quantityDays[0].entries[0].accountId,'asset-hsbc',name);assert.equal(next.accounts,d.accounts);
+  const next=helper.importStatementBalances(d,[{...candidate,confirmedAccountId:'asset-hsbc'}]).data;assert.equal(next.history.quantityDays[0].entries[0].accountId,'asset-hsbc',name);assert.equal(next.accounts,d.accounts);
  }
  for(const names of [['HSBC','匯豐'],['匯豐','HSBC']]){
   const d={...model.emptyData(),bankTransactionAccounts:[{...account,bank:candidate.bank}],accounts:names.map((name,i)=>({id:'asset-'+i,name,country:'SG',kind:'bank',category:'現金與外幣活存',positions:[]}))};const before=structuredClone(d);
@@ -172,4 +172,16 @@ test('same-batch statements share one historical bank identity across legacy led
 test('deferred saves preserve later statement history and source provenance together in v14',async()=>{
  const helper=await server.ssrLoadModule('/src/bankStatementAssets.ts');const d={...model.emptyData(),bankTransactionAccounts:[{...account,bank:'Taishin'}]};const a={bank:'Taishin',date:'2025-09-30',currency:'TWD',quantity:100,fileHash:'a'.repeat(64),ledgerAccountId:account.id};const submitted=helper.importStatementBalances(d,[a]).data;
  const persisted=history.recordSave(d,submitted);const current=helper.importStatementBalances(submitted,[{...a,date:'2025-10-01',quantity:120,fileHash:'b'.repeat(64)}]).data;const next=save.finishSave(current,submitted,persisted);assert.equal(next.version,14);assert.equal(next.history.quantityDays.length,2);assert.equal(next.bankStatementBalances.length,2);assert.equal(roundtrip(next).bankStatementBalances[1].quantity,120);
+})
+
+test('different PDF and asset names require an explicit matching account confirmation',async()=>{
+ const helper=await server.ssrLoadModule('/src/bankStatementAssets.ts');const asset={id:'asset-sg',name:'星展',country:'SG',kind:'bank',category:'現金與外幣活存',positions:[]};const tw={...asset,id:'asset-tw',country:'TW'};const d={...model.emptyData(),accounts:[tw,asset],bankTransactionAccounts:[{...account,bank:'DBS Singapore'}]};const candidate={bank:'DBS Singapore',date:'2025-09-30',currency:'SGD',quantity:100,fileHash:'a'.repeat(64),ledgerAccountId:account.id};const before=structuredClone(d);
+ assert.equal(helper.statementAccountLabel(candidate.bank),'DBS (SG)');assert.deepEqual(helper.statementBalanceConfirmation(candidate.bank,d.accounts),{accountId:asset.id,statementLabel:'DBS (SG)',assetLabel:'星展 (SG)'});
+ assert.throws(()=>helper.importStatementBalances(d,[candidate]),/確認對應帳戶/);assert.throws(()=>helper.importStatementBalances(d,[{...candidate,confirmedAccountId:tw.id}]),/確認對應帳戶/);assert.throws(()=>helper.importStatementBalances(d,[{...candidate,confirmedAccountId:'other'}]),/確認對應帳戶/);assert.deepEqual(d,before);
+ const next=helper.importStatementBalances(d,[{...candidate,confirmedAccountId:asset.id}]).data;assert.equal(next.history.quantityDays[0].entries[0].accountId,asset.id);assert.deepEqual(next.accounts,d.accounts);assert.equal(Object.hasOwn(next.bankStatementBalances[0],'confirmedAccountId'),false);assert.equal(Object.hasOwn(roundtrip(next).bankStatementBalances[0],'confirmedAccountId'),false);
+ const day=next.history.quantityDays[0],edited={...next,history:{...next.history,quantityDays:[{...day,entries:[{...day.entries[0],quantity:77}]}]}};const again=helper.importStatementBalances(edited,[candidate]);assert.equal(again.skipped,1);assert.equal(again.data.history.quantityDays[0].entries[0].quantity,77);
+})
+test('matching PDF name and country need no extra confirmation; nonexistent targets are rejected',async()=>{
+ const helper=await server.ssrLoadModule('/src/bankStatementAssets.ts');const asset={id:'asset-sg',name:'DBS',country:'SG',kind:'bank',category:'現金與外幣活存',positions:[]};const d={...model.emptyData(),accounts:[asset],bankTransactionAccounts:[{...account,bank:'DBS Singapore'}]};const candidate={bank:'DBS Singapore',date:'2025-09-30',currency:'SGD',quantity:100,fileHash:'a'.repeat(64),ledgerAccountId:account.id};
+ assert.equal(helper.statementBalanceConfirmation(candidate.bank,d.accounts),undefined);assert.equal(helper.importStatementBalances(d,[candidate]).data.history.quantityDays[0].entries[0].accountId,asset.id);assert.throws(()=>helper.importStatementBalances(d,[{...candidate,confirmedAccountId:'other'}]),/確認對應帳戶/);assert.throws(()=>helper.importStatementBalances({...d,accounts:[]},[{...candidate,confirmedAccountId:asset.id}]),/確認對應帳戶/);
 })

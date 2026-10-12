@@ -1,11 +1,12 @@
-import { accountLabel, type Account, type WealthData } from './model'
+import { accountIdentity, accountLabel, type Account, type WealthData } from './model'
 import type { BankTransactionAccount } from './bankTransactions'
 import { historyCatalog, instrumentKey, parseQuantityDays, validDate, validatePastDate, type QuantityEntry, type QuantityDay } from './quantityHistory'
 const CASH_CURRENCIES=new Set(['TWD','USD','SGD','JPY','EUR','GBP','AUD','CAD','HKD','CHF','NZD','CNY'])
 
 export interface StatementCashBalance { bank:string; date:string; currency:string; quantity:number }
 export interface BankStatementBalance extends StatementCashBalance { id:string; ledgerAccountId:string; accountId:string; fileHash:string }
-export type StatementBalanceCandidate = StatementCashBalance & { ledgerAccountId:string; fileHash:string }
+// Account confirmation is preview-only; the persisted record allowlist removes it.
+export type StatementBalanceCandidate = StatementCashBalance & { ledgerAccountId:string; fileHash:string; confirmedAccountId?:string }
 const institutions:Record<string,{name:string;country:string;aliases:string[]}> = {
  'HSBC Taiwan':{name:'HSBC',country:'TW',aliases:['HSBC','匯豐','匯豐銀行','滙豐銀行']},
  'HSBC Singapore':{name:'HSBC',country:'SG',aliases:['HSBC','匯豐','匯豐銀行','滙豐銀行']},
@@ -24,10 +25,11 @@ export function matchingStatementAssets(bank:string,accounts:readonly Account[])
  const identity=bankStatementIdentity(bank);if(!identity)return []
  return accounts.filter(a=>a.country.trim().toUpperCase()===identity.country&&identity.aliases.some(name=>normalized(name)===normalized(a.name.trim().replace(new RegExp(`\\s+(?:${identity.country}|\\(${identity.country}\\))$`,'i'),''))))
 }
-export function statementAccountLabel(bank:string,accounts:readonly Account[]) {
- const identity=bankStatementIdentity(bank);if(!identity)return bank
- const matched=matchingStatementAssets(bank,accounts)
- return accountLabel(matched.length===1?matched[0]:identity)
+export const statementAccountLabel=(bank:string)=>bankStatementIdentity(bank)?.label??bank
+export function statementBalanceConfirmation(bank:string,accounts:readonly Account[]) {
+ const identity=bankStatementIdentity(bank),matched=matchingStatementAssets(bank,accounts)
+ if(!identity||matched.length!==1||accountIdentity(matched[0])===accountIdentity(identity))return undefined
+ return {accountId:matched[0].id,statementLabel:identity.label,assetLabel:accountLabel(matched[0])}
 }
 
 export function statementLedgerAccount(bank:string,accounts:readonly BankTransactionAccount[]) {
@@ -65,6 +67,7 @@ export function importStatementBalances(data:WealthData,candidates:readonly Stat
   const assets=matchingStatementAssets(candidate.bank,data.accounts)
   if(assets.length>1)throw new Error('同銀行與國家有多個資產帳戶，請先整併帳戶後再匯入餘額。')
   const asset=assets[0]
+  if((candidate.confirmedAccountId!==undefined&&candidate.confirmedAccountId!==asset?.id)||(asset&&accountIdentity(asset)!==accountIdentity(identity)&&candidate.confirmedAccountId!==asset.id))throw new Error('帳單銀行名稱與資產帳戶不同，請先確認對應帳戶。')
   const previousRecords=records.filter(b=>bankStatementIdentity(b.bank)?.label===identity.label)
   const previousIds=new Set(previousRecords.map(b=>b.accountId)),previous=previousRecords[0]
   if(previousIds.size>1||(asset&&previous&&asset.id!==previous.accountId))throw new Error('既有帳單的歷史帳戶與資產帳戶不同，請先核對歷史帳戶後再匯入餘額。')
