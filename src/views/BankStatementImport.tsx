@@ -6,6 +6,8 @@ import { protectBankText } from '../bankTextPrivacy'
 import { unlockStatementPasswords, type StatementPassword } from '../statementPasswords'
 import type { BankSection, BankStatementResult } from '../bankStatements'
 import { BankRowFields } from './BankTransactionEditor'
+import { ActionIcon } from './ActionIcon'
+import { fmt } from '../format'
 import { BANK_SUMMARY_PENDING, BANK_TEXT_NOTICE, classificationLabel, summarizeBankWarnings } from './bankUiHelpers'
 
 type PreviewRow={draft:BankTransaction;original:BankTransactionRow;provenance:BankRowProvenance;selected:boolean;manual?:boolean;narration?:{leading:string[];trailing:string[]};confirmed?:boolean}
@@ -85,16 +87,75 @@ export function BankStatementImport({accounts,existing,rules,passwords,passwordS
  let result:ReturnType<typeof mergeBankTransactions>|undefined
  let reviewError=''
  if(review)try{result=mergeBankTransactions(existing,review.rows,review.accounts,review.context,{keepSuspectedDuplicates:keep})}catch{reviewError='無法核對重複，請檢查已選交易與帳戶，或重新檢查映射。未修改任何資料。'}
- return <section className="panel bank-import"><div className="panel-head"><h2>匯入銀行帳單</h2><button onClick={()=>{controller.current?.abort();onCancel()}}>取消匯入</button></div>
- <p className="muted">本機 PDF 解析；不保存原始文件、餘額或完整擷取文字。確認後只更新獨立流水，仍需按「儲存變更」。{BANK_TEXT_NOTICE}</p><p className="notice">辨識到的交易不代表完整月流水。星展交易版型尚未支持；玉山僅局部轉出明細。未知或歧義列不自動推算，請核對並手動補登。解析問題事件數不是漏列筆數；「摘要可能不完整」指已匯入列需核對摘要，「未匯入的金額列」指該金額不在已辨識筆數內。</p>
- <form onSubmit={parse}><fieldset disabled={locked} className="bank-fields"><label className="field"><span>銀行帳單 PDF（每份最多 20 MB）</span><input aria-label="銀行帳單 PDF" type="file" multiple accept=".pdf,application/pdf" onChange={e=>{setFiles(Array.from(e.target.files??[]));setPassword('')}}/></label><label className="field"><span>PDF 密碼（多組以逗號分隔）</span><input aria-label="銀行 PDF 密碼" type="password" autoComplete="off" value={password} onChange={e=>setPassword(e.target.value)}/></label></fieldset><div className="row"><button disabled={locked||!files.length} className="primary">{parsing?'正在本機處理…':'解析銀行帳單'}</button>{passwordScope && <button type="button" disabled={locked} onClick={onManagePasswords}>管理帳單密碼</button>}</div></form>
- {reports.length>0 && <ul aria-label="銀行解析結果" className="notice">{reports.map((r,i)=><li key={i}>{r}</li>)}</ul>}
- {sections.map((s,index)=><section key={s.id} className="bank-section" aria-label={`帳戶區段 ${index+1}`}><h3>{s.bank} · {s.currency} · 帳戶區段 {index+1}</h3>{s.partial && <p role="status">僅局部紀錄／轉出明細；不是完整月流水。</p>}{s.noTransactions && <p>此區段已有無交易證據；不捏造零金額交易。</p>}{s.warnings.length>0 && <div role="status" aria-label={`區段 ${index+1} 解析警告`} className="bank-review-flag"><p>需逐筆核對：此區段有 {s.warnings.reduce((n,w)=>n+w.count,0)} 個解析問題事件（事件數不是漏列筆數）。{s.warnings.some(w=>w.kind==='summary') && '已辨識交易的摘要可能不完整，請逐筆核對下列交易。'}{s.warnings.some(w=>w.kind==='amount') && '另有未匯入的金額列，已辨識筆數不涵蓋該金額，請對照原帳單補登。'}</p><ul>{s.warnings.map(w=><li key={w.code}>{w.text} · {w.count} 個事件</li>)}</ul></div>}<div className="bank-fields">{s.rows.every(r=>r.manual) && <label className="field"><span>銀行名稱</span><input aria-label={`區段 ${index+1} 銀行`} disabled={locked} maxLength={100} value={s.bank} onChange={e=>patch(s.id,{bank:e.target.value})}/></label>}<label className="field"><span>選擇獨立流水帳戶</span><select aria-label={`區段 ${index+1} 帳戶`} disabled={locked} value={s.accountId} onChange={e=>patch(s.id,{accountId:e.target.value})}><option value="">請明確選擇（不可自動合併）</option>{accounts.map(a=><option key={a.id} value={a.id}>{a.label} · {a.bank}</option>)}<option value="new">新增獨立帳戶標籤</option></select></label>{s.accountId==='new' && <label className="field"><span>新帳戶標籤</span><input aria-label={`區段 ${index+1} 新標籤`} disabled={locked} maxLength={100} value={s.label} onChange={e=>patch(s.id,{label:e.target.value})}/></label>}</div>
- {s.rows.map((r,i)=><article className="bank-preview-row" key={r.draft.id}><label><input aria-label={`區段 ${index+1} 選取 ${i+1}`} type="checkbox" disabled={locked} checked={r.selected} onChange={e=>{patch(s.id,{rows:s.rows.map((v,j)=>j===i?{...v,selected:e.target.checked}:v)})}}/>交易 {i+1} · {classificationLabel(r.draft,rules)}</label><BankRowFields prefix={`區段 ${index+1} 交易 ${i+1} `} row={r.draft} onChange={draft=>patchRow(s.id,i,draft)} disabled={locked} rules={rules}/>{r.narration && <div className="bank-review-flag" role="group" aria-label={`區段 ${index+1} 交易 ${i+1} 摘要歸屬`}><p><strong>摘要待確認</strong>：下列敘述行在帳單上緊鄰本筆，無法判定屬於本筆或相鄰交易，未自動併入摘要、也不用於自動分類。請對照原帳單，把屬於本筆的內容加入或直接修改摘要後勾選確認；未確認的已選交易不能匯入。</p><ul>{[...r.narration.leading.map(text=>({text,lead:true})),...r.narration.trailing.map(text=>({text,lead:false}))].map((c,k)=><li key={k}>{c.lead?'本筆之前':'本筆之後'}：{c.text} <button type="button" disabled={locked} aria-label={`區段 ${index+1} 交易 ${i+1} 加入候選 ${k+1}`} onClick={()=>patchRow(s.id,i,{...r.draft,description:(c.lead?`${c.text} ${r.draft.description}`:`${r.draft.description} ${c.text}`).trim()})}>加入本筆摘要</button></li>)}</ul><label><input type="checkbox" aria-label={`區段 ${index+1} 交易 ${i+1} 確認摘要`} disabled={locked} checked={!!r.confirmed} onChange={e=>patch(s.id,{rows:s.rows.map((v,j)=>j===i?{...v,confirmed:e.target.checked}:v)})}/>我已核對原帳單，確認本筆摘要</label></div>}<button disabled={locked} onClick={()=>onAddRule(r.draft)}>編輯匹配規則／新增規則</button></article>)}
- <button disabled={locked} onClick={()=>{const draft:BankTransaction={id:crypto.randomUUID(),accountId:'',date:'',description:'',currency:s.currency,direction:'debit',amount:0};patch(s.id,{noTransactions:false,partial:true,rows:[...s.rows,{draft,original:draft,provenance:{page:1,sectionKey:'manual',rowKey:'manual'},selected:true,manual:true}]})}}>補登此區段交易</button></section>)}
- {(error||reviewError) && <p role="alert" className="banner error">{error||reviewError}</p>}
- <button disabled={locked} onClick={()=>{const draft:BankTransaction={id:crypto.randomUUID(),accountId:'',date:'',description:'',currency:'TWD',direction:'debit',amount:0};setSections(list=>[...list,{id:crypto.randomUUID(),bank:'手動輸入',currency:'TWD',hash:'0'.repeat(64),accountId:'',newId:crypto.randomUUID(),label:'',noTransactions:false,partial:true,warnings:[],rows:[{draft,original:draft,provenance:{page:1,sectionKey:'manual',rowKey:'manual'},selected:true,manual:true}]}]);setReview(null)}}>手動補登區段</button>
- {!!sections.length && <button disabled={locked} onClick={()=>void prepare()}>檢查映射與重複</button>}
- {review && result && <section className="notice" aria-label="銀行重複核對"><p>可新增 {result.added} 筆 · 略過 {result.duplicates} 筆 · 疑似重複 {result.suspectedDuplicates} 筆。跨帳單同值交易沒有銀行 reference 時無法保證準確。</p>{result.suspectedDuplicateRows.length>0 && <><ul>{result.suspectedDuplicateRows.map(r=><li key={r.id}>{r.date} · {r.description} · {r.direction} · {r.currency} {r.amount}</li>)}</ul><label><input type="checkbox" aria-label="保留疑似重複" disabled={locked} checked={keep} onChange={e=>setKeep(e.target.checked)}/>我已核對，保留疑似重複（相同文件位置仍略過）</label></>}<button disabled={locked||!result.added} className="primary" onClick={()=>{if(latest.current.busy)return;try{onImport(review,keep)}catch{setError('確認失敗，資料可能已變更；請重新核對。未新增孤兒帳戶。')}}}>確認銀行匯入</button></section>}
+ const previewCount=sections.reduce((n,s)=>n+s.rows.length,0)
+ const selectedCount=sections.reduce((n,s)=>n+s.rows.filter(r=>r.selected).length,0)
+ return <section className="panel bank-import">
+  <div className="panel-head"><h2>匯入銀行帳單</h2><button onClick={()=>{controller.current?.abort();onCancel()}}>取消匯入</button></div>
+  <p className="bank-import-intro muted">PDF 在本機解析，不上傳原始文件。核對並匯入後，請按「儲存變更」。</p>
+  <details className="bank-help"><summary>支援範圍與資料保護</summary>
+   <p className="muted">不保存原始文件、餘額或完整擷取文字；確認後只更新獨立流水。{BANK_TEXT_NOTICE}</p>
+   <p>辨識到的交易不代表完整月流水。新加坡星展目前支援 SGD 收支明細；玉山僅局部轉出明細。未知或歧義列不自動推算，請核對並手動補登。</p>
+  </details>
+  <form onSubmit={parse}>
+   <fieldset disabled={locked} className="bank-fields bank-upload-fields">
+    <label className="field"><span>銀行帳單 PDF（每份最多 20 MB）</span><input aria-label="銀行帳單 PDF" type="file" multiple accept=".pdf,application/pdf" onChange={e=>{setFiles(Array.from(e.target.files??[]));setPassword('')}}/></label>
+    <label className="field"><span>PDF 密碼（選填，多組以逗號分隔）</span><input aria-label="銀行 PDF 密碼" type="password" autoComplete="off" value={password} onChange={e=>setPassword(e.target.value)}/></label>
+   </fieldset>
+   <div className="row bank-upload-actions"><button disabled={locked||!files.length} className="primary">{parsing?'正在本機處理…':'解析銀行帳單'}</button>{passwordScope && <button type="button" disabled={locked} onClick={onManagePasswords}>管理帳單密碼</button>}</div>
+  </form>
+  {reports.length>0 && <details className="bank-import-report" open={reports.some(r=>/無法解析|不支持／未辨識|無法自動讀取|無法在此瀏覽器解鎖/.test(r))||undefined}>
+   <summary><span>解析報告</span><span className="muted">{previewCount} 筆 · {sections.length} 個區段</span></summary>
+   <ul aria-label="銀行解析結果">{reports.map((r,i)=><li key={i}>{r}</li>)}</ul>
+  </details>}
+  {sections.map((s,index)=><section key={s.id} className="bank-section" aria-label={`帳戶區段 ${index+1}`}>
+   <div className="bank-section-head"><h3>{s.bank}</h3><span className="muted small">{s.currency} · 區段 {index+1} · {s.rows.length} 筆</span></div>
+   {s.partial && <p role="status" className="bank-section-note">僅局部紀錄／轉出明細；不是完整月流水。</p>}
+   {s.noTransactions && <p>此區段已有無交易證據；不捏造零金額交易。</p>}
+   {s.warnings.length>0 && <div role="status" aria-label={`區段 ${index+1} 解析警告`} className="bank-review-flag bank-section-warning">
+    <p><strong>需逐筆核對</strong>{s.warnings.some(w=>w.kind==='summary') && '：已辨識交易的摘要可能不完整。'}{s.warnings.some(w=>w.kind==='amount') && '另有未匯入的金額列，請對照原帳單補登。'}{s.warnings.some(w=>w.kind==='scope'||!w.kind) && '請對照原帳單確認區段範圍。'}</p>
+    <details className="bank-help"><summary>{s.warnings.reduce((n,w)=>n+w.count,0)} 個解析事件 · 查看說明</summary>
+     <p>事件數不是漏列筆數。「摘要可能不完整」表示已辨識列需核對摘要；「未匯入的金額列」不在已辨識筆數內。</p>
+     <ul>{s.warnings.map(w=><li key={w.code}>{w.text} · {w.count} 個事件</li>)}</ul>
+    </details>
+   </div>}
+   <div className="bank-fields bank-account-mapping">
+    {s.rows.every(r=>r.manual) && <label className="field"><span>銀行名稱</span><input aria-label={`區段 ${index+1} 銀行`} disabled={locked} maxLength={100} value={s.bank} onChange={e=>patch(s.id,{bank:e.target.value})}/></label>}
+    <label className="field"><span>選擇獨立流水帳戶</span><select aria-label={`區段 ${index+1} 帳戶`} disabled={locked} value={s.accountId} onChange={e=>patch(s.id,{accountId:e.target.value})}><option value="">請選擇流水帳戶</option>{accounts.map(a=><option key={a.id} value={a.id}>{a.label} · {a.bank}</option>)}<option value="new">新增獨立帳戶標籤</option></select></label>
+    {s.accountId==='new' && <label className="field"><span>新帳戶標籤</span><input aria-label={`區段 ${index+1} 新標籤`} disabled={locked} maxLength={100} value={s.label} onChange={e=>patch(s.id,{label:e.target.value})}/></label>}
+   </div>
+   <div className="bank-preview-list">{s.rows.map((r,i)=><article className="bank-preview-row" key={r.draft.id}>
+    <div className="bank-preview-overview">
+     <label className="bank-preview-select"><input aria-label={`區段 ${index+1} 選取 ${i+1}`} type="checkbox" disabled={locked} checked={r.selected} onChange={e=>patch(s.id,{rows:s.rows.map((v,j)=>j===i?{...v,selected:e.target.checked}:v)})}/><span className="muted small">{i+1}</span></label>
+     <div className="bank-preview-copy"><time className="muted small">{r.draft.date||'日期待填'}</time><strong>{protectBankText(r.draft.description)||'摘要待填'}</strong>
+      <div className="bank-preview-tags"><span>{classificationLabel(r.draft,rules)}</span>{r.narration && <span className={r.confirmed?'bank-summary-confirmed':'bank-summary-pending'}>{r.confirmed?'摘要已核對':'摘要待確認'}</span>}</div>
+     </div>
+     <div className="bank-preview-amount"><span className="muted small">{r.draft.direction==='debit'?'支出':'入帳'}</span><strong>{fmt(r.draft.amount)}</strong><span className="muted small">{r.draft.currency}</span></div>
+    </div>
+    <details className="bank-row-details" open={r.manual||undefined}>
+     <summary aria-label={`區段 ${index+1} 交易 ${i+1} 編輯與核對`}><span className="bank-row-expand">{r.narration&&!r.confirmed?'核對與編輯':'編輯交易'}</span><span className="bank-row-collapse">收合</span><ActionIcon name="edit"/></summary>
+     <div className="bank-row-editor">
+      <BankRowFields prefix={`區段 ${index+1} 交易 ${i+1} `} row={r.draft} onChange={draft=>patchRow(s.id,i,draft)} disabled={locked} rules={rules}/>
+      {r.narration && <div className="bank-review-flag bank-narration" role="group" aria-label={`區段 ${index+1} 交易 ${i+1} 摘要歸屬`}>
+       <p><strong>{r.confirmed?'摘要已核對':'摘要待確認'}</strong>：請對照原帳單，只加入屬於本筆的敘述，再勾選確認。</p>
+       <details className="bank-help"><summary>為什麼需要核對？</summary><p>這些敘述緊鄰本筆，無法判定屬於本筆或相鄰交易；未自動併入摘要，也不用於自動分類。未確認的已選交易不能匯入。</p></details>
+       <ul>{[...r.narration.leading.map(text=>({text,lead:true})),...r.narration.trailing.map(text=>({text,lead:false}))].map((c,k)=><li key={k}>
+        <div><span className="muted small">{c.lead?'本筆之前':'本筆之後'}</span><span className="bank-candidate-text">{c.text}</span></div>
+        <button type="button" disabled={locked} title="加入本筆摘要" aria-label={`區段 ${index+1} 交易 ${i+1} 加入候選 ${k+1}`} onClick={()=>patchRow(s.id,i,{...r.draft,description:(c.lead?`${c.text} ${r.draft.description}`:`${r.draft.description} ${c.text}`).trim()})}><ActionIcon name="add"/><span>加入</span></button>
+       </li>)}</ul>
+       <label className="bank-summary-check"><input type="checkbox" aria-label={`區段 ${index+1} 交易 ${i+1} 確認摘要`} disabled={locked} checked={!!r.confirmed} onChange={e=>patch(s.id,{rows:s.rows.map((v,j)=>j===i?{...v,confirmed:e.target.checked}:v)})}/><span>已核對原帳單，確認本筆摘要</span></label>
+      </div>}
+      <button type="button" className="bank-rule-action" disabled={locked} title="編輯匹配規則／新增規則" aria-label={`區段 ${index+1} 交易 ${i+1} 分類規則`} onClick={()=>onAddRule(r.draft)}><ActionIcon name="edit"/><span>分類規則</span></button>
+     </div>
+    </details>
+   </article>)}</div>
+   <button type="button" className="bank-add-row" disabled={locked} onClick={()=>{const draft:BankTransaction={id:crypto.randomUUID(),accountId:'',date:'',description:'',currency:s.currency,direction:'debit',amount:0};patch(s.id,{noTransactions:false,partial:true,rows:[...s.rows,{draft,original:draft,provenance:{page:1,sectionKey:'manual',rowKey:'manual'},selected:true,manual:true}]})}}>補登此區段交易</button>
+  </section>)}
+  {(error||reviewError) && <p role="alert" className="banner error">{error||reviewError}</p>}
+  <div className="bank-import-actions">
+   {!!sections.length && <span className="muted small">已選 {selectedCount}／{previewCount} 筆</span>}
+   <button disabled={locked} onClick={()=>{const draft:BankTransaction={id:crypto.randomUUID(),accountId:'',date:'',description:'',currency:'TWD',direction:'debit',amount:0};setSections(list=>[...list,{id:crypto.randomUUID(),bank:'手動輸入',currency:'TWD',hash:'0'.repeat(64),accountId:'',newId:crypto.randomUUID(),label:'',noTransactions:false,partial:true,warnings:[],rows:[{draft,original:draft,provenance:{page:1,sectionKey:'manual',rowKey:'manual'},selected:true,manual:true}]}]);setReview(null)}}>手動補登區段</button>
+   {!!sections.length && <button className="primary" disabled={locked} onClick={()=>void prepare()}>檢查映射與重複</button>}
+  </div>
+  {review && result && <section className="notice bank-import-review" aria-label="銀行重複核對"><p>可新增 {result.added} 筆 · 略過 {result.duplicates} 筆 · 疑似重複 {result.suspectedDuplicates} 筆。跨帳單同值交易沒有銀行 reference 時無法保證準確。</p>{result.suspectedDuplicateRows.length>0 && <><ul>{result.suspectedDuplicateRows.map(r=><li key={r.id}>{r.date} · {r.description} · {r.direction} · {r.currency} {r.amount}</li>)}</ul><label className="bank-summary-check"><input type="checkbox" aria-label="保留疑似重複" disabled={locked} checked={keep} onChange={e=>setKeep(e.target.checked)}/><span>我已核對，保留疑似重複（相同文件位置仍略過）</span></label></>}<button disabled={locked||!result.added} className="primary" onClick={()=>{if(latest.current.busy)return;try{onImport(review,keep)}catch{setError('確認失敗，資料可能已變更；請重新核對。未新增孤兒帳戶。')}}}>確認銀行匯入</button></section>}
  </section>
 }

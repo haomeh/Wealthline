@@ -13,7 +13,7 @@ afterEach(async()=>{if(root)await act(()=>root.unmount());root=null;globalThis.f
 after(async()=>{await server?.close();dom?.window.close()})
 const empty={version:13,accounts:[],history:[],bankTransactionAccounts:[],bankTransactions:[],bankCategoryRules:[]}
 async function render(data=empty,busy=false,passwordScope){let latest=data;root=createRoot(document.getElementById('root'));const props=()=>({data:latest,busy,passwordScope,onChange:next=>{latest=next;root.render(createElement(Page,props()))}});await act(()=>root.render(createElement(Page,props())));return()=>latest}
-const button=t=>[...document.querySelectorAll('button')].find(x=>x.textContent===t)
+const button=t=>[...document.querySelectorAll('button')].find(x=>x.textContent===t||x.title===t)
 async function click(t){assert.ok(button(t),t);await act(()=>button(t).click());if(t==='檢查映射與重複')await settle(()=>!!document.querySelector('[aria-label="銀行重複核對"]')||!!document.querySelector('[role="alert"]'))}
 async function input(label,value){const el=document.querySelector(`[aria-label="${label}"]`);assert.ok(el,label);await act(()=>{Object.getOwnPropertyDescriptor(dom.window[el.tagName==='SELECT'?'HTMLSelectElement':'HTMLInputElement'].prototype,'value').set.call(el,value);el.dispatchEvent(new Event(el.tagName==='SELECT'?'change':'input',{bubbles:true}))})}
 async function typeText(label,text){await input(label,'');for(const char of text){const el=document.querySelector(`[aria-label="${label}"]`);await input(label,el.value+char)}assert.equal(document.querySelector(`[aria-label="${label}"]`).value,text)}
@@ -209,4 +209,21 @@ for(const manual of ['', 'synthetic-manual-fallback'])test(`unexpected vault rej
  pdf.reset([parsed()]);const latest=await render({...empty,statementPasswords:passwords});await click('匯入銀行帳單');await files();if(manual)await input('銀行 PDF 密碼',manual);await submitImport();
  assert.ok(!document.querySelector('[role="alert"]'),document.querySelector('[role="alert"]')?.textContent);
  const report=document.querySelector('[aria-label="銀行解析結果"]')?.textContent??'';assert.match(report,/BANK-PASSWORDS/);assert.ok(!report.includes('SECRET'));assert.match(report,/有效 1 筆/);assert.deepEqual(pdf.calls[0].password,manual?[manual]:[]);assert.equal(document.querySelectorAll('.bank-preview-row').length,1);assert.equal(document.querySelector('[aria-label="銀行 PDF 密碼"]').value,'');assert.equal(latest().bankTransactions.length,0);
+})
+
+// Compact previews keep edits and explicit narration confirmation across disclosure toggles.
+test('collapsed bank preview retains edited values and selection when reopened',async()=>{
+ pdf.reset([parsed()]);const latest=await render();await click('匯入銀行帳單');await files();await submitImport();
+ const row=document.querySelector('.bank-preview-row'),details=row.querySelector('details.bank-row-details');assert.ok(details);assert.equal(details.open,false);
+ const summary=details.querySelector('summary');assert.match(row.querySelector('.bank-preview-overview').textContent,/2026-01-12/);assert.match(row.querySelector('.bank-preview-overview').textContent,/100/);
+ await act(()=>summary.click());assert.equal(details.open,true);await input('區段 1 交易 1 摘要','Changed transfer');await input('區段 1 交易 1 金額','42');await act(()=>box('區段 1 選取 1').click());
+ await act(()=>summary.click());assert.equal(details.open,false);assert.match(row.querySelector('.bank-preview-overview').textContent,/Changed transfer/);assert.match(row.querySelector('.bank-preview-overview').textContent,/42/);
+ await act(()=>summary.click());assert.equal(details.open,true);assert.equal(box('區段 1 交易 1 摘要').value,'Changed transfer');assert.equal(box('區段 1 交易 1 金額').value,'42');assert.equal(box('區段 1 選取 1').checked,false);assert.equal(latest().bankTransactions.length,0);
+})
+test('collapsed narration preview exposes pending state and still requires confirmation',async()=>{
+ pdf.reset([parsed(flagged())]);const latest=await render({...empty,bankTransactionAccounts:[account]});await click('匯入銀行帳單');await files();await submitImport();await input('區段 1 帳戶','ledger');
+ const row=document.querySelector('.bank-preview-row'),details=row.querySelector('details.bank-row-details');assert.ok(details);assert.equal(details.open,false);assert.match(row.querySelector('.bank-preview-overview').textContent,/摘要待確認/);
+ await act(()=>box('區段 1 選取 2').click());await click('檢查映射與重複');assert.match(document.querySelector('[role="alert"]').textContent,/摘要歸屬/);assert.equal(box('銀行重複核對'),null);
+ await act(()=>details.querySelector('summary').click());await act(()=>box('區段 1 交易 1 確認摘要').click());await act(()=>details.querySelector('summary').click());assert.equal(details.open,false);assert.match(row.querySelector('.bank-preview-overview').textContent,/摘要已核對/);
+ await click('檢查映射與重複');assert.match(box('銀行重複核對').textContent,/可新增 1 筆/);assert.equal(latest().bankTransactions.length,0);
 })
