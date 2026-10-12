@@ -8,6 +8,9 @@ export const BANK_PDF_ERRORS = {
   pages: '帳單超過 100 頁，請拆分後再匯入',
   textLimit: '帳單文字過多，請拆分後再匯入',
   noText: '此 PDF 沒有可讀取的文字。第一版暫不支援掃描／圖片帳單。',
+  setup: '無法準備帳單解析，請回報診斷代碼〔BANK-START〕',
+  result: '無法建立批次解析結果，請回報診斷代碼〔BANK-RESULT〕',
+  passwordStore: '無法自動讀取已儲存密碼，改用手動密碼或嘗試免密碼開啟〔BANK-PASSWORDS〕',
   fileRead: '無法讀取所選檔案，請先下載到裝置後重新選取〔BANK-FILE〕',
   fingerprint: '無法建立檔案指紋，請重新開啟頁面後重試〔BANK-HASH〕',
   module: '無法載入 PDF 解析程式，請確認網路連線並重新整理頁面〔BANK-MODULE〕',
@@ -26,23 +29,29 @@ export const BANK_PDF_ERRORS = {
   unreadable: '無法讀取此 PDF，請確認檔案完整且為支援的文字帳單。',
 } as const
 
-export type BankImportStage = 'fileRead' | 'fingerprint' | 'module' | 'open' | 'page' | 'text' | 'parse' | 'preview' | 'cleanup'
+export type BankImportStage = 'setup' | 'result' | 'fileRead' | 'fingerprint' | 'module' | 'open' | 'page' | 'text' | 'parse' | 'preview' | 'cleanup'
 
 const messages = new Set<string>(Object.values(BANK_PDF_ERRORS))
 export function bankStatementErrorMessage(error: unknown, stage?: BankImportStage): string {
-  if (error instanceof Error) {
-    if (messages.has(error.message) && error.message !== BANK_PDF_ERRORS.unreadable) return error.message
-    // PDF.js wraps worker runtime and format failures alike; never expose details.
-    if (error.name === 'UnknownErrorException') {
-      if (stage === 'open') return BANK_PDF_ERRORS.openInternal
-      if (stage === 'page') return BANK_PDF_ERRORS.pageInternal
-      if (stage === 'text') return BANK_PDF_ERRORS.textInternal
+  try {
+    if (error instanceof Error) {
+      const message = error.message
+      if (typeof message === 'string' && messages.has(message) && message !== BANK_PDF_ERRORS.unreadable) return message
+      const name = error.name
+      // PDF.js wraps worker runtime and format failures alike; never expose details.
+      if (name === 'UnknownErrorException') {
+        if (stage === 'open') return BANK_PDF_ERRORS.openInternal
+        if (stage === 'page') return BANK_PDF_ERRORS.pageInternal
+        if (stage === 'text') return BANK_PDF_ERRORS.textInternal
+      }
+      if (stage === 'open') {
+        if (typeof message === 'string' && message.startsWith('Setting up fake worker failed:')) return BANK_PDF_ERRORS.openWorker
+        if (name === 'TypeError' || name === 'ReferenceError') return BANK_PDF_ERRORS.openRuntime
+        if (name === 'InvalidPDFException') return BANK_PDF_ERRORS.openDocument
+      }
     }
-    if (stage === 'open') {
-      if (error.message.startsWith('Setting up fake worker failed:')) return BANK_PDF_ERRORS.openWorker
-      if (error.name === 'TypeError' || error.name === 'ReferenceError') return BANK_PDF_ERRORS.openRuntime
-      if (error.name === 'InvalidPDFException') return BANK_PDF_ERRORS.openDocument
-    }
+  } catch {
+    // Malformed error fields must not make the diagnostic handler throw again.
   }
   return stage ? BANK_PDF_ERRORS[stage] : BANK_PDF_ERRORS.unreadable
 }
