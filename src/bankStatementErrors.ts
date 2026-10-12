@@ -1,8 +1,17 @@
+import { hasPdfHeader, nonPdfKind, type NonPdfKind } from './pdfSignature'
+
 // Only these application-owned messages may reach the bank import preview.
 // Never show raw PDF.js errors: they can contain document text or resource URLs.
 export const BANK_PDF_ERRORS = {
   size: '帳單超過 20MB，請拆分後再匯入',
-  format: '檔案不是 PDF，請選擇原始銀行對帳單 PDF',
+  format: '檔案不是 PDF：開頭 1024 位元組內找不到 PDF 檔頭，請選擇原始銀行對帳單 PDF〔BANK-FORMAT〕',
+  formatEmpty: '檔案不是 PDF：檔案是空的（0 位元組），可能尚未從雲端下載完成，請先下載到裝置後重新選取〔BANK-FORMAT-EMPTY〕',
+  formatZip: '檔案不是 PDF：內容是壓縮檔（ZIP／RAR／7z），請先解壓縮，再選擇裡面的 PDF〔BANK-FORMAT-ZIP〕',
+  formatHtml: '檔案不是 PDF：內容是網頁（HTML／XML），請用瀏覽器開啟確認，或從網路銀行另存 PDF 版對帳單〔BANK-FORMAT-HTML〕',
+  formatImage: '檔案不是 PDF：內容是圖片，目前不支援圖片帳單〔BANK-FORMAT-IMAGE〕',
+  formatOffice: '檔案不是 PDF：內容是舊版 Office 文件或 Outlook 郵件（.doc／.xls／.msg），請另存 PDF 版對帳單〔BANK-FORMAT-OFFICE〕',
+  formatEmail: '檔案不是 PDF：內容是電子郵件原始檔，PDF 可能是其中的附件，請在郵件程式中另存附件後再選取〔BANK-FORMAT-EMAIL〕',
+  formatText: '檔案不是 PDF：內容是純文字，請選擇原始銀行對帳單 PDF〔BANK-FORMAT-TEXT〕',
   passwordRequired: '此帳單需要密碼，請設定帳單密碼或手動輸入後重新解析',
   passwordIncorrect: '提供的密碼無法開啟此帳單，請核對密碼或新增其他密碼後重新解析',
   pages: '帳單超過 100 頁，請拆分後再匯入',
@@ -28,6 +37,15 @@ export const BANK_PDF_ERRORS = {
   cleanup: 'PDF 處理程序無法正常結束，請重新開啟頁面後重試〔BANK-CLEANUP〕',
   unreadable: '無法讀取此 PDF，請確認檔案完整且為支援的文字帳單。',
 } as const
+
+const FORMAT_ERRORS: Record<NonPdfKind, string> = {
+  empty: BANK_PDF_ERRORS.formatEmpty, zip: BANK_PDF_ERRORS.formatZip, html: BANK_PDF_ERRORS.formatHtml, image: BANK_PDF_ERRORS.formatImage,
+  office: BANK_PDF_ERRORS.formatOffice, email: BANK_PDF_ERRORS.formatEmail, text: BANK_PDF_ERRORS.formatText, unknown: BANK_PDF_ERRORS.format,
+}
+/** Undefined for a PDF. Otherwise a fixed message naming only the coarse file type. */
+export function pdfFormatError(bytes: Uint8Array): string | undefined {
+  return hasPdfHeader(bytes) ? undefined : FORMAT_ERRORS[nonPdfKind(bytes)]
+}
 
 export type BankImportStage = 'setup' | 'result' | 'fileRead' | 'fingerprint' | 'module' | 'open' | 'page' | 'text' | 'parse' | 'preview' | 'cleanup'
 

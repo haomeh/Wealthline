@@ -1,7 +1,7 @@
 import { bankStatementIdentity, statementAccountLabel, statementBalanceConfirmation, statementLedgerAccount, importStatementBalances, statementBalanceRevision, type StatementBalanceCandidate } from '../bankStatementAssets'
 import type { WealthData } from '../model'
 import { useEffect, useRef, useState, type FormEvent } from 'react'
-import { BANK_PDF_ERRORS, bankStatementErrorMessage, type BankImportStage } from '../bankStatementErrors'
+import { BANK_PDF_ERRORS, bankStatementErrorMessage, pdfFormatError, type BankImportStage } from '../bankStatementErrors'
 import { sha256 } from '../expenses'
 import { bankCategoryRuleIndex, mergeBankTransactions, prepareBankTransactions, validateBankLedger, type BankTransaction, type BankTransactionAccount, type BankTransactionRow, type BankCategoryRule, type BankRowProvenance } from '../bankTransactions'
 import { protectBankText } from '../bankTextPrivacy'
@@ -10,7 +10,7 @@ import type { BankSection, BankStatementResult } from '../bankStatements'
 import { BankRowFields } from './BankTransactionEditor'
 import { ActionIcon } from './ActionIcon'
 import { fmt } from '../format'
-import { BANK_SUMMARY_PENDING, BANK_TEXT_NOTICE, classificationLabel, summarizeBankWarnings } from './bankUiHelpers'
+import { BANK_SUMMARY_PENDING, BANK_TEXT_NOTICE, bankFileSummary, classificationLabel, summarizeBankWarnings } from './bankUiHelpers'
 
 type PreviewRow={draft:BankTransaction;original:BankTransactionRow;provenance:BankRowProvenance;selected:boolean;manual?:boolean;narration?:{leading:string[];trailing:string[]}}
 type PreviewSection={automatic?:boolean;id:string;bank:string;currency:string;hash:string;rows:PreviewRow[];accountId:string;newId:string;label:string;noTransactions:boolean;partial:boolean;warnings:ReturnType<typeof summarizeBankWarnings>}
@@ -36,10 +36,12 @@ export function BankStatementImport({data,accounts,existing,rules,passwords,pass
  for(let index=0;index<files.length;index++){
  if(abort.signal.aborted)return
  stage='fileRead'
+ // The picker already shows names; the report uses them instead of a position.
+ const name=files[index]?.name?.trim()||`檔案 ${index+1}`
  try{
  const file=files[index];if(file.size>20*1024*1024)throw new Error(BANK_PDF_ERRORS.size)
  const bytes=new Uint8Array(await file.arrayBuffer());if(abort.signal.aborted)return
- if(new TextDecoder().decode(bytes.slice(0,5))!=='%PDF-')throw new Error(BANK_PDF_ERRORS.format)
+ const formatError=pdfFormatError(bytes);if(formatError)throw new Error(formatError)
  stage='fingerprint';const hash=await sha256(bytes)
  stage='module';const {readBankStatementPdf,parseBankStatement}=await import('../bankStatements')
  stage='open';const document=await readBankStatementPdf(bytes,candidates,abort.signal)
@@ -47,12 +49,12 @@ export function BankStatementImport({data,accounts,existing,rules,passwords,pass
  stage='parse'
  const result:BankStatementResult=parseBankStatement(document.pages)
  stage='preview';const fileReports:string[]=[],fileSections:PreviewSection[]=[]
- fileReports.push(`檔案 ${index+1} · ${result.bank??'未辨識'} · ${result.status==='unsupported'?'不支持／未辨識':result.status==='partial'?'局部覆蓋':'已辨識'} · 有效 ${result.recognizedCount} 筆 · 解析問題事件 ${result.rejectedCount}（不是漏列筆數）`)
- for(const warning of summarizeBankWarnings(result.warnings))fileReports.push(`檔案 ${index+1} · ${warning.text} · ${warning.count} 個事件`)
+ fileReports.push(bankFileSummary(name,result))
+ for(const warning of summarizeBankWarnings(result.warnings))fileReports.push(`${name} · ${warning.text} · ${warning.count} 個事件`)
  result.sections.forEach((s:BankSection)=>{
  const identity=bankStatementIdentity(s.bank),available=[...latest.current.accounts,...[...next,...fileSections].filter(p=>p.accountId==='new').map(p=>({id:p.newId,label:p.label,bank:p.bank}))],matched=statementLedgerAccount(s.bank,available)
  const automatic=!!identity&&(!!matched||!available.some(a=>bankStatementIdentity(a.bank)?.label===identity.label))
- const id=crypto.randomUUID();fileReports.push(`檔案 ${index+1} · ${s.currency} 帳戶區段 ${next.length+fileSections.length+1} · ${s.noTransactions?'已證明無交易':`${s.rows.length} 筆已辨識`} ${s.partial?'· 僅局部轉出明細，不是完整月流水':''}`)
+ const id=crypto.randomUUID();fileReports.push(`${name} · 區段 ${next.length+fileSections.length+1}（${s.currency}）· ${s.noTransactions?'已證明無交易':`${s.rows.length} 筆已辨識`}${s.partial?' · 此版型只列轉出交易，不是完整月流水':''}`)
  fileSections.push({automatic,id,bank:s.bank,currency:s.currency,hash,accountId:automatic?(matched?.id??'new'):'',newId:crypto.randomUUID(),label:identity?statementAccountLabel(s.bank):'',noTransactions:s.noTransactions,partial:s.partial,warnings:summarizeBankWarnings(s.warnings),rows:s.rows.map(r=>({draft:{id:crypto.randomUUID(),accountId:'',date:r.date,description:protectBankText(r.description),currency:r.currency,direction:r.direction,amount:r.amount},original:{date:r.date,description:protectBankText(r.description)||BANK_SUMMARY_PENDING,currency:r.currency,direction:r.direction,amount:r.amount},provenance:{page:r.page,sectionKey:r.sectionKey,rowKey:r.rowKey},selected:true,
  // Candidates stay preview-only metadata under the same protection as summaries.
  ...(r.ambiguousNarration && {narration:{leading:r.ambiguousNarration.leading.map(t=>protectBankText(t)),trailing:r.ambiguousNarration.trailing.map(t=>protectBankText(t))}})}))})
@@ -60,7 +62,7 @@ export function BankStatementImport({data,accounts,existing,rules,passwords,pass
  // Commit one file only after every section has been prepared successfully.
  const fileBalances=(result.balances??[]).map(b=>{const section=fileSections.find(s=>s.bank===b.bank&&s.currency===b.currency);if(!section)throw new Error('balance section');return {...b,fileHash:hash,ledgerAccountId:section.newId,sectionId:section.id}})
  next.push(...fileSections);nextBalances.push(...fileBalances);outcomes.push(...fileReports)
- }catch(e){if(abort.signal.aborted)return;outcomes.push(`檔案 ${index+1} · 無法解析：${bankStatementErrorMessage(e,stage).replace(/。$/, '')}。未加入任何此檔資料。`)}
+ }catch(e){if(abort.signal.aborted)return;outcomes.push(`${name} · 無法解析：${bankStatementErrorMessage(e,stage).replace(/。$/, '')}。未加入任何此檔資料。`)}
  }
  stage='result'
  if(!abort.signal.aborted){setReports(outcomes);setSections(next);setBalances(nextBalances);setFiles([])}
@@ -117,7 +119,7 @@ export function BankStatementImport({data,accounts,existing,rules,passwords,pass
    </fieldset>
    <div className="row bank-upload-actions"><button disabled={locked||!files.length} className="primary">{parsing?'正在本機處理…':'解析銀行帳單'}</button>{passwordScope && <button type="button" disabled={locked} onClick={onManagePasswords}>管理帳單密碼</button>}</div>
   </form>
-  {reports.length>0 && <details className="bank-import-report" open={reports.some(r=>/無法解析|不支持／未辨識|無法自動讀取|無法在此瀏覽器解鎖/.test(r))||undefined}>
+  {reports.length>0 && <details className="bank-import-report" open={reports.some(r=>/無法解析|不支援／未辨識|無法自動讀取|無法在此瀏覽器解鎖/.test(r))||undefined}>
    <summary><span>解析報告</span><span className="muted">{previewCount} 筆 · {sections.length} 個區段</span></summary>
    <ul aria-label="銀行解析結果">{reports.map((r,i)=><li key={i}>{r}</li>)}</ul>
   </details>}

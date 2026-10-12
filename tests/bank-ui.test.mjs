@@ -52,7 +52,7 @@ test('manual pending overrides normalized directed rule and quick-edit changes f
  const latest=await render({...empty,bankTransactionAccounts:[account],bankTransactions:[tx]});assert.match(document.body.textContent,/待確認/);await click('新增銀行規則');await input('規則關鍵字','example transfer');await input('規則方向','debit');await input('規則分類','expense:購物');await click('儲存規則');assert.match(document.querySelector('.bank-record').textContent,/購物/);await act(()=>document.querySelector('[aria-label="編輯流水 row"]').click());await input('流水分類','pending');await click('套用修改');assert.equal(latest().bankTransactions[0].classification.kind,'pending');assert.match(document.querySelector('.bank-record').textContent,/待確認/);await click('編輯匹配規則／新增規則');assert.equal(document.querySelector('[aria-label="規則關鍵字"]').value,'example transfer');await act(()=>window.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape'})));assert.equal(document.querySelector('[role="dialog"]'),null)
 })
 test('mixed unsupported and partial batch, explicit mapping, masking, preview-rule cancel and atomic confirm',async()=>{
- pdf.reset([{status:'unsupported',sections:[],warnings:[{code:'unsupported-dbs-activity-layout',count:1,page:1}],recognizedCount:0,rejectedCount:0},parsed([draft],true)]);const latest=await render();await click('匯入銀行帳單');await files(2);await input('銀行 PDF 密碼','manual');await submitImport();await settle(()=>!!document.querySelector('[aria-label="銀行解析結果"]'));assert.match(document.body.textContent,/不支持／未辨識/);assert.match(document.body.textContent,/局部轉出/);assert.match(document.body.textContent,/unsupported-dbs/);assert.equal(latest().bankTransactions.length,0);assert.equal(document.querySelector('[aria-label="銀行 PDF 密碼"]').value,'');await input('區段 1 帳戶','new');await input('區段 1 新標籤','Personal');await input('區段 1 交易 1 金額','42');await click('編輯匹配規則／新增規則');await click('取消規則');assert.equal(document.querySelector('[aria-label="區段 1 交易 1 金額"]').value,'42');assert.equal(document.querySelector('[aria-label="區段 1 選取 1"]').checked,true);assert.match(document.querySelector('[aria-label="區段 1 交易 1 摘要"]').value,/\[帳號已遮蔽\]/);await click('檢查匯入');await click('確認銀行匯入');assert.equal(latest().bankTransactionAccounts.length,1);assert.equal(latest().bankTransactions.length,1);assert.equal(latest().bankTransactions[0].amount,42);assert.match(latest().bankTransactions[0].sourceKey,/^bank-v1:/);assert.deepEqual(latest().accounts,[]);assert.deepEqual(latest().history,[])
+ pdf.reset([{status:'unsupported',sections:[],warnings:[{code:'unsupported-dbs-activity-layout',count:1,page:1}],recognizedCount:0,rejectedCount:0},parsed([draft],true)]);const latest=await render();await click('匯入銀行帳單');await files(2);await input('銀行 PDF 密碼','manual');await submitImport();await settle(()=>!!document.querySelector('[aria-label="銀行解析結果"]'));assert.match(document.body.textContent,/不支援／未辨識 · 未匯入任何交易/);assert.match(document.body.textContent,/只列轉出交易/);assert.match(document.body.textContent,/unsupported-dbs/);assert.equal(latest().bankTransactions.length,0);assert.equal(document.querySelector('[aria-label="銀行 PDF 密碼"]').value,'');await input('區段 1 帳戶','new');await input('區段 1 新標籤','Personal');await input('區段 1 交易 1 金額','42');await click('編輯匹配規則／新增規則');await click('取消規則');assert.equal(document.querySelector('[aria-label="區段 1 交易 1 金額"]').value,'42');assert.equal(document.querySelector('[aria-label="區段 1 選取 1"]').checked,true);assert.match(document.querySelector('[aria-label="區段 1 交易 1 摘要"]').value,/\[帳號已遮蔽\]/);await click('檢查匯入');await click('確認銀行匯入');assert.equal(latest().bankTransactionAccounts.length,1);assert.equal(latest().bankTransactions.length,1);assert.equal(latest().bankTransactions[0].amount,42);assert.match(latest().bankTransactions[0].sourceKey,/^bank-v1:/);assert.deepEqual(latest().accounts,[]);assert.deepEqual(latest().history,[])
 })
 test('mapping required and cancellation leaves no orphan account',async()=>{pdf.reset([parsed()]);const latest=await render();await click('匯入銀行帳單');await files();await submitImport();await click('檢查匯入');assert.match(document.querySelector('[role="alert"]').textContent,/明確選擇/);await input('區段 1 帳戶','new');await input('區段 1 新標籤','Unsaved');await click('取消匯入');assert.equal(latest().bankTransactionAccounts.length,0);assert.equal(latest().bankTransactions.length,0)})
 test('remapping regenerates account keys; exact reimport skipped; cross-document duplicates require explicit keep',async()=>{
@@ -117,7 +117,7 @@ test('bank import reports safe, actionable file failures and preserves successfu
  pdf.reset([new Error(errors.BANK_PDF_ERRORS.passwordRequired),new Error(errors.BANK_PDF_ERRORS.passwordIncorrect),new Error('SECRET RAW CUSTOMER password'),parsed()]);
  const latest=await render();await click('匯入銀行帳單');await files(4);await submitImport();
  const report=document.querySelector('[aria-label="銀行解析結果"]').textContent;
- assert.ok(report.includes(errors.BANK_PDF_ERRORS.passwordRequired));assert.ok(report.includes(errors.BANK_PDF_ERRORS.passwordIncorrect));assert.ok(report.includes(errors.BANK_PDF_ERRORS.open));assert.ok(!report.includes('SECRET'));assert.match(report,/檔案 4.*有效 1 筆/);
+ assert.ok(report.includes(errors.BANK_PDF_ERRORS.passwordRequired));assert.ok(report.includes(errors.BANK_PDF_ERRORS.passwordIncorrect));assert.ok(report.includes(errors.BANK_PDF_ERRORS.open));assert.ok(!report.includes('SECRET'));assert.match(report,/synthetic-3\.pdf.*已辨識 1 筆/);
  assert.equal(document.querySelectorAll('.bank-preview-row').length,1);assert.equal(latest().bankTransactions.length,0);
 })
 test('bank import rejects size and non-PDF files with distinct messages before opening reader',async()=>{
@@ -127,6 +127,16 @@ test('bank import rejects size and non-PDF files with distinct messages before o
  await act(()=>el.dispatchEvent(new Event('change',{bubbles:true})));await submitImport();
  const report=document.querySelector('[aria-label="銀行解析結果"]').textContent;
  assert.match(report,/20MB/);assert.match(report,/檔案不是 PDF/);assert.equal(pdf.calls.length,0);
+})
+
+test('bank import accepts a PDF header after leading bytes and names a misnamed HTML file',async()=>{
+ pdf.reset([parsed([draft],true)]);await render();await click('匯入銀行帳單');
+ const el=document.querySelector('[aria-label="銀行帳單 PDF"]');
+ Object.defineProperty(el,'files',{value:[{name:'玉山 2026-09.pdf',size:20,arrayBuffer:async()=>new TextEncoder().encode('\uFEFF\r\n%PDF-1.4 bom').buffer},{size:30,arrayBuffer:async()=>new TextEncoder().encode('<!DOCTYPE html><html>x</html>').buffer}]});
+ await act(()=>el.dispatchEvent(new Event('change',{bubbles:true})));await submitImport();
+ const report=document.querySelector('[aria-label="銀行解析結果"]').textContent;
+ assert.equal(pdf.calls.length,1);assert.match(report,/玉山 2026-09\.pdf · Synthetic bank · 已辨識 1 筆 · 僅部分明細/);assert.doesNotMatch(report,/檔案 1/);assert.doesNotMatch(report,/需核對|解析問題事件/);
+ assert.match(report,/檔案 2 · 無法解析：檔案不是 PDF：內容是網頁.*BANK-FORMAT-HTML/);
 })
 
 test('bank PDF diagnostic messages reject raw errors even with a known prefix',async()=>{
@@ -140,7 +150,7 @@ test('unreadable selected file reports file stage, keeps later files and never e
  pdf.reset([parsed()]);const latest=await render();await click('匯入銀行帳單');await files(2);
  const el=document.querySelector('[aria-label="銀行帳單 PDF"]');el.files[0].arrayBuffer=async()=>{throw new Error('SECRET FILE PROVIDER')};
  await submitImport();const report=document.querySelector('[aria-label="銀行解析結果"]').textContent;
- assert.match(report,/BANK-FILE/);assert.ok(!report.includes('SECRET'));assert.match(report,/檔案 2.*有效 1 筆/);assert.equal(document.querySelectorAll('.bank-preview-row').length,1);assert.equal(latest().bankTransactions.length,0);
+ assert.match(report,/BANK-FILE/);assert.ok(!report.includes('SECRET'));assert.match(report,/synthetic-1\.pdf.*已辨識 1 筆/);assert.equal(document.querySelectorAll('.bank-preview-row').length,1);assert.equal(latest().bankTransactions.length,0);
 })
 test('fingerprint failure is distinct from PDF opening and leaves ledger untouched',async()=>{
  pdf.reset([parsed()]);const latest=await render();await click('匯入銀行帳單');await files();const original=Object.getOwnPropertyDescriptor(crypto.subtle,'digest');Object.defineProperty(crypto.subtle,'digest',{configurable:true,value:async()=>{throw new Error('SECRET CRYPTO FAILURE')}});
@@ -154,7 +164,7 @@ test('preview construction failure rolls back all sections and success reports o
  // Fail when preparing the second section, independently of UUID allocation order.
  Object.defineProperty(second,'rows',{get(){throw new Error('SECRET PREVIEW FAILURE')}});
  pdf.reset([{...first,recognizedCount:2,sections:[first.sections[0],second]},parsed()]);const latest=await render();await click('匯入銀行帳單');await files(2);
- await submitImport();const reports=[...document.querySelectorAll('[aria-label="銀行解析結果"] li')].map(n=>n.textContent);assert.ok(reports.some(r=>r.includes('檔案 1')&&r.includes('BANK-PREVIEW')));assert.ok(!reports.some(r=>r.includes('檔案 1')&&r.includes('已辨識')));assert.ok(!reports.join('').includes('SECRET'));assert.equal(document.querySelectorAll('.bank-preview-row').length,1);assert.equal(latest().bankTransactions.length,0);
+ await submitImport();const reports=[...document.querySelectorAll('[aria-label="銀行解析結果"] li')].map(n=>n.textContent);assert.ok(reports.some(r=>r.includes('synthetic-0.pdf')&&r.includes('BANK-PREVIEW')));assert.ok(!reports.some(r=>r.includes('synthetic-0.pdf')&&r.includes('已辨識')));assert.ok(!reports.join('').includes('SECRET'));assert.equal(document.querySelectorAll('.bank-preview-row').length,1);assert.equal(latest().bankTransactions.length,0);
 })
 
 test('PDF opening distinguishes worker, runtime and document failures using only fixed diagnostics',async()=>{
@@ -179,7 +189,7 @@ test('wrapped worker failure reaches the import report safely and later files st
  pdf.reset([Object.assign(new Error('SECRET CUSTOMER'),{name:'UnknownErrorException',details:'TypeError: SECRET PDF URL'}),parsed()]);
  const latest=await render();await click('匯入銀行帳單');await files(2);await submitImport();
  const report=document.querySelector('[aria-label="銀行解析結果"]').textContent;
- assert.match(report,/BANK-OPEN-INTERNAL/);assert.match(report,/解析程式或檔案格式/);assert.ok(!report.includes('SECRET'));assert.match(report,/檔案 2.*有效 1 筆/);assert.equal(document.querySelectorAll('.bank-preview-row').length,1);assert.equal(latest().bankTransactions.length,0);
+ assert.match(report,/BANK-OPEN-INTERNAL/);assert.match(report,/解析程式或檔案格式/);assert.ok(!report.includes('SECRET'));assert.match(report,/synthetic-1\.pdf.*已辨識 1 筆/);assert.equal(document.querySelectorAll('.bank-preview-row').length,1);assert.equal(latest().bankTransactions.length,0);
 })
 
 
@@ -198,7 +208,7 @@ test('malformed reader error stays a file failure instead of becoming a vault fa
  const latest=await render();await click('匯入銀行帳單');await files(2);await submitImport();
  assert.ok(!document.querySelector('[role="alert"]'),document.querySelector('[role="alert"]')?.textContent);
  const report=document.querySelector('[aria-label="銀行解析結果"]')?.textContent??'';
- assert.match(report,/檔案 1.*BANK-OPEN/);assert.match(report,/檔案 2.*有效 1 筆/);assert.ok(!document.querySelector('[role="alert"]'));assert.equal(document.querySelectorAll('.bank-preview-row').length,1);assert.equal(latest().bankTransactions.length,0);
+ assert.match(report,/synthetic-0\.pdf.*BANK-OPEN/);assert.match(report,/synthetic-1\.pdf.*已辨識 1 筆/);assert.ok(!document.querySelector('[role="alert"]'));assert.equal(document.querySelectorAll('.bank-preview-row').length,1);assert.equal(latest().bankTransactions.length,0);
 })
 
 
@@ -207,7 +217,7 @@ for(const manual of ['', 'synthetic-manual-fallback'])test(`unexpected vault rej
  const passwords=new Proxy([],{get(target,key,receiver){if(key==='length')throw new Error('SECRET VAULT REJECTION');return Reflect.get(target,key,receiver)}});
  pdf.reset([parsed()]);const latest=await render({...empty,statementPasswords:passwords});await click('匯入銀行帳單');await files();if(manual)await input('銀行 PDF 密碼',manual);await submitImport();
  assert.ok(!document.querySelector('[role="alert"]'),document.querySelector('[role="alert"]')?.textContent);
- const report=document.querySelector('[aria-label="銀行解析結果"]')?.textContent??'';assert.match(report,/BANK-PASSWORDS/);assert.ok(!report.includes('SECRET'));assert.match(report,/有效 1 筆/);assert.deepEqual(pdf.calls[0].password,manual?[manual]:[]);assert.equal(document.querySelectorAll('.bank-preview-row').length,1);assert.equal(document.querySelector('[aria-label="銀行 PDF 密碼"]').value,'');assert.equal(latest().bankTransactions.length,0);
+ const report=document.querySelector('[aria-label="銀行解析結果"]')?.textContent??'';assert.match(report,/BANK-PASSWORDS/);assert.ok(!report.includes('SECRET'));assert.match(report,/已辨識 1 筆/);assert.deepEqual(pdf.calls[0].password,manual?[manual]:[]);assert.equal(document.querySelectorAll('.bank-preview-row').length,1);assert.equal(document.querySelector('[aria-label="銀行 PDF 密碼"]').value,'');assert.equal(latest().bankTransactions.length,0);
 })
 
 // Compact previews keep edits and a single import selection across disclosure toggles.
