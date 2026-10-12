@@ -1,5 +1,5 @@
-import type { HistoricalPoint, QuantityDay } from '../quantityHistory'
-import { entryValue } from '../quantityHistory'
+import type { HistoricalPoint, QuantityDay, QuantityEntry } from '../quantityHistory'
+import { entryValue, instrumentKey } from '../quantityHistory'
 import { fmt } from '../format'
 import { accountLabel, baseValue, type WealthData, CATEGORIES, COMMON_CURRENCIES, COUNTRIES, countryLabel, type Slice } from '../model'
 import { colorize } from '../chartColors'
@@ -18,15 +18,18 @@ function slices(values: Record<string, number | null>): Slice[] | null {
 // split their value by the currencies of its current holdings, which is an estimate.
 function exposure(point: HistoricalPoint, day: QuantityDay | undefined, data: WealthData, key: 'currency' | 'country') {
   if (point.total === null) return null
-  const filled = new Set(point.filled?.map(f => f.id))
   const sums: Record<string, number> = Object.create(null)
   const add = (label: string, value: number) => { if (value) sums[label] = (sums[label] ?? 0) + value }
+  const label = (e: QuantityEntry) => key === 'country' ? countryLabel(e.country) : e.currency
   let estimated = false
   for (const a of point.accounts) {
     if (!a.value) continue
-    const entries = filled.has(a.id) ? [] : day?.entries.filter(e => e.accountId === a.id) ?? []
+    const filled = point.filled?.find(f => f.id === a.id)
+    const entries = filled && filled.reason !== 'partial' ? [] : day?.entries.filter(e => e.accountId === a.id) ?? []
     if (entries.length) {
-      for (const e of entries) add(key === 'country' ? countryLabel(e.country) : e.currency, entryValue(e) ?? 0)
+      // A partly known account: its known entries, and the earlier values used for the others.
+      const parts = new Map(filled?.parts?.map(p => [p.key, p.value]))
+      for (const e of entries) add(label(e), entryValue(e) ?? parts.get(instrumentKey(e)) ?? 0)
       continue
     }
     const account = data.accounts.find(x => x.id === a.id)
@@ -62,7 +65,7 @@ export function SnapshotDetails({ point, day, data, onBackfill }: Props) {
     <section className="panel span-2"><h3>資產配置</h3>{category?.length ? <Allocation slices={colorize(category, CATEGORIES)} /> : <p className="muted">缺少歷史數量或行情，配置尚不完整。</p>}</section>
     <section className="panel" aria-label="快照帳戶"><h3>當時的帳戶餘額</h3>
       <ul className="snapshot-accounts">{point.accounts.map(a => <li key={a.id}><span>{accountLabel({ name: a.name, country: day?.entries.find(e => e.accountId === a.id)?.country ?? data.accounts.find(x => x.id === a.id)?.country })}{filledNote(point, a.id) && <small className="muted"> · {filledNote(point, a.id)}</small>}</span><strong>{money(a.value)}</strong></li>)}</ul>
-      {unrecorded > 0 && <p className="muted small">{unrecorded} 個帳戶這天沒有紀錄，沿用之前最近一筆金額；沒有更早紀錄的以 0 計。{onBackfill && <button className="link" onClick={() => onBackfill(point.date)}>補登這天的數量</button>}</p>}
+      {unrecorded > 0 && <p className="muted small">{unrecorded} 個帳戶這天沒有完整紀錄或行情，以之前最近一筆金額補上；沒有更早紀錄的未知項目以 0 計。{onBackfill && <button className="link" onClick={() => onBackfill(point.date)}>補登這天的數量</button>}</p>}
     </section>
     <section className="panel"><h3>幣別曝險</h3>{currency?.slices?.length ? <><Allocation slices={colorize(currency.slices, COMMON_CURRENCIES)} />{currency.estimated && <p className="muted small">部分帳戶沒有這天的幣別明細，依帳戶目前持倉的幣別比例估計。</p>}</> : <p className="muted">這天的資料不足以計算幣別。</p>}</section>
 

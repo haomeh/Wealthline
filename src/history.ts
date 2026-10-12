@@ -5,7 +5,7 @@ import { parseBankStatementBalances } from './bankStatementAssets'
 import { dataVersion } from './dataVersion'
 import { validateBankLedger } from './bankTransactions'
 import { expandPeriodDays, parseHoldingPeriods, type HoldingPeriod } from './holdingPeriods'
-import { entryValue, isUnrecordedPartialDay, parseQuantityDays, quantityPoint, validDate, type QuantityDay, type HistoricalPoint } from './quantityHistory'
+import { entryValue, instrumentKey, isUnrecordedPartialDay, parseQuantityDays, quantityPoint, validDate, type Filled, type QuantityDay, type HistoricalPoint } from './quantityHistory'
 import { balanceSheet, parseLiability, type Liability } from './liabilities'
 import { accountBaseValue, baseValue, type Account, type Position, type WealthData } from './model'
 
@@ -165,41 +165,80 @@ function upsert(snapshots: Snapshot[], s: Snapshot): Snapshot[] {
   return [...snapshots.filter((x) => x.date !== s.date), s].sort((x, y) => x.date.localeCompare(y.date))
 }
 
-// Accounts that a day's records leave unknown keep the value they last had, so that a
-// record naming only some accounts (a bank statement balance, one single-day entry) or a
-// missing quote does not blank the whole day. The value comes from the original snapshot of
-// that day, else the latest earlier point; with neither, from the account's known entries,
-// unknown quantities counted as 0 (a known quantity without a quote keeps the day unknown).
-// `filled` lists these accounts for the views.
+// Accounts that a day's records leave unknown are filled with earlier values, so that a record
+// naming only some accounts (a bank statement balance, one single-day entry) or a missing quote
+// does not blank the whole day. What the day records always counts as it is:
+// - an account with no known entry ('no-record', or 'no-quote' when its quantities are known but
+//   not priced) takes the original snapshot of that day, else its latest earlier value, else 0
+//   (a known quantity without a quote and without an earlier value keeps the day unknown);
+// - an account with some known entries ('partial') keeps them, and each other entry takes its
+//   own latest earlier value, else 0 for an unknown quantity (an unpriced one keeps the day unknown);
+// - on a day that names only some accounts, accounts of the previous point that the day does not
+//   name at all (an account deleted since, for example) keep that value too.
+// `filled` lists these accounts with where their value came from, for the views; nothing is saved.
 function fillUnknownAccounts(points: HistoricalPoint[], days: Map<string, QuantityDay>, data: WealthData): HistoricalPoint[] {
-  const last = new Map<string, { value: number; date: string }>()
+  const snapshots = new Map(data.history.snapshots.map(s => [s.date, s]))
+  const lastAccount = new Map<string, { value: number; date: string }>()
+  const lastEntry = new Map<string, { value: number; date: string }>()
+  const categoryOf = new Map(data.accounts.map(a => [a.id, a.category]))
+  let previous: HistoricalPoint | undefined
   return points.map(point => {
-    const day = days.get(point.date), original = data.history.snapshots.find(s => s.date === point.date)
+    const day = days.get(point.date), original = snapshots.get(point.date)
+    const sparse = !!day && !day.inventory && !day.completion && !!day.sparse
+    const missing = sparse ? previous?.accounts.filter(a => a.value && !point.accounts.some(x => x.id === a.id)) ?? [] : []
     let result = point
-    if (day && point.total === null) {
+    if (day && (point.total === null || missing.length)) {
       const accounts = [...point.accounts]
-      if (!day.inventory) for (const a of original?.accounts ?? []) if (!accounts.some(x => x.id === a.id)) accounts.push({ id: a.id, name: a.name, value: null })
-      const filled: { id: string; from: string | null }[] = []
+      const add = (a: { id: string; name: string }) => { if (!accounts.some(x => x.id === a.id)) accounts.push({ id: a.id, name: a.name, value: null }) }
+      if (!day.inventory) for (const a of original?.accounts ?? []) add(a)
+      for (const a of missing) add(a)
+      const filled: Filled[] = []
       const categories: Record<string, number> = Object.create(null)
-      const add = (category: string, value: number) => { categories[category] = (categories[category] ?? 0) + value }
+      const addCategory = (category: string, value: number) => { categories[category] = (categories[category] ?? 0) + value }
       const known = accounts.map(a => {
         const entries = day.entries.filter(e => e.accountId === a.id)
         if (a.value !== null) {
-          for (const e of entries) add(e.category, entryValue(e) ?? 0)
+          for (const e of entries) addCategory(e.category, entryValue(e) ?? 0)
           return a
         }
-        const same = original?.accounts.find(x => x.id === a.id), prior = last.get(a.id)
-        // Without an earlier value, a held quantity whose quote or rate is missing has no value to show.
-        const value = same ? same.value : prior ? prior.value : entries.reduce((sum, e) => sum + (e.error ? NaN : e.quantity === null ? 0 : entryValue(e) ?? NaN), 0)
-        filled.push({ id: a.id, from: same ? point.date : prior?.date ?? null })
-        add(data.accounts.find(x => x.id === a.id)?.category ?? entries[0]?.category ?? '未分類', value)
+        const category = entries[0]?.category ?? categoryOf.get(a.id) ?? '未分類'
+        const valued = entries.filter(e => entryValue(e) !== null)
+        if (!valued.length) {
+          // A quantity known but not priced (or not convertible across a split) is not "no record".
+          const unpriced = entries.some(e => e.quantity !== null || e.error)
+          const same = original?.accounts.find(x => x.id === a.id), prior = lastAccount.get(a.id)
+          const value = same ? same.value : prior ? prior.value : unpriced ? NaN : 0
+          filled.push({ id: a.id, from: same ? point.date : prior?.date ?? null, reason: unpriced ? 'no-quote' : 'no-record' })
+          addCategory(category, value)
+          return { ...a, value }
+        }
+        let value = 0, from: string | null = null
+        const parts: { key: string; value: number }[] = []
+        for (const e of entries) {
+          const v = entryValue(e)
+          if (v !== null) { value += v; addCategory(e.category, v); continue }
+          const prior = lastEntry.get(instrumentKey(e))
+          const carried = prior ? prior.value : e.quantity === null && !e.error ? 0 : NaN
+          if (prior && (!from || prior.date > from)) from = prior.date
+          if (carried) parts.push({ key: instrumentKey(e), value: carried })
+          value += carried
+          addCategory(e.category, carried)
+        }
+        filled.push({ id: a.id, from, reason: 'partial', ...(parts.length && { parts }) })
         return { ...a, value }
       })
       const total = known.reduce((sum, a) => sum + (a.value ?? 0), 0)
       if (filled.length && Number.isFinite(total)) result = { ...point, total, accounts: known, categories, filled, netWorth: point.liabilityTotal === null ? null : total - (point.liabilityTotal ?? 0) }
     }
-    const carried = new Set(result.filled?.filter(f => f.from !== result.date).map(f => f.id))
-    for (const a of result.accounts) if (a.value !== null && !carried.has(a.id)) last.set(a.id, { value: a.value, date: result.date })
+    // Carried values are not new evidence; same-day snapshots and partly known accounts are.
+    const carried = new Set(result.filled?.filter(f => f.reason !== 'partial' && f.from !== result.date).map(f => f.id))
+    for (const a of result.accounts) if (a.value !== null && !carried.has(a.id)) lastAccount.set(a.id, { value: a.value, date: result.date })
+    for (const e of day?.entries ?? []) {
+      const v = entryValue(e)
+      if (v !== null) lastEntry.set(instrumentKey(e), { value: v, date: result.date })
+      categoryOf.set(e.accountId, categoryOf.get(e.accountId) ?? e.category)
+    }
+    previous = result
     return result
   })
 }

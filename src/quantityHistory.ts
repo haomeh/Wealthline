@@ -38,11 +38,12 @@ export type HistoricalPoint = Omit<Snapshot, 'total' | 'accounts' | 'categories'
   liabilityAssumed?: boolean
   periodDerived?: boolean
   manual?: boolean
-  // Accounts the day's records left unknown, shown with an earlier value (history.ts
-  // fillUnknownAccounts); `from` is that value's date, null when there is none and only the
-  // account's known entries count.
-  filled?: { id: string; from: string | null }[]
+  // Accounts the day's records left unknown, shown with earlier values (history.ts fillUnknownAccounts).
+  filled?: Filled[]
 }
+// `from`: the date of the latest earlier value used, null when none was (unknown quantities count as 0).
+// `parts`: for a partly known account, the earlier values used for its other entries, by instrumentKey.
+export interface Filled { id: string; from: string | null; reason: 'no-record' | 'no-quote' | 'partial'; parts?: { key: string; value: number }[] }
 export const instrumentKey = <T extends Pick<HistoricalInstrument,'accountId'|'type'|'symbol'|'currency'>>(p: T) => JSON.stringify([p.accountId, p.type, p.type === 'cash' ? '' : p.symbol.toUpperCase(), p.currency])
 export function validDate(date: string): boolean {
   return /^\d{4}-\d{2}-\d{2}$/.test(date) && date >= '0001-01-01' && Number.isFinite(Date.parse(`${date}T00:00:00Z`)) && new Date(`${date}T00:00:00Z`).toISOString().slice(0, 10) === date

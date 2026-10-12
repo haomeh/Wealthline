@@ -41,9 +41,12 @@ export function seriesFor(mode: Mode, points: HistoricalPoint[], accountNames: M
   return series
 }
 
-// Where an account's value on this point comes from when the day did not record it (history.ts).
+// Where an account's value on this point comes from when the day did not record all of it (history.ts).
 export function filledNote(point: HistoricalPoint, id: string): string {
   const f = point.filled?.find(x => x.id === id)
   if (!f) return ''
-  return f.from === null ? '無紀錄，以 0 計' : f.from === point.date ? '沿用當天快照' : `沿用 ${f.from.replaceAll('-', '/')}`
+  const from = f.from === point.date ? '當天快照' : f.from?.replaceAll('-', '/')
+  if (f.reason === 'partial') return from ? `部分項目沿用 ${from}` : '部分項目無紀錄，以 0 計'
+  if (f.reason === 'no-quote') return `缺行情，沿用 ${from}`
+  return from ? `沿用 ${from}` : '無紀錄，以 0 計'
 }
