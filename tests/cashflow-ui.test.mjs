@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict'
-import { before, after, afterEach, test } from 'node:test'
+import { before, beforeEach, after, afterEach, test } from 'node:test'
 import { createServer } from 'vite'
 import { JSDOM } from 'jsdom'
 import { act, createElement } from 'react'
 let server, dom, root, createRoot, Summary, Overview, model
+const originalFetch=globalThis.fetch
 before(async()=>{
  dom=new JSDOM('<div id="root"></div>',{url:'https://wealthline.test/'})
  for(const key of ['window','document','HTMLElement','Event','MouseEvent','KeyboardEvent']) globalThis[key]=dom.window[key]
@@ -15,7 +16,11 @@ before(async()=>{
  ;({Overview}=await server.ssrLoadModule('/src/views/Overview.tsx'))
  model=await server.ssrLoadModule('/src/model.ts')
 })
-afterEach(async()=>{if(root) await act(()=>root.unmount()); root=null})
+beforeEach(async()=>{
+ const {clearHistoryCache}=await server.ssrLoadModule('/src/priceHistory.ts');clearHistoryCache()
+ globalThis.fetch=async url=>{const symbol=new URL(url,'https://test').searchParams.get('symbol');return new Response(JSON.stringify({symbol,currency:'TWD',asTraded:true,points:[{date:'2026-01-24',close:32}]}))}
+})
+afterEach(async()=>{globalThis.fetch=originalFetch;if(root) await act(()=>root.unmount()); root=null})
 after(async()=>{await server?.close();dom?.window.close()})
 async function render(component,props){root=createRoot(document.getElementById('root'));await act(()=>root.render(createElement(component,props)))}
 async function click(el){assert.ok(el);await act(()=>el.click())}
@@ -78,17 +83,17 @@ test('period drafts require apply; cancel and Escape retain applied state and re
  assert.equal(document.querySelector('.cashflow-picker'),null)
  assert.match(document.querySelector('.cashflow-period-trigger').textContent,/2026 年 2 月/)
 })
-test('calendar year and all periods use observed records without mixing currencies',async()=>{
+test('calendar year and all periods display one monthly-converted TWD total',async()=>{
  await render(Summary,{expenses:[card,{...card,id:'feb',date:'2026-02-01',amount:300},{...card,id:'old',date:'2025-01-01',amount:50},{...card,id:'usd',currency:'USD',amount:7}],now:'2026-01-25'})
  const amount=currency=>document.querySelector(`[aria-label="${currency} 收支"] [data-cashflow-metric="consumption"]`).textContent
- assert.equal(amount('TWD'),'200');assert.equal(amount('USD'),'7')
+ assert.equal(amount('TWD'),'424')
  await picker();await click(button('年度'));await click(button('套用'))
- assert.equal(amount('TWD'),'500');assert.equal(amount('USD'),'7')
+ assert.equal(amount('TWD'),'724')
  await picker();await click(button('全部期間'));await click(button('套用'))
- assert.equal(amount('TWD'),'550');assert.equal(amount('USD'),'7')
- assert.equal(document.querySelectorAll('.cashflow-currency').length,2)
+ assert.equal(amount('TWD'),'774')
+ assert.equal(document.querySelectorAll('.cashflow-currency').length,1)
  assert.equal(document.querySelector('select'),null)
- assert.match(document.body.textContent,/不換算/)
+ assert.match(document.body.textContent,/月底已完成匯率/)
 })
 test('Overview uses one unified section in empty and populated asset branches for each source combination',async()=>{
  for(const populated of [false,true]) for(const source of ['bank','card','both']) {
@@ -125,4 +130,40 @@ test('category colors remain stable when other categories disappear between peri
  await picker();await selectMonth(2);await click(button('套用'))
  assert.equal(document.querySelector('[data-cashflow-slice="利息"]').getAttribute('stroke'),color)
  assert.equal(document.querySelector('[aria-label="TWD 收入分類"] i').style.background,color)
+})
+
+test('missing FX automatically requests, hides partial totals, and retry bypasses cached failure',async()=>{
+ const calls=[]
+ globalThis.fetch=async(url,options)=>{calls.push([url,options.cache]);return calls.length===1?new Response('{}',{status:502}):new Response(JSON.stringify({symbol:'USDTWD=X',currency:'TWD',asTraded:true,points:[{date:'2026-01-24',close:32}]}))}
+ await render(Summary,{expenses:[card,{...card,id:'usd',currency:'USD',amount:1}],now:'2026-01-25'})
+ assert.equal(calls.length,1);assert.match(document.querySelector('[role="alert"]').textContent,/未顯示部分合計/)
+ assert.equal(document.querySelector('[data-cashflow-metric]'),null)
+ await click(button('重試匯率'))
+ assert.equal(calls.length,2);assert.equal(calls[1][1],'no-cache')
+ assert.equal(document.querySelector('[data-cashflow-metric="consumption"]').textContent,'232')
+})
+test('new currency-month requests automatically and stale selection results cannot replace current totals',async()=>{
+ const pending=[]
+ globalThis.fetch=(url)=>new Promise(resolve=>pending.push({url,resolve}))
+ await render(Summary,{expenses:[{...card,currency:'USD',amount:1},{...card,id:'feb',currency:'SGD',date:'2026-02-01',amount:2}],now:'2026-03-10'})
+ await picker();await selectMonth(1);await click(button('套用'))
+ assert.match(document.querySelector('[role="status"]').textContent,/正在換算/)
+ assert.equal(pending.length,1)
+ await picker();await selectMonth(2);await click(button('套用'))
+ assert.equal(pending.length,2);assert.match(pending[1].url,/SGDTWD/)
+ await act(async()=>pending[1].resolve(new Response(JSON.stringify({symbol:'SGDTWD=X',currency:'TWD',asTraded:true,points:[{date:'2026-02-27',close:24}]}))))
+ assert.equal(document.querySelector('[data-cashflow-metric="consumption"]').textContent,'48')
+ await act(async()=>pending[0].resolve(new Response(JSON.stringify({symbol:'USDTWD=X',currency:'TWD',asTraded:true,points:[{date:'2026-01-30',close:31}]}))))
+ assert.equal(document.querySelector('[data-cashflow-metric="consumption"]').textContent,'48')
+})
+
+test('summary-only input converts to one chart without needing raw detail records',async()=>{
+ const {cashflowMonths}=await server.ssrLoadModule('/src/cashflow.ts')
+ const months=cashflowMonths({expenses:[card,{...card,id:'usd',currency:'USD',amount:2}]})
+ const before=structuredClone(months)
+ await render(Summary,{months,now:'2026-01-25'})
+ assert.equal(document.querySelectorAll('.cashflow-currency').length,1)
+ assert.equal(document.querySelector('[data-cashflow-metric="consumption"]').textContent,'264')
+ await picker();assert.ok(document.querySelector('button[aria-label="1 月，有紀錄"]'))
+ assert.deepEqual(months,before)
 })

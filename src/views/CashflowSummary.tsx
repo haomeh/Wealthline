@@ -1,7 +1,9 @@
-import { useId, useRef, useState } from 'react'
-import { cashflowMonthList, cashflowSummary, type CashflowInput, type CashflowReviewTotals } from '../cashflow'
+import { useEffect, useId, useMemo, useRef, useState } from 'react'
+import { cashflowMonthList, cashflowSummary, type CashflowInput, type CashflowReviewTotals, type CashflowCurrencySummary } from '../cashflow'
 import { fmt } from '../format'
 import { CashflowChart } from './CashflowChart'
+import { cashflowInTwd } from '../cashflowFx'
+import { fetchHistory } from '../priceHistory'
 
 export interface CashflowSummaryProps extends CashflowInput {
   now: string
@@ -21,8 +23,28 @@ export function CashflowSummary({now,onGoExpenses,onGoBankTransactions,...input}
   const pickerId=useId()
   const trigger=useRef<HTMLButtonElement>(null)
   const endMonth=`${String(selection.year).padStart(4,'0')}-${selection.range==='year'?'12':String(selection.month).padStart(2,'0')}`
-  const groups=cashflowSummary(input,endMonth,selection.range==='all'?'all':selection.range==='year'?12:1)
+  const period=selection.range==='all'?'all':selection.range==='year'?12:1
   const recordedMonths=new Set(cashflowMonthList(input))
+  const {expenses,expenseRules,bankTransactions,bankRules,months}=input
+  const rawGroups=useMemo(()=>cashflowSummary({expenses,expenseRules,bankTransactions,bankRules,months},endMonth,period),[expenses,expenseRules,bankTransactions,bankRules,months,endMonth,period])
+  const today=`${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`
+  const needsFx=rawGroups.some(group=>group.currency!=='TWD')
+  const [attempt,setAttempt]=useState(0)
+  const [conversion,setConversion]=useState<{source:typeof rawGroups;today:string;attempt:number;group?:CashflowCurrencySummary;error?:string}>()
+  useEffect(()=>{
+    if(!needsFx) return
+    let active=true
+    cashflowInTwd(rawGroups,today,(symbol,from)=>fetchHistory(symbol,from,attempt>0)).then(group=>{
+      if(active) setConversion({source:rawGroups,today,attempt,group})
+    },error=>{
+      if(active) setConversion({source:rawGroups,today,attempt,error:error instanceof Error?error.message:'匯率查詢失敗'})
+    })
+    return ()=>{active=false}
+  },[rawGroups,today,attempt,needsFx])
+  const current=conversion?.source===rawGroups && conversion.today===today && conversion.attempt===attempt?conversion:undefined
+  const groups=needsFx?(current?.group?[current.group]:[]):rawGroups
+  const loading=needsFx && !current
+
   const label=selection.range==='all'?'全部期間':`${selection.year} 年${selection.range==='month'?` ${selection.month} 月`:''}`
   const close=()=>{setOpen(false);trigger.current?.focus()}
   return <section className="panel span-2 cashflow-summary" aria-label="統一收支總覽">
@@ -40,7 +62,9 @@ export function CashflowSummary({now,onGoExpenses,onGoBankTransactions,...input}
         return <button key={month} aria-label={`${month} 月${hasData?'，有紀錄':''}`} aria-pressed={draft.month===month} className={hasData?'has-records':''} onClick={()=>setDraft({...draft,month})}>{month} 月</button>
       })}</div><p className="muted small">圓點表示有紀錄</p></>}
     </section>}
-    {!groups.length ? <p className="cashflow-no-record muted">這段期間無紀錄，不代表收支為零。</p>:groups.map(group=><section className="cashflow-currency" key={group.currency} aria-label={`${group.currency} 收支`}>
+    {loading && <p role="status" className="notice">正在換算每月匯率…</p>}
+    {needsFx && current?.error && <div role="alert" className="notice"><p>無法完成 TWD 換算：{current.error}。未顯示部分合計。</p><button onClick={()=>setAttempt(attempt+1)}>重試匯率</button></div>}
+    {!rawGroups.length ? <p className="cashflow-no-record muted">這段期間無紀錄，不代表收支為零。</p>:groups.map(group=><section className="cashflow-currency" key={group.currency} aria-label={`${group.currency} 收支`}>
       <div className="cashflow-currency-heading"><strong>{group.currency}</strong><span className="muted small">{group.coverage.recordCount} 筆紀錄</span></div>
       <CashflowChart group={group}/>
       {group.investmentRecovery.hasRecords && <p className="notice small" role="note">投資回收款：可能包含投入本金，不代表投資收益</p>}
@@ -52,6 +76,6 @@ export function CashflowSummary({now,onGoExpenses,onGoBankTransactions,...input}
       </details>
       <details className="cashflow-sources"><summary>查看來源 · 明細分開管理</summary><div><h4>銀行流水 · {group.coverage.bankCount} 筆</h4><p className="muted small">依銀行記帳日；收入沖回從收入扣除，消費退款從消費扣除。待確認與排除只列示，不計入收支。</p>{onGoBankTransactions && <button onClick={onGoBankTransactions}>查看銀行流水明細</button>}</div><div><h4>信用卡消費 · {group.coverage.cardCount} 筆</h4><p className="muted small">依原交易日期與帶符號金額；信用卡退款扣除消費。此入口僅含信用卡，不混入銀行流水。</p>{onGoExpenses && <button onClick={onGoExpenses}>查看信用卡消費明細</button>}</div></details>
     </section>)}
-    <p className="cashflow-footnote muted small">依已匯入紀錄，不代表完整月份。{selection.range==='month' && selection.year===date.getFullYear() && selection.month===date.getMonth()+1?'本月尚未結束。':''}收支差額不是帳戶餘額或淨資產；幣別分開計算、不換算。</p>
+    <p className="cashflow-footnote muted small">依已匯入紀錄，不代表完整月份。{selection.range==='month' && selection.year===date.getFullYear() && selection.month===date.getMonth()+1?'本月尚未結束。':''}收支差額不是帳戶餘額或淨資產；金額統一換算 TWD，依各月月底已完成匯率；本月採最新已完成匯率（最多回溯 7 日）。</p>
   </section>
 }

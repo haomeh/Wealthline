@@ -1643,7 +1643,8 @@ async function selectCashflowMonth(year,month) {
   await click(button('套用'))
 }
 
-test('overview expense totals separate currencies, refunds and months even without asset accounts',async()=>{
+test('overview expense totals convert currencies monthly and preserve refunds and months without asset accounts',async()=>{
+  globalThis.fetch=async url=>new Response(JSON.stringify({symbol:new URL(url,'https://test').searchParams.get('symbol'),currency:'TWD',asTraded:true,points:[{date:'2026-09-30',close:24}]}))
   const {expenseMonthSummary}=await server.ssrLoadModule('/src/expenses.ts')
   const expenses=[
     {id:'a',date:'2026-09-01',card:'Card A',description:'Shop',currency:'TWD',amount:100.25},
@@ -1665,8 +1666,8 @@ test('overview expense totals separate currencies, refunds and months even witho
   assert.equal(document.querySelector('.cashflow-sources').open,false)
   await selectCashflowMonth(2026,9)
   const metrics=currency=>['income','consumption','difference'].map(key=>document.querySelector(`[aria-label="${currency} 收支"] [data-cashflow-metric="${key}"]`).textContent)
-  assert.deepEqual(metrics('TWD'),['0','110','-110'])
-  assert.deepEqual(metrics('SGD'),['0','-2','+2'])
+  assert.deepEqual(metrics('TWD'),['0','62','-62'])
+  assert.equal(document.querySelector('[aria-label="SGD 收支"]'),null)
   await selectCashflowMonth(2026,10)
   assert.deepEqual([...document.querySelectorAll('.cashflow-currency-heading strong')].map(e=>e.textContent),['TWD'])
   assert.equal(document.querySelector('[data-cashflow-metric="consumption"]').textContent,'2,000')
