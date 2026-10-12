@@ -8,7 +8,9 @@
 // - hash: SHA-256 of the part's records in a fixed form (recordsHash), without the file header;
 // - md5: Drive's MD5 checksum of the part file as this app last wrote it. Drive lists it without
 //   downloading the file, so opening finds parts written since the entry was made (a save that
-//   stopped before the main file, or another device) and reads only those.
+//   stopped before the main file, or another device) and reads only those;
+// - fileId: the Drive file the entry was made from. Drive allows two files with the same part
+//   name (two creates of one part); this says which one the main file was saved with.
 // Transaction entries also depend on the category rules: `rules` is the hash of the rules they
 // were counted with.
 
@@ -21,6 +23,7 @@ import type { Expense, ExpenseCategoryRule } from './expenses'
 export interface PartSummary {
   hash: string
   md5: string | null
+  fileId?: string
   sequence: number
   cashflow?: CashflowMonthTotals[]
   points?: Snapshot[]
@@ -94,7 +97,7 @@ export function parseSummary(raw: unknown): DataSummary {
   if (!isObj(raw.parts)) return summary
   for (const [name, value] of Object.entries(raw.parts)) {
     if (!isPartName(name) || !isObj(value) || typeof value.hash !== 'string' || !(value.md5 === null || typeof value.md5 === 'string') || !Number.isInteger(value.sequence)) continue
-    const base = { hash: value.hash, md5: value.md5 as string | null, sequence: value.sequence as number }
+    const base = { hash: value.hash, md5: value.md5 as string | null, ...(typeof value.fileId === 'string' && value.fileId && { fileId: value.fileId }), sequence: value.sequence as number }
     if (name.startsWith('ledger-')) {
       if (!Array.isArray(value.cashflow) || !value.cashflow.every(monthTotals)) continue
       summary.parts[name] = { ...base, cashflow: (value.cashflow as CashflowMonthTotals[]).map((m) => ({ ...m, coverage: { ...m.coverage, complete: false } })) }

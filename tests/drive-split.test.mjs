@@ -330,8 +330,9 @@ test('saving the same records in another key order uploads nothing', async () =>
 test('a part written after its summary (a save that stopped before the main file) is found by its checksum and counted again', async () => {
   await splitOnDrive()
   const { data, state } = await openAll()
-  drive.fail((file) => file?.appProperties.weWealth === 'data', 412)
-  await assert.rejects(store.saveDrive(token, { ...data, updatedAt: '2026-10-12T05:00:00.000Z', expenses: data.expenses.map((e) => (e.id === 'e1' ? { ...e, amount: 99 } : e)) }, state, NOW))
+  // The connection is lost before the main file is written.
+  drive.fail((file) => file?.appProperties.weWealth === 'data', 503)
+  await assert.rejects(store.saveDrive(token, { ...data, updatedAt: '2026-10-12T05:00:00.000Z', expenses: data.expenses.map((e) => (e.id === 'e1' ? { ...e, amount: 99 } : e)) }, state, NOW), /503/)
   const from = drive.log.length
   const opened = await store.loadDrive(token, model.parseWealthData)
   assert.deepEqual(partReads(from).filter((p) => p !== 'main').sort(), ['ledger-2025-Q4', 'ledger-2026-Q1', 'ledger-2026-Q3', 'ledger-2026-Q4'])

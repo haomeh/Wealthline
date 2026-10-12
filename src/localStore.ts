@@ -4,7 +4,9 @@
 //
 // The data lives in IndexedDB, which has far more room than localStorage's ~5 MB. Data saved by
 // earlier versions in localStorage moves there on the next open, with no step for the user
-// (see `migrate`). Browsers without a usable IndexedDB keep using localStorage.
+// (see `migrate`). Browsers without a usable IndexedDB keep using localStorage. Once the data
+// is in IndexedDB, a page load that cannot open it stops instead: localStorage would show no
+// data, and what was saved there would later be moved aside as old data.
 
 import { localDate } from './history'
 import { parseWealthData, type WealthData } from './model'
@@ -62,6 +64,7 @@ function forget(...keys: string[]) {
 }
 
 const FULL = '此瀏覽器的儲存空間不足或已停用，資料沒有儲存。請先下載本機備份。'
+const UNAVAILABLE = '此瀏覽器的 Wealthline 資料存在 IndexedDB，但這次無法開啟它，所以沒有讀取或寫入任何資料。請重新載入頁面；若仍無法開啟，請確認瀏覽器沒有封鎖或清除此網站的資料。'
 
 // The stored data file's text. `put` and `remove` run only under the lock below.
 interface Backend {
@@ -136,11 +139,16 @@ const storageBackend: Backend = {
   },
 }
 
-// IndexedDB when this browser can open it; decided once per page load.
+// IndexedDB when this browser can open it; decided once per page load. When IndexedDB already
+// holds the data but does not open, this rejects (and the next call tries again).
 let chosen: Promise<Backend> | null = null
 function backend(): Promise<Backend> {
   chosen ??= (typeof indexedDB === 'undefined' ? Promise.reject(new Error('no IndexedDB')) : db())
-    .then(() => indexedBackend, () => storageBackend)
+    .then(() => indexedBackend, () => {
+      if (read(STORED_KEY) !== '1') return storageBackend
+      chosen = null
+      throw new Error(UNAVAILABLE)
+    })
   return chosen
 }
 
@@ -207,7 +215,9 @@ export async function loadLocal(): Promise<LocalFile | null> {
   const raw = hasLocks() ? await locked(async () => {
     try {
       await migrate(store)
-    } catch {
+    } catch (e) {
+      // IndexedDB already holds data but failed now: localStorage would hide it.
+      if (read(STORED_KEY) === '1') throw new Error(UNAVAILABLE, { cause: e })
       // IndexedDB could not take the data (full, or failing): keep using localStorage on this
       // page load, where the data still is, and try again on the next open.
       store = storageBackend
@@ -277,7 +287,8 @@ export async function replaceLocal(data: WealthData, wanted: () => boolean): Pro
 }
 
 // Removes the data, including the backup of data moved from localStorage, and leaves local
-// mode. Downloaded files are not affected.
+// mode. Downloaded files are not affected. Fails, saying so, when IndexedDB holds the data but
+// cannot be opened (see `backend`).
 export async function clearLocal(): Promise<void> {
   const store = await backend()
   return locked(async () => {
@@ -296,7 +307,10 @@ export async function storageEstimate(): Promise<{ usage: number; quota: number 
   }
 }
 
-// Reads a data file the user picked: a download from local mode, or the Drive mode's data file.
+// Reads a data file the user picked: a download from local mode, or a full backup downloaded
+// in the Drive mode. A version 14 or older Drive data file holds everything too. Since version
+// 15 the Drive main file does not (the transactions and earlier years are in its part files),
+// so it is refused rather than restored without them.
 export async function readDataFile(file: File): Promise<WealthData> {
   if (file.size > MAX_UPLOAD_BYTES) throw new Error('檔案太大，不像是 Wealthline 的資料檔。')
   let json: unknown
@@ -304,6 +318,10 @@ export async function readDataFile(file: File): Promise<WealthData> {
     json = JSON.parse(await file.text())
   } catch {
     throw new Error('這個檔案不是有效的 JSON，請選擇 Wealthline 的資料檔。')
+  }
+  const obj = json as Record<string, unknown> | null
+  if (obj?.version === 15 && typeof obj.datasetId === 'string' && obj.datasetId && obj.summary !== undefined) {
+    throw new Error('這是 Google Drive 中的主檔，不含消費明細、銀行流水與往年歷史，不能當作完整備份還原。請用 Google 登入後，在帳號選單中按「下載完整備份」，再上傳那個檔案。')
   }
   return parseWealthData(json, 'file')
 }

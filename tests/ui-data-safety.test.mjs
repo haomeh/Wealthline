@@ -1477,12 +1477,12 @@ test('legacy unknown merchants remain readable but cannot be saved unchanged',as
 })
 
 test('statement privacy disclosure notifies users who saw the previous policy',async()=>{
-  localStorage.setItem('wealthline.privacySeen','2026-10-10')
+  localStorage.setItem('wealthline.privacySeen','2026-10-11')
   setupDrive(fixture())
   await render(App)
   assert.ok(button('知道了'))
   await click(button('知道了'))
-  assert.equal(localStorage.getItem('wealthline.privacySeen'),'2026-10-11')
+  assert.equal(localStorage.getItem('wealthline.privacySeen'),'2026-10-12')
 })
 
 test('oversized statement is rejected before file reading or PDF loading, and password is cleared',async()=>{
@@ -2092,7 +2092,7 @@ test('a split Drive file opens from its main file; the transaction and history p
   assert.deepEqual(reads(from),['main'])
   // The overview's spending and trend come from the main file's summary.
   assert.ok(document.querySelector('[aria-label="統一收支總覽"]'))
-  assert.match(document.body.textContent,/2026 年以前只顯示每月最後一筆紀錄/)
+  assert.match(document.body.textContent,/2026 年以前只顯示每月最後一筆原始快照，不含補登與期間推算/)
   await click(button('消費明細'));await settle()
   assert.match(document.body.textContent,/Old shop/)
   assert.deepEqual(reads(from).filter(p=>p!=='main').sort(),['ledger-2025-Q4','ledger-2026-Q3'])

@@ -12,7 +12,7 @@ import {
   type AccessToken,
   type UserProfile,
 } from './google/auth'
-import { DATA_FILE_NAME, FOLDER_NAME } from './google/drive'
+import { DATA_FILE_NAME, FOLDER_NAME, HISTORY_FOLDER_NAME, LEDGER_FOLDER_NAME } from './google/drive'
 import { archiveSummary, summaryCashflow, emptyDriveState, loadDrive, mergeParts, missingParts, readGroup, saveDrive, storedSizes, type DriveState, type PartGroup } from './google/driveStore'
 import { applyFetchedRates, emptyData, missingRates, parseWealthData, ratesStale, usedCurrencies, type WealthData } from './model'
 import { finishSave } from './saveState'
@@ -273,18 +273,27 @@ export default function App() {
     return task
   }
 
-  // The data with every record, for a backup: parts not loaded yet are read first.
-  async function completeData(from: WealthData): Promise<WealthData | null> {
+  // The data with every record, for a backup: parts not loaded yet are read first. When they
+  // cannot be read, a full backup (`strict`) fails; otherwise the user may take what is loaded.
+  async function completeData(from: WealthData, strict = false): Promise<WealthData | null> {
     const state = driveState.current
     if (localMode.current || !state) return from
     try {
       let full = from
       for (const group of ['ledger', 'history'] as const) full = mergeParts(full, await readGroup(await validToken(), state, group), parseWealthData)
       return full
-    } catch {
+    } catch (e) {
+      if (strict) throw new Error(`無法讀取所有消費明細與往年歷史，沒有下載備份：${e instanceof Error ? e.message : String(e)}`)
       return confirm('無法讀取部分消費明細或往年歷史，備份只會包含已載入的資料（其餘仍完整保存在 Google Drive）。要下載嗎？') ? from : null
     }
   }
+
+  // Drive: every record as one file, which local mode can restore (readDataFile).
+  const downloadBackup = () =>
+    run('準備備份…', async () => {
+      const full = saved.current && await completeData(saved.current, true)
+      if (full) downloadDataFile(full)
+    })
 
   function measureBrowser() {
     if (!localMode.current) return setBrowserStorage(null)
@@ -504,7 +513,8 @@ export default function App() {
   const archive = state && missing('history') ? archiveSummary(state) : null
   const needs = (group: PartGroup) => missing(group) && (group === 'ledger'
     ? tab === 'expenses' || tab === 'bank-transactions' || (tab === 'overview' && !summaryCashflow(state!))
-    : route.tab === 'history' || (route.tab === 'accounts' && route.page === 'detail') || (tab === 'overview' && !archive))
+    // The bank page uses the history when it imports statement balances (bankStatementAssets.ts).
+    : route.tab === 'history' || tab === 'bank-transactions' || (route.tab === 'accounts' && route.page === 'detail') || (tab === 'overview' && !archive))
   const needed = (['ledger', 'history'] as const).filter(needs)
   useEffect(() => {
     for (const group of needed) if (!groupLoad[group]) void loadGroup(group)
@@ -574,7 +584,7 @@ export default function App() {
                 <span aria-hidden>✓</span> 已存在此瀏覽器
               </span>
             ) : (
-              <span className="synced" title={`我的雲端硬碟 / ${FOLDER_NAME} / ${DATA_FILE_NAME}`}>
+              <span className="synced" title={`我的雲端硬碟 / ${FOLDER_NAME}`}>
                 <span aria-hidden>✓</span> 已同步
               </span>
             )}
@@ -586,9 +596,13 @@ export default function App() {
                 <strong>{user.name}</strong>
                 <span className="muted">{user.email}</span>
                 <span className="muted small">
-                  資料檔：我的雲端硬碟 / {FOLDER_NAME} / {DATA_FILE_NAME}
+                  資料位置：我的雲端硬碟 / {FOLDER_NAME}（主檔 {DATA_FILE_NAME}，消費明細、銀行流水與往年歷史在「{LEDGER_FOLDER_NAME}」「{HISTORY_FOLDER_NAME}」子資料夾）
                 </span>
                 {storedBytes > 0 && <StorageMeter bytes={storedBytes} total={storedTotal} />}
+                <button onClick={() => void downloadBackup()} disabled={busy || dirty || !saved.current}>
+                  下載完整備份
+                </button>
+                {dirty ? <span className="muted small">請先儲存變更，再下載備份。</span> : <span className="muted small">一個檔案包含所有資料，可在本機模式上傳還原。</span>}
                 <Link to={PAGES.privacy.path} className="small">
                   隱私權政策 Privacy Policy
                 </Link>
@@ -687,8 +701,9 @@ export default function App() {
         )}
         {data && tab === 'liabilities' && <Liabilities data={data} onChange={update} />}
         {data && (tab === 'expenses' || tab === 'bank-transactions') && missing('ledger') && waiting('ledger')}
+        {data && tab === 'bank-transactions' && !missing('ledger') && missing('history') && waiting('history')}
         {data && tab === 'expenses' && !missing('ledger') && <Expenses key={local?'local':user?.sub} passwordScope={local?'local':user?`google:${user.sub}`:undefined} data={data} onChange={update} busy={busy} />}
-        {data && tab === 'bank-transactions' && !missing('ledger') && <BankTransactions key={local?'local':user?.sub} passwordScope={local?'local':user?`google:${user.sub}`:undefined} data={data} onChange={update} busy={busy} />}
+        {data && tab === 'bank-transactions' && !missing('ledger') && !missing('history') && <BankTransactions key={local?'local':user?.sub} passwordScope={local?'local':user?`google:${user.sub}`:undefined} data={data} onChange={update} busy={busy} />}
         {data && tab === 'rates' && <Rates data={data} onChange={update} onRefresh={async () => void (await refreshRates(data))} error={ratesError} />}
       </main>
       <SiteFooter />

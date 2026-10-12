@@ -2,12 +2,17 @@
 // without signing in, since Google's OAuth consent screen links to the privacy policy.
 
 import type { MouseEvent, ReactNode } from 'react'
-import { DATA_FILE_NAME, FOLDER_NAME } from '../google/drive'
-import { AUTHOR, ISSUES_URL, LICENSE_URL, LICENSE_ZH_URL, OPERATOR, OPERATOR_URL, PAGES, REPO_URL, SECURITY_URL, SITE_HOST, SITE_URL, hasPrevious, type PageKey } from '../site'
+import { DATA_FILE_NAME, FOLDER_NAME, HISTORY_FOLDER_NAME, LEDGER_FOLDER_NAME } from '../google/drive'
+import { AUTHOR, ISSUES_URL, LICENSE_URL, LICENSE_ZH_URL, OPERATOR, OPERATOR_URL, PAGES, PRIVACY_UPDATED, REPO_URL, SECURITY_URL, SITE_HOST, SITE_URL, hasPrevious, type PageKey } from '../site'
 import { Link, Logo, SiteFooter } from './Site'
 
 const EFFECTIVE = '2026 年 10 月 10 日'
+// The privacy policy has its own date, which also drives the in-app notice (site.ts).
+const [UPDATED_Y, UPDATED_M, UPDATED_D] = PRIVACY_UPDATED.split('-').map(Number)
+const PRIVACY_EFFECTIVE = `${UPDATED_Y} 年 ${UPDATED_M} 月 ${UPDATED_D} 日`
 const DATA_PATH = `我的雲端硬碟 / ${FOLDER_NAME} / ${DATA_FILE_NAME}`
+const LEDGER_PATH = `${FOLDER_NAME} / ${LEDGER_FOLDER_NAME}`
+const HISTORY_PATH = `${FOLDER_NAME} / ${HISTORY_FOLDER_NAME}`
 
 // Going back returns to the page the notice was opened from, so the browser's back button
 // afterwards does not lead to the notice again. Opened directly, the link simply goes home.
@@ -44,7 +49,7 @@ export function LegalPage({ page, signedIn }: { page: PageKey; signedIn: boolean
               Wealthline {PAGES[page].en}
             </span>
           </h1>
-          <p className="muted small">生效日期／最後更新：{EFFECTIVE}</p>
+          <p className="muted small">生效日期／最後更新：{page === 'privacy' ? PRIVACY_EFFECTIVE : EFFECTIVE}</p>
           {page === 'privacy' && <Privacy />}
           {page === 'terms' && <Terms />}
           {page === 'disclaimer' && <Disclaimer />}
@@ -82,8 +87,8 @@ const SCOPES = [
   },
   {
     scope: 'https://www.googleapis.com/auth/drive.file',
-    zh: `在你的 Google Drive 建立「${FOLDER_NAME}」資料夾與 ${DATA_FILE_NAME} 資料檔，並讀取、更新這個檔案。只能存取本服務建立的檔案，看不到你雲端硬碟中的其他檔案`,
-    en: `Creates the "${FOLDER_NAME}" folder and the ${DATA_FILE_NAME} file in your Google Drive, then reads and updates that file. It can only access files this app created and cannot see any other file in your Drive`,
+    zh: `在你的 Google Drive 建立「${FOLDER_NAME}」資料夾及其中的「${LEDGER_FOLDER_NAME}」「${HISTORY_FOLDER_NAME}」子資料夾，在裡面建立主資料檔 ${DATA_FILE_NAME} 與分檔（消費明細與銀行流水每季一個、往年歷史每年一個），並讀取、更新這些檔案。只能存取本服務建立的檔案，看不到你雲端硬碟中的其他檔案`,
+    en: `Creates the "${FOLDER_NAME}" folder and its "${LEDGER_FOLDER_NAME}" (transactions) and "${HISTORY_FOLDER_NAME}" (history) subfolders in your Google Drive, and in them the main data file ${DATA_FILE_NAME} plus part files (one per quarter for card expenses and bank transactions, one per year for earlier history), then reads and updates those files. It can only access files this app created and cannot see any other file in your Drive`,
   },
 ]
 
@@ -140,7 +145,7 @@ function Privacy() {
       <Section title="五、資料存放在哪裡、保存多久">
         <ul>
           <li>
-            <strong>資產資料</strong>：以 JSON 檔存放在你的 Google Drive：<code>{DATA_PATH}</code>。由你自己保管，直到你刪除它為止。瀏覽器執行期間也會在記憶體中處理資料，手動下載的備份則存放在你選擇的位置。
+            <strong>資產資料</strong>：以 JSON 檔存放在你的 Google Drive 的「{FOLDER_NAME}」資料夾。主資料檔是 <code>{DATA_PATH}</code>；消費明細與銀行流水依日期每季存成一個分檔，放在 <code>{LEDGER_PATH}</code>，往年的快照與修改紀錄每年存成一個分檔，放在 <code>{HISTORY_PATH}</code>。開啟時只讀取主資料檔，進入需要的頁面時才讀取分檔。這些檔案由你自己保管，直到你刪除為止。瀏覽器執行期間也會在記憶體中處理資料；帳號選單的「下載完整備份」會把所有檔案的資料合成一個 JSON 檔，存放在你選擇的位置。
           </li>
           <li>
             <strong>登入資訊</strong>：存取權杖只存放在目前分頁的 sessionStorage：重新整理頁面仍保持登入，通常在關閉分頁後清除；瀏覽器的工作階段復原功能可能保留它，因此共用裝置請務必登出。localStorage 只保存帳號識別碼、電子郵件、名稱與大頭貼網址，供下次繼續登入，另記錄你最後看過的隱私權政策版本。登出立即清除本機登入資訊，並嘗試向 Google 撤銷權杖；若網路失敗，可至 Google 帳戶撤銷授權。
@@ -183,7 +188,7 @@ function Privacy() {
             <strong>離開瀏覽器的資料</strong>：只有查詢報價與匯率時，瀏覽器會送出股票代號、幣別或幣種名稱，以及查歷史價格時的起始日期，內容同第六節，不包含數量、金額或帳戶名稱。
           </li>
           <li>
-            <strong>下載與上傳</strong>：「下載資料檔」會在你的裝置上產生一個 JSON 檔，存放在你選擇的位置，由你自行保管。「上傳資料檔」只在瀏覽器中讀取你選的檔案，並取代此瀏覽器中的資料，檔案不會傳送到任何伺服器。
+            <strong>下載與上傳</strong>：「下載資料檔」會在你的裝置上產生一個 JSON 檔，存放在你選擇的位置，由你自行保管。「上傳資料檔」只在瀏覽器中讀取你選的檔案，並取代此瀏覽器中的資料，檔案不會傳送到任何伺服器。Google Drive 中的主資料檔不含消費明細與往年歷史，不能直接上傳；請改用登入後帳號選單的「下載完整備份」。
           </li>
           <li>
             <strong>保存期限與刪除</strong>：資料會保留到你在選單中按「刪除此瀏覽器中的資料」，或清除瀏覽器的網站資料為止。「離開本機模式」會保留資料，供下次繼續使用。換瀏覽器、換裝置或使用無痕視窗時看不到這些資料，營運者也無法替你復原，請定期下載備份。
@@ -205,7 +210,7 @@ function Privacy() {
       <Section title="九、如何刪除資料與撤銷授權">
         <ul>
           <li>
-            <strong>刪除資產資料</strong>：在 Google Drive 刪除「{FOLDER_NAME}」資料夾並清空垃圾桶，本服務便無法再讀取該檔案。請先登出並關閉其他已開啟的分頁，以免未儲存修改再次寫入；也請自行刪除下載的備份。Google 的備份與保留期限依其政策處理。營運者沒有完整財務資料副本。
+            <strong>刪除資產資料</strong>：在 Google Drive 刪除「{FOLDER_NAME}」資料夾（包括其中的「{LEDGER_FOLDER_NAME}」「{HISTORY_FOLDER_NAME}」子資料夾）並清空垃圾桶，本服務便無法再讀取這些檔案。請先登出並關閉其他已開啟的分頁，以免未儲存修改再次寫入；也請自行刪除下載的備份。Google 的備份與保留期限依其政策處理。營運者沒有完整財務資料副本。
           </li>
           <li>
             <strong>清除本機登入資訊</strong>：在本服務中按「登出」，或清除瀏覽器的網站資料。
@@ -240,6 +245,9 @@ function Privacy() {
       <Section title="十三、政策變更">
         <p>
           本政策如有修改，會更新本頁的「最後更新日期」，並可在 GitHub 的版本紀錄中查到每一次的變更內容。若修改內容涉及 Google 使用者資料的存取、使用、存放或分享方式，登入後的 App 內會顯示通知並連到新版政策；以新的方式使用 Google 使用者資料前，會再次取得你的同意。
+        </p>
+        <p>
+          2026 年 10 月 12 日：Google Drive 中的資料由單一資料檔改為主資料檔加分檔，分檔放在「{FOLDER_NAME}」資料夾下的「{LEDGER_FOLDER_NAME}」「{HISTORY_FOLDER_NAME}」子資料夾（見第五節）。存取的資料種類、用途與 drive.file 權限都沒有改變。本機模式的資料改存在瀏覽器的 IndexedDB（見第七節）。帳號選單新增「下載完整備份」。
         </p>
       </Section>
 
@@ -290,8 +298,9 @@ function PrivacyEnglish() {
       <ul>
         <li>your Google account <strong>identifier, email address, name and profile picture URL</strong>; the identifier verifies the account on reauthorization;</li>
         <li>
-          the <strong>single data file</strong> that Wealthline creates in your Google Drive (<code>My Drive / {FOLDER_NAME} / {DATA_FILE_NAME}</code>),
-          which holds the accounts, balances, holdings, exchange rates, daily snapshots, historical quantities, holding periods, edit logs, and liabilities including names, amounts, currencies, interest rates and repayment schedules that you enter;
+          the <strong>data files</strong> that Wealthline creates in your Google Drive: the main data file (<code>My Drive / {FOLDER_NAME} / {DATA_FILE_NAME}</code>), plus
+          part files in its <code>{LEDGER_FOLDER_NAME}</code> subfolder (card expenses and bank transactions, one file per calendar quarter) and its <code>{HISTORY_FOLDER_NAME}</code> subfolder
+          (snapshots and edit logs of earlier years, one file per year). Together they hold the accounts, balances, holdings, exchange rates, daily snapshots, historical quantities, holding periods, edit logs, and liabilities including names, amounts, currencies, interest rates and repayment schedules that you enter;
         </li>
         <li>a short-lived <strong>OAuth access token</strong> (about one hour) used to call the Google Drive API on your behalf.</li>
       </ul>
@@ -303,7 +312,7 @@ function PrivacyEnglish() {
       <p>Google user data is used only to provide the features you see in the app:</p>
       <ul>
         <li>your email, name and picture are shown in the account menu so you know which account is signed in, and your email lets you sign in again with one click;</li>
-        <li>the Drive file is read to calculate assets, debts, net worth, allocation, historical values, categorized bank/card income and consumption, and repayment estimates. It is updated when you save changes or historical edits, and may also be updated automatically to record the day’s first snapshot when you open an existing account.</li>
+        <li>the Drive files are read to calculate assets, debts, net worth, allocation, historical values, categorized bank/card income and consumption, and repayment estimates. Opening the app reads only the main file; part files are read when you open a page that needs them. The files are updated when you save changes or historical edits, and the main file may also be updated automatically to record the day’s first snapshot when you open an existing account.</li>
       </ul>
       <p>
         Wealthline does not use Google user data for advertising, does not sell it, does not use it for credit or lending decisions, does not build user
@@ -313,7 +322,7 @@ function PrivacyEnglish() {
 
       <h3>3. How we share, transfer or disclose Google user data</h3>
       <p>
-        <strong>We do not sell Google user data or send your Google profile, access token or complete Drive file to market-data services.</strong> Your browser communicates directly with Google for sign-in and Drive storage. To look up market prices, the browser sends only ticker or currency-pair symbols (for example 2330.TW or USDTWD=X), plus a start date for past prices, to the
+        <strong>We do not sell Google user data or send your Google profile, access token or Drive files to market-data services.</strong> Your browser communicates directly with Google for sign-in and Drive storage. To look up market prices, the browser sends only ticker or currency-pair symbols (for example 2330.TW or USDTWD=X), plus a start date for past prices, to the
         app's own quote relay on Cloudflare Workers, which asks Yahoo Finance, and only currency or coin codes to ExchangeRate-API and CoinGecko. Ticker symbols may be read from your saved Drive holdings. Market requests exclude balances, quantities, account names, Google profile data and access tokens. The relay code keeps no log of requests. To avoid repeating identical lookups, it does keep each successful public market-price answer, together with its ticker symbol (and the start date for past prices), in Cloudflare's edge cache for about 3 minutes for quotes and about 6 hours for past prices; these cache entries are not linked to your identity, account or any other request details, and failed lookups are not stored. These services also receive ordinary connection metadata, such as IP addresses. Cloudflare hosts the website and may log technical data such as IP addresses under its own policy.
       </p>
 
@@ -333,7 +342,7 @@ function PrivacyEnglish() {
 
       <h3>5. Data retention and deletion</h3>
       <ul>
-        <li>The relay's cached market-price answers expire on their own after the periods in section 3 and contain no personal data. The Drive data file stays in your Drive until you delete it. Sign out and close other open tabs before deleting the "{FOLDER_NAME}" folder and emptying the trash, so unsaved changes cannot recreate it. Delete any downloaded backups separately. Revoking access does not delete the file; Google’s backup and retention rules apply to its copies.</li>
+        <li>The relay's cached market-price answers expire on their own after the periods in section 3 and contain no personal data. The Drive data files stay in your Drive until you delete them. Sign out and close other open tabs before deleting the "{FOLDER_NAME}" folder (including its subfolders) and emptying the trash, so unsaved changes cannot recreate it. Delete any downloaded backups separately. Revoking access does not delete the files; Google’s backup and retention rules apply to their copies.</li>
         <li>
           The account hint stays in your browser until you sign out. Signing out immediately clears local sign-in information and attempts to revoke
           the token with Google. If that request fails, you can revoke access in your Google account. Clearing browser site data also removes the hint.
@@ -363,7 +372,8 @@ function PrivacyEnglish() {
         </li>
         <li>
           “Download data file” saves a JSON file to a location you choose on your device. “Upload data file” reads the file you pick inside the browser and
-          replaces the data stored there; the file is not sent anywhere.
+          replaces the data stored there; the file is not sent anywhere. The main data file in Google Drive does not hold the transactions or earlier history, so
+          it cannot be uploaded; use “Download full backup” in the account menu after signing in instead.
         </li>
         <li>
           The data stays until you choose “Delete the data in this browser” from the menu or clear the browser's site data. “Leave local mode” keeps the data
@@ -394,6 +404,11 @@ function PrivacyEnglish() {
         When this policy changes, we update the "Last updated" date above, and every change is visible in the public GitHub history. If a change affects how
         Wealthline accesses, uses, stores or shares Google user data, signed-in users see a notice inside the app that links to the updated policy, and we
         will ask for your consent again before using Google user data in a new way.
+      </p>
+      <p>
+        October 12, 2026: the data in Google Drive moved from a single data file to a main data file plus part files, kept in the "{LEDGER_FOLDER_NAME}" and
+        "{HISTORY_FOLDER_NAME}" subfolders of the "{FOLDER_NAME}" folder (see sections 1 and 2). The kinds of data accessed, their use and the drive.file scope
+        are unchanged. Local mode now keeps its data in the browser's IndexedDB (see section 6). The account menu offers “Download full backup”.
       </p>
 
       <h3>11. Contact</h3>

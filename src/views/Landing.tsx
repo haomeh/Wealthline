@@ -2,7 +2,7 @@
 
 import type { ReactNode } from 'react'
 import type { UserProfile } from '../google/auth'
-import { DATA_FILE_NAME, FOLDER_NAME } from '../google/drive'
+import { DATA_FILE_NAME, FOLDER_NAME, HISTORY_FOLDER_NAME, LEDGER_FOLDER_NAME } from '../google/drive'
 import { LICENSE_ZH_URL, PAGES, REPO_URL, SUPPORT_URL } from '../site'
 import { UploadButton } from './LocalData'
 import { GitHubMark, Link, Logo, SiteFooter } from './Site'
@@ -141,7 +141,7 @@ export function Landing({ returning, hasLocal, busy, message, onSignIn, onResume
             <h2>資料只放在你看得到的地方</h2>
             <ul className="checks">
               <li>Google Drive 僅要求 drive.file 權限，看不到你雲端硬碟中的其他檔案。</li>
-              <li>資料是一個普通的 JSON 檔，可以隨時下載、備份或刪除。</li>
+              <li>資料是普通的 JSON 檔：一個主資料檔，消費明細與往年歷史另存在子資料夾，可以隨時下載完整備份或刪除。</li>
               <li>不想登入也可以：資料只存在這個瀏覽器的儲存空間，下載成檔案後可以再上傳還原。</li>
               <li>不使用分析工具、廣告或追蹤 Cookie。</li>
               <li>隨時可以在 Google 帳戶設定中撤銷授權。</li>
@@ -169,6 +169,14 @@ export function Landing({ returning, hasLocal, busy, message, onSignIn, onResume
               </span>
               {DATA_FILE_NAME}
             </div>
+            {[LEDGER_FOLDER_NAME, HISTORY_FOLDER_NAME].map((name) => (
+              <div className="drive-row indent-2" key={name}>
+                <span className="folder" aria-hidden>
+                  ▸
+                </span>
+                {name}
+              </div>
+            ))}
           </div>
         </section>
 

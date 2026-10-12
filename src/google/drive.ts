@@ -1,5 +1,6 @@
-// Reads and writes the app's data as one JSON file in the user's own Google Drive.
-// The file lives in a visible "We Wealth" folder so the user can see, download or delete it.
+// Reads and writes the app's data files in the user's own Google Drive: the main data file in
+// a visible "We Wealth" folder, and the part files (dataParts.ts) in its "明細" and "歷史"
+// subfolders, so the user can see, download or delete them.
 
 import type { AccessToken } from './auth'
 import { assertWritable, serializeData } from '../storageLimits'
@@ -16,6 +17,11 @@ export class DriveConflictError extends Error {
     this.name = 'DriveConflictError'
   }
 }
+
+// A refused save that had already written some part files and could not put them all back.
+export const PARTLY_SAVED = 'Google Drive 資料已由其他裝置更新，已停止儲存，但部分修改可能已寫入 Drive 的分檔。本機未儲存修改仍保留；請先下載本機備份，再重新載入並比對合併。'
+// A part read after the main file was changed by another device.
+export const RELOAD_NEEDED = 'Google Drive 中的資料已由其他裝置更新，這一頁的資料無法和目前開啟的版本合併。請重新載入頁面；Drive 中的檔案不需要修改。'
 
 export interface DriveVersion {
   fileId: string
@@ -44,12 +50,19 @@ async function readVersion(token: AccessToken, fileId: string): Promise<DriveVer
   return { ...version, headRevisionId: raw.headRevisionId }
 }
 
+// Throws DriveConflictError (with `message`) when the file is no longer at `version`.
+export async function assertCurrent(token: AccessToken, version: DriveVersion, message?: string): Promise<void> {
+  if ((await readVersion(token, version.fileId)).etag !== version.etag) throw new DriveConflictError(message)
+}
+
 export const FOLDER_NAME = 'We Wealth'
 export const DATA_FILE_NAME = 'we-wealth-data.json'
 // Tags the app's own files so a search finds them even if the user renames them.
 const APP_PROP = { key: 'weWealth', folder: 'folder', data: 'data', part: 'part' }
 // Part files (dataParts.ts) sit in subfolders of the app folder.
-const PART_FOLDERS = { ledger: { role: 'ledger-folder', name: '明細' }, history: { role: 'history-folder', name: '歷史' } }
+export const LEDGER_FOLDER_NAME = '明細'
+export const HISTORY_FOLDER_NAME = '歷史'
+const PART_FOLDERS = { ledger: { role: 'ledger-folder', name: LEDGER_FOLDER_NAME }, history: { role: 'history-folder', name: HISTORY_FOLDER_NAME } }
 
 async function driveFetch(token: AccessToken, url: string, init: RequestInit = {}): Promise<Response> {
   const res = await fetch(url, {
