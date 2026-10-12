@@ -2741,7 +2741,6 @@ dialog.expense-rule-dialog { max-width: 440px; }
 .bank-preview-category > span { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .bank-preview-category svg { flex: none; width: 14px; height: 14px; }
 .bank-summary-pending { background: var(--warn-wash); color: var(--ink); border-radius: 5px; padding: 1px 6px; }
-.bank-summary-confirmed { color: var(--good); }
 .bank-preview-amount { display: grid; justify-items: end; text-align: right; gap: 2px; max-width: 135px; }
 .bank-preview-amount strong { font-size: 1rem; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .bank-row-details > summary { display: flex; align-items: center; justify-content: flex-end; gap: 7px; min-height: 44px; cursor: pointer; list-style: none; font-size: .82rem; color: var(--accent); }

@@ -10,7 +10,7 @@ import { ActionIcon } from './ActionIcon'
 import { fmt } from '../format'
 import { BANK_SUMMARY_PENDING, BANK_TEXT_NOTICE, classificationLabel, summarizeBankWarnings } from './bankUiHelpers'
 
-type PreviewRow={draft:BankTransaction;original:BankTransactionRow;provenance:BankRowProvenance;selected:boolean;manual?:boolean;narration?:{leading:string[];trailing:string[]};confirmed?:boolean}
+type PreviewRow={draft:BankTransaction;original:BankTransactionRow;provenance:BankRowProvenance;selected:boolean;manual?:boolean;narration?:{leading:string[];trailing:string[]}}
 type PreviewSection={id:string;bank:string;currency:string;hash:string;rows:PreviewRow[];accountId:string;newId:string;label:string;noTransactions:boolean;partial:boolean;warnings:ReturnType<typeof summarizeBankWarnings>}
 type Review={accounts:BankTransactionAccount[];rows:BankTransaction[];context:BankTransaction[]}
 export function BankStatementImport({accounts,existing,rules,passwords,passwordScope,busy,onCancel,onImport,onManagePasswords,onAddRule}: {accounts:BankTransactionAccount[];existing:BankTransaction[];rules:BankCategoryRule[];passwords:StatementPassword[];passwordScope?:string;busy:boolean;onCancel:()=>void;onManagePasswords:()=>void;onAddRule:(row:BankTransaction)=>void;onImport:(review:Review,keep:boolean)=>void}) {
@@ -20,7 +20,7 @@ export function BankStatementImport({accounts,existing,rules,passwords,passwordS
  useEffect(()=>()=>controller.current?.abort(),[])
  const locked=busy||parsing
  function patch(id:string,change:Partial<PreviewSection>){setError('');setSections(list=>list.map(s=>s.id===id?{...s,...change}:s));setReview(null);setKeep(false)}
- function patchRow(id:string,index:number,draft:BankTransaction){setError('');setSections(list=>list.map(s=>s.id===id?{...s,rows:s.rows.map((r,i)=>i===index?{...r,draft,confirmed:r.confirmed&&draft.description===r.draft.description}:r)}:s));setReview(null);setKeep(false)}
+ function patchRow(id:string,index:number,draft:BankTransaction){setError('');setSections(list=>list.map(s=>s.id===id?{...s,rows:s.rows.map((r,i)=>i===index?{...r,draft}:r)}:s));setReview(null);setKeep(false)}
  async function parse(e:FormEvent){e.preventDefault();if(locked||!files.length)return;if(sections.length && !confirm('重新解析會捨棄目前預覽、手動補登、帳戶映射及選取狀態。確定捨棄並重新解析？'))return;controller.current?.abort();const abort=new AbortController();controller.current=abort;setParsing(true);setError('');setReview(null);const secret=password;setPassword('');const outcomes:string[]=[],next:PreviewSection[]=[]
  let stage:BankImportStage='setup'
  try{
@@ -63,8 +63,8 @@ export function BankStatementImport({accounts,existing,rules,passwords,passwordS
  async function prepare(){if(locked)return;const abort=new AbortController();controller.current=abort;setParsing(true);setError('');setKeep(false)
  try{
  const additions:BankTransactionAccount[]=[],rows:BankTransaction[]=[],context:BankTransaction[]=[]
- // Conservative: a selected row with unowned narration needs a non-empty, explicitly confirmed summary.
- if(sections.some(s=>s.rows.some(r=>r.selected&&r.narration&&(!r.confirmed||!protectBankText(r.draft.description)))))throw new Error('narration')
+ // Selection accepts the current summary; optional narration stays preview-only.
+ if(sections.some(s=>s.rows.some(r=>r.selected&&!protectBankText(r.draft.description))))throw new Error('summary')
  for(const s of sections){if(!s.rows.some(r=>r.selected))continue
  if(!s.accountId)throw new Error('mapping')
  const accountId=s.accountId==='new'?s.newId:s.accountId
@@ -82,13 +82,14 @@ export function BankStatementImport({accounts,existing,rules,passwords,passwordS
  const current=latest.current
  const validated=validateBankLedger([...current.accounts,...additions],[...current.existing,...rows],rules)
  if(!abort.signal.aborted)setReview({accounts:validated.accounts,rows,context})
- }catch(e){if(!abort.signal.aborted)setError(e instanceof Error&&e.message==='narration'?'已選交易的摘要歸屬尚未確認：請逐筆核對候選敘述、填寫摘要並勾選確認，或取消勾選該筆。未修改任何資料。':'請明確選擇每個已選區段的獨立帳戶，並檢查標籤及所有交易欄位。未修改任何資料。')}finally{if(!abort.signal.aborted)setParsing(false)}
+ }catch(e){if(!abort.signal.aborted)setError(e instanceof Error&&e.message==='summary'?'請填寫已選交易的摘要，或取消勾選該筆。未修改任何資料。':'請明確選擇每個已選區段的獨立帳戶，並檢查標籤及所有交易欄位。未修改任何資料。')}finally{if(!abort.signal.aborted)setParsing(false)}
  }
  let result:ReturnType<typeof mergeBankTransactions>|undefined
  let reviewError=''
  if(review)try{result=mergeBankTransactions(existing,review.rows,review.accounts,review.context,{keepSuspectedDuplicates:keep})}catch{reviewError='無法核對重複，請檢查已選交易與帳戶，或重新檢查映射。未修改任何資料。'}
  const previewCount=sections.reduce((n,s)=>n+s.rows.length,0)
  const selectedCount=sections.reduce((n,s)=>n+s.rows.filter(r=>r.selected).length,0)
+ const narrationCount=sections.reduce((n,s)=>n+s.rows.filter(r=>r.selected&&r.narration).length,0)
  return <section className="panel bank-import">
   <div className="panel-head"><h2>匯入銀行帳單</h2><button onClick={()=>{controller.current?.abort();onCancel()}}>取消匯入</button></div>
   <p className="bank-import-intro muted">PDF 在本機解析，不上傳原始文件。核對並匯入後，請按「儲存變更」。</p>
@@ -127,22 +128,21 @@ export function BankStatementImport({accounts,existing,rules,passwords,passwordS
     <div className="bank-preview-overview">
      <label className="bank-preview-select"><input aria-label={`區段 ${index+1} 選取 ${i+1}`} type="checkbox" disabled={locked} checked={r.selected} onChange={e=>patch(s.id,{rows:s.rows.map((v,j)=>j===i?{...v,selected:e.target.checked}:v)})}/><span className="muted small">{i+1}</span></label>
      <div className="bank-preview-copy"><time className="muted small">{r.draft.date||'日期待填'}</time><strong>{protectBankText(r.draft.description)||'摘要待填'}</strong>
-      <div className="bank-preview-tags"><button type="button" className="bank-preview-category" disabled={locked} title="編輯匹配規則／新增規則" aria-label={`區段 ${index+1} 交易 ${i+1} 分類規則`} onClick={()=>onAddRule(r.draft)}><span>{category==='待確認'?'未分類':category}</span><ActionIcon name={bankCategoryRuleIndex(r.draft,rules)>=0?'edit':'add'}/></button>{r.narration && <span className={r.confirmed?'bank-summary-confirmed':'bank-summary-pending'}>{r.confirmed?'摘要已核對':'摘要待確認'}</span>}</div>
+      <div className="bank-preview-tags"><button type="button" className="bank-preview-category" disabled={locked} title="編輯匹配規則／新增規則" aria-label={`區段 ${index+1} 交易 ${i+1} 分類規則`} onClick={()=>onAddRule(r.draft)}><span>{category==='待確認'?'未分類':category}</span><ActionIcon name={bankCategoryRuleIndex(r.draft,rules)>=0?'edit':'add'}/></button>{r.narration && <span className="bank-summary-pending">補充敘述</span>}</div>
      </div>
      <div className="bank-preview-amount"><span className="muted small">{r.draft.direction==='debit'?'支出':'入帳'}</span><strong>{fmt(r.draft.amount)}</strong><span className="muted small">{r.draft.currency}</span></div>
     </div>
     <details className="bank-row-details" open={r.manual||undefined}>
-     <summary aria-label={`區段 ${index+1} 交易 ${i+1} 編輯與核對`}><span className="bank-row-expand">{r.narration&&!r.confirmed?'核對與編輯':'編輯交易'}</span><span className="bank-row-collapse">收合</span><ActionIcon name="edit"/></summary>
+     <summary aria-label={`區段 ${index+1} 交易 ${i+1} 編輯與核對`}><span className="bank-row-expand">編輯交易</span><span className="bank-row-collapse">收合</span><ActionIcon name="edit"/></summary>
      <div className="bank-row-editor">
       <BankRowFields prefix={`區段 ${index+1} 交易 ${i+1} `} row={r.draft} onChange={draft=>patchRow(s.id,i,draft)} disabled={locked} rules={rules}/>
       {r.narration && <div className="bank-review-flag bank-narration" role="group" aria-label={`區段 ${index+1} 交易 ${i+1} 摘要歸屬`}>
-       <p><strong>{r.confirmed?'摘要已核對':'摘要待確認'}</strong>：請對照原帳單，只加入屬於本筆的敘述，再勾選確認。</p>
-       <details className="bank-help"><summary>為什麼需要核對？</summary><p>這些敘述緊鄰本筆，無法判定屬於本筆或相鄰交易；未自動併入摘要，也不用於自動分類。未確認的已選交易不能匯入。</p></details>
+       <p><strong>補充敘述</strong>：可對照原帳單，將屬於本筆的內容加入摘要。</p>
+       <details className="bank-help"><summary>為什麼沒有自動加入？</summary><p>這些敘述緊鄰本筆，可能屬於本筆或相鄰交易，因此不自動併入摘要，也不用於自動分類。匯入時會使用目前的摘要。</p></details>
        <ul>{[...r.narration.leading.map(text=>({text,lead:true})),...r.narration.trailing.map(text=>({text,lead:false}))].map((c,k)=><li key={k}>
         <div><span className="muted small">{c.lead?'本筆之前':'本筆之後'}</span><span className="bank-candidate-text">{c.text}</span></div>
         <button type="button" disabled={locked} title="加入本筆摘要" aria-label={`區段 ${index+1} 交易 ${i+1} 加入候選 ${k+1}`} onClick={()=>patchRow(s.id,i,{...r.draft,description:(c.lead?`${c.text} ${r.draft.description}`:`${r.draft.description} ${c.text}`).trim()})}><ActionIcon name="add"/><span>加入</span></button>
        </li>)}</ul>
-       <label className="bank-summary-check"><input type="checkbox" aria-label={`區段 ${index+1} 交易 ${i+1} 確認摘要`} disabled={locked} checked={!!r.confirmed} onChange={e=>patch(s.id,{rows:s.rows.map((v,j)=>j===i?{...v,confirmed:e.target.checked}:v)})}/><span>已核對原帳單，確認本筆摘要</span></label>
       </div>}
      </div>
     </details>
@@ -155,6 +155,6 @@ export function BankStatementImport({accounts,existing,rules,passwords,passwordS
    <button disabled={locked} onClick={()=>{const draft:BankTransaction={id:crypto.randomUUID(),accountId:'',date:'',description:'',currency:'TWD',direction:'debit',amount:0};setSections(list=>[...list,{id:crypto.randomUUID(),bank:'手動輸入',currency:'TWD',hash:'0'.repeat(64),accountId:'',newId:crypto.randomUUID(),label:'',noTransactions:false,partial:true,warnings:[],rows:[{draft,original:draft,provenance:{page:1,sectionKey:'manual',rowKey:'manual'},selected:true,manual:true}]}]);setReview(null)}}>手動補登區段</button>
    {!!sections.length && <button className="primary" disabled={locked} onClick={()=>void prepare()}>檢查映射與重複</button>}
   </div>
-  {review && result && <section className="notice bank-import-review" aria-label="銀行重複核對"><p>可新增 {result.added} 筆 · 略過 {result.duplicates} 筆 · 疑似重複 {result.suspectedDuplicates} 筆。跨帳單同值交易沒有銀行 reference 時無法保證準確。</p>{result.suspectedDuplicateRows.length>0 && <><ul>{result.suspectedDuplicateRows.map(r=><li key={r.id}>{r.date} · {r.description} · {r.direction} · {r.currency} {r.amount}</li>)}</ul><label className="bank-summary-check"><input type="checkbox" aria-label="保留疑似重複" disabled={locked} checked={keep} onChange={e=>setKeep(e.target.checked)}/><span>我已核對，保留疑似重複（相同文件位置仍略過）</span></label></>}<button disabled={locked||!result.added} className="primary" onClick={()=>{if(latest.current.busy)return;try{onImport(review,keep)}catch{setError('確認失敗，資料可能已變更；請重新核對。未新增孤兒帳戶。')}}}>確認銀行匯入</button></section>}
+  {review && result && <section className="notice bank-import-review" aria-label="銀行重複核對"><p>可新增 {result.added} 筆 · 略過 {result.duplicates} 筆 · 疑似重複 {result.suspectedDuplicates} 筆。跨帳單同值交易沒有銀行 reference 時無法保證準確。</p>{narrationCount>0 && <p>{narrationCount} 筆有補充敘述；確認匯入會使用目前摘要，可返回預覽修改。</p>}{result.suspectedDuplicateRows.length>0 && <><ul>{result.suspectedDuplicateRows.map(r=><li key={r.id}>{r.date} · {r.description} · {r.direction} · {r.currency} {r.amount}</li>)}</ul><label className="bank-summary-check"><input type="checkbox" aria-label="保留疑似重複" disabled={locked} checked={keep} onChange={e=>setKeep(e.target.checked)}/><span>我已核對，保留疑似重複（相同文件位置仍略過）</span></label></>}<button disabled={locked||!result.added} className="primary" onClick={()=>{if(latest.current.busy)return;try{onImport(review,keep)}catch{setError('確認失敗，資料可能已變更；請重新核對。未新增孤兒帳戶。')}}}>確認銀行匯入</button></section>}
  </section>
 }

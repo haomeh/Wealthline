@@ -92,23 +92,21 @@ test('equal warning codes aggregate into one actionable Chinese line and a non-p
  const ui=await server.ssrLoadModule('/src/views/bankUiHelpers.ts');for(const code of ['ambiguous-trailing-narration','invalid-description','activity-below-table-boundary','ambiguous-transaction'])assert.match(ui.bankWarningText(code),/[\u3400-\u9fff]{6}/,code);assert.match(ui.bankWarningText('synthetic-future-code'),/synthetic-future-code/)
  pdf.reset([parsed()]);globalThis.confirm=()=>true;await files();await submitImport();await settle(()=>!box('區段 1 解析警告'));assert.equal(box('區段 1 解析警告'),null)
 })
-test('ambiguous narration needs explicit per-row summary confirmation; unchecked rows do not block and candidates are never merged automatically',async()=>{
+test('one import selection accepts the current summary; empty selected summaries block and candidates stay optional',async()=>{
  pdf.reset([parsed(flagged()),parsed(flagged())]);const latest=await render({...empty,bankTransactionAccounts:[account]});await click('匯入銀行帳單');await files();await submitImport();await input('區段 1 帳戶','ledger');
- const rows=()=>[...document.querySelectorAll('.bank-preview-row')];assert.equal(rows().length,2);for(const r of rows()){assert.match(r.textContent,/摘要待確認/);assert.match(r.textContent,/Second payment line/)}
+ const rows=()=>[...document.querySelectorAll('.bank-preview-row')];assert.equal(rows().length,2);for(const r of rows()){assert.equal(r.querySelectorAll('input[type="checkbox"]').length,1);assert.match(r.textContent,/補充敘述/);assert.match(r.textContent,/Second payment line/)}
  assert.equal(box('區段 1 交易 2 摘要').value,'');assert.equal(box('區段 1 交易 1 摘要').value,'帳號 [帳號已遮蔽] Example transfer');
- const blocked=async()=>{await click('檢查映射與重複');assert.match(document.querySelector('[role="alert"]').textContent,/摘要歸屬/);assert.equal(box('銀行重複核對'),null)}
+ const blocked=async()=>{await click('檢查映射與重複');assert.match(document.querySelector('[role="alert"]').textContent,/請填寫已選交易的摘要/);assert.ok(!box('銀行重複核對'));assert.equal(latest().bankTransactions.length,0)}
  await blocked();
- // Unchecked ambiguous row (even with an empty summary) stops blocking once the selected row is confirmed.
- await act(()=>box('區段 1 選取 2').click());await blocked();await act(()=>box('區段 1 交易 1 確認摘要').click());await click('檢查映射與重複');assert.match(box('銀行重複核對').textContent,/可新增 1 筆/);
- // Cancelling the confirmation blocks again.
- await act(()=>box('區段 1 交易 1 確認摘要').click());await blocked();await act(()=>box('區段 1 交易 1 確認摘要').click());
- // Selected again: ownership is assigned only by the user, then confirmed.
- await act(()=>box('區段 1 選取 2').click());await blocked();await act(()=>box('區段 1 交易 2 加入候選 1').click());assert.equal(box('區段 1 交易 2 摘要').value,'Second payment line');assert.equal(box('區段 1 交易 1 摘要').value,'帳號 [帳號已遮蔽] Example transfer');await blocked();
- await act(()=>box('區段 1 交易 2 確認摘要').click());await typeText('區段 1 交易 2 摘要','Second payment');assert.equal(box('區段 1 交易 2 確認摘要').checked,false);await blocked();
- await act(()=>box('區段 1 交易 2 確認摘要').click());await click('檢查映射與重複');assert.match(box('銀行重複核對').textContent,/可新增 2 筆/);await click('確認銀行匯入');
+ // Unchecked empty summaries do not block the selected row's current summary.
+ await act(()=>box('區段 1 選取 2').click());await click('檢查映射與重複');assert.match(box('銀行重複核對').textContent,/可新增 1 筆/);assert.equal(latest().bankTransactions.length,0);
+ // Optional candidates are assigned only by the user; selection/editing invalidates the prepared review.
+ await act(()=>box('區段 1 選取 2').click());assert.ok(!box('銀行重複核對'));await blocked();await act(()=>box('區段 1 交易 2 加入候選 1').click());assert.equal(box('區段 1 交易 2 摘要').value,'Second payment line');assert.equal(box('區段 1 交易 1 摘要').value,'帳號 [帳號已遮蔽] Example transfer');
+ await click('檢查映射與重複');assert.match(box('銀行重複核對').textContent,/可新增 2 筆/);await typeText('區段 1 交易 2 摘要','Second payment');assert.ok(!box('銀行重複核對'));assert.equal(latest().bankTransactions.length,0);
+ await click('檢查映射與重複');assert.match(box('銀行重複核對').textContent,/可新增 2 筆/);await click('確認銀行匯入');
  assert.deepEqual(latest().bankTransactions.map(r=>r.description),['帳號 [帳號已遮蔽] Example transfer','Second payment']);assert.equal(latest().bankTransactions.every(r=>r.classification===undefined),true);assert.equal(JSON.stringify(latest()).includes('Narration'),false);assert.deepEqual(Object.keys(latest().bankTransactions[1]).sort(),['accountId','amount','currency','date','description','direction','id','importKey','sourceKey']);assert.equal(latest().version,13)
- // Same file again with a different confirmed summary: parser-original identity still skips both rows.
- await click('匯入銀行帳單');await files();await submitImport();await input('區段 1 帳戶','ledger');await typeText('區段 1 交易 2 摘要','Other wording');await act(()=>box('區段 1 交易 1 確認摘要').click());await act(()=>box('區段 1 交易 2 確認摘要').click());await click('檢查映射與重複');assert.match(box('銀行重複核對').textContent,/可新增 0 筆 · 略過 2 筆 · 疑似重複 0/);assert.equal(latest().bankTransactions.length,2)
+ // Reimporting the same file with a different summary still skips both original document positions.
+ await click('匯入銀行帳單');await files();await submitImport();await input('區段 1 帳戶','ledger');await typeText('區段 1 交易 2 摘要','Other wording');await click('檢查映射與重複');assert.match(box('銀行重複核對').textContent,/可新增 0 筆 · 略過 2 筆 · 疑似重複 0/);assert.equal(latest().bankTransactions.length,2)
 })
 test('manual A/C account context is raw while typing and masked at commit',async()=>{const latest=await render();await typeText('帳戶標籤','A/C 123456789');await typeText('銀行名稱','Synthetic');await click('新增流水帳戶');assert.equal(latest().bankTransactionAccounts[0].label,'A/C [帳號已遮蔽]');assert.equal(JSON.stringify(latest()).includes('123456789'),false)})
 
@@ -211,7 +209,7 @@ for(const manual of ['', 'synthetic-manual-fallback'])test(`unexpected vault rej
  const report=document.querySelector('[aria-label="銀行解析結果"]')?.textContent??'';assert.match(report,/BANK-PASSWORDS/);assert.ok(!report.includes('SECRET'));assert.match(report,/有效 1 筆/);assert.deepEqual(pdf.calls[0].password,manual?[manual]:[]);assert.equal(document.querySelectorAll('.bank-preview-row').length,1);assert.equal(document.querySelector('[aria-label="銀行 PDF 密碼"]').value,'');assert.equal(latest().bankTransactions.length,0);
 })
 
-// Compact previews keep edits and explicit narration confirmation across disclosure toggles.
+// Compact previews keep edits and a single import selection across disclosure toggles.
 test('collapsed bank preview retains edited values and selection when reopened',async()=>{
  pdf.reset([parsed()]);const latest=await render();await click('匯入銀行帳單');await files();await submitImport();
  const row=document.querySelector('.bank-preview-row'),details=row.querySelector('details.bank-row-details');assert.ok(details);assert.equal(details.open,false);
@@ -220,12 +218,11 @@ test('collapsed bank preview retains edited values and selection when reopened',
  await act(()=>summary.click());assert.equal(details.open,false);assert.match(row.querySelector('.bank-preview-overview').textContent,/Changed transfer/);assert.match(row.querySelector('.bank-preview-overview').textContent,/42/);
  await act(()=>summary.click());assert.equal(details.open,true);assert.equal(box('區段 1 交易 1 摘要').value,'Changed transfer');assert.equal(box('區段 1 交易 1 金額').value,'42');assert.equal(box('區段 1 選取 1').checked,false);assert.equal(latest().bankTransactions.length,0);
 })
-test('collapsed narration preview exposes pending state and still requires confirmation',async()=>{
+test('collapsed narration preview imports a selected current summary without a second checkbox',async()=>{
  pdf.reset([parsed(flagged())]);const latest=await render({...empty,bankTransactionAccounts:[account]});await click('匯入銀行帳單');await files();await submitImport();await input('區段 1 帳戶','ledger');
- const row=document.querySelector('.bank-preview-row'),details=row.querySelector('details.bank-row-details');assert.ok(details);assert.equal(details.open,false);assert.match(row.querySelector('.bank-preview-overview').textContent,/摘要待確認/);
- await act(()=>box('區段 1 選取 2').click());await click('檢查映射與重複');assert.match(document.querySelector('[role="alert"]').textContent,/摘要歸屬/);assert.equal(box('銀行重複核對'),null);
- await act(()=>details.querySelector('summary').click());await act(()=>box('區段 1 交易 1 確認摘要').click());await act(()=>details.querySelector('summary').click());assert.equal(details.open,false);assert.match(row.querySelector('.bank-preview-overview').textContent,/摘要已核對/);
- await click('檢查映射與重複');assert.match(box('銀行重複核對').textContent,/可新增 1 筆/);assert.equal(latest().bankTransactions.length,0);
+ const row=document.querySelector('.bank-preview-row'),details=row.querySelector('details.bank-row-details');assert.ok(details);assert.equal(details.open,false);assert.equal(box('區段 1 選取 1').checked,true);assert.match(row.querySelector('.bank-preview-overview').textContent,/補充敘述/);assert.ok(!box('區段 1 交易 1 確認摘要'));assert.ok(!row.textContent.includes('摘要已核對'));
+ await act(()=>box('區段 1 選取 2').click());await click('檢查映射與重複');assert.ok(!document.querySelector('[role="alert"]'));assert.equal(details.open,false);assert.match(box('銀行重複核對').textContent,/可新增 1 筆/);assert.match(box('銀行重複核對').textContent,/目前摘要/);assert.equal(latest().bankTransactions.length,0);
+ await click('確認銀行匯入');assert.equal(latest().bankTransactions.length,1);assert.equal(latest().bankTransactions[0].description,'帳號 [帳號已遮蔽] Example transfer');assert.equal(latest().bankTransactions[0].classification,undefined);
 })
 
 

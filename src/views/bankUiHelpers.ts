@@ -13,7 +13,7 @@ export const BANK_SUMMARY_PENDING = '[摘要待確認]'
 type WarningKind = 'summary'|'amount'|'scope'
 // summary: imported rows may have incomplete summaries. amount: an amount-bearing line was NOT imported.
 const BANK_WARNINGS: Record<string,[WarningKind,string]> = {
- 'ambiguous-trailing-narration':['summary','摘要可能不完整：有敘述行無法判定屬於前一筆或後一筆交易，未併入任何摘要；已列為相鄰交易的候選內容，請逐筆核對並確認摘要'],
+ 'ambiguous-trailing-narration':['summary','摘要可能不完整：有敘述行無法判定屬於前一筆或後一筆交易，未併入任何摘要；已列為相鄰交易的候選內容，請逐筆核對，可依需要補充摘要'],
  'invalid-description':['amount','有金額的交易列沒有可用摘要（空白或超過長度），該列未匯入；請對照原帳單手動補登'],
  'activity-below-table-boundary':['amount','表格下方頁尾區域出現疑似交易的金額列，該列未匯入；請對照原帳單，確有交易時手動補登'],
  'ambiguous-transaction':['amount','有金額的交易列無法唯一判定日期、幣別、帳戶或入出帳欄位，該列未匯入；請對照原帳單手動補登'],
