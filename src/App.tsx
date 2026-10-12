@@ -12,7 +12,8 @@ import {
   type AccessToken,
   type UserProfile,
 } from './google/auth'
-import { DATA_FILE_NAME, FOLDER_NAME, loadData, saveData, type DriveFile, type DriveVersion } from './google/drive'
+import { DATA_FILE_NAME, FOLDER_NAME } from './google/drive'
+import { emptyDriveState, loadDrive, saveDrive, storedSizes, type DriveState } from './google/driveStore'
 import { applyFetchedRates, emptyData, missingRates, parseWealthData, ratesStale, usedCurrencies, type WealthData } from './model'
 import { finishSave } from './saveState'
 import { clearLocal, downloadDataFile, hasLocalData, loadLocal, opensLocal, readDataFile, replaceLocal, saveLocal, setLocalActive, storageEstimate, type LocalFile } from './localStore'
@@ -41,7 +42,8 @@ type Status = { kind: 'idle' } | { kind: 'busy'; text: string } | { kind: 'error
 
 export default function App() {
   const token = useRef<AccessToken | null>(null)
-  const driveVersion = useRef<DriveVersion | undefined>(undefined)
+  // What this session last read from or wrote to Drive (driveStore.ts).
+  const driveState = useRef<DriveState | null>(null)
   const savingRef = useRef(false)
   const [saving, setSaving] = useState(false)
   const editVersion = useRef(0)
@@ -61,6 +63,8 @@ export default function App() {
   const [data, setData] = useState<WealthData | null>(null)
   // Size of the stored data file (0: nothing stored yet), for the size limit notices.
   const [storedBytes, setStoredBytes] = useState(0)
+  // Drive: how many files the data takes and their total size.
+  const [storedTotal, setStoredTotal] = useState({ files: 0, bytes: 0 })
   // Local mode: how much of this browser's storage the site uses, when the browser says.
   const [browserStorage, setBrowserStorage] = useState<{ usage: number; quota: number } | null>(null)
   const [dirty, setDirty] = useState(false)
@@ -118,18 +122,18 @@ export default function App() {
   async function openSession(t: AccessToken) {
     setOpening({ step: 'auth' })
     let p: UserProfile
-    let file: DriveFile<WealthData> | null
+    let file: Awaited<ReturnType<typeof loadDrive>>
     try {
       p = await fetchProfile(t)
       setOpening({ step: 'drive', profile: p })
-      file = await loadData(t, parseWealthData)
+      file = await loadDrive(t, parseWealthData)
     } finally {
       setOpening(null)
     }
     token.current = t
     storeSession({ profile: p, token: t })
     setUser(p)
-    driveVersion.current = file ? { fileId: file.fileId, etag: file.etag } : undefined
+    driveState.current = file?.state ?? emptyDriveState()
     startSession(file?.data ?? null)
   }
 
@@ -148,7 +152,7 @@ export default function App() {
   function startSession(file: WealthData | null) {
     const version = ++sessionVersion.current
     saved.current = file
-    setStoredBytes(storedSize(file))
+    measureStored(file)
     measureBrowser()
     const loaded = file ?? emptyData()
     setData(loaded)
@@ -209,10 +213,10 @@ export default function App() {
     savingRef.current = true
     setSaving(true)
     try {
-      await write(next)
+      const written = await write(next)
       if (version !== sessionVersion.current) return
-      saved.current = next
-      setData((d) => d ? finishSave(d, market, next) : d)
+      saved.current = written
+      setData((d) => d ? finishSave(d, market, written) : d)
     } catch (e) {
       if (version === sessionVersion.current) setStatus({ kind: 'error', text: e instanceof Error ? e.message : String(e) })
     } finally {
@@ -221,10 +225,18 @@ export default function App() {
     }
   }
 
-  // Bytes `file` takes where it is stored: the text kept in this browser, or the Drive file.
-  function storedSize(file: WealthData | null): number {
-    if (!file) return 0
-    return byteSize(localMode.current && localRaw.current !== null ? localRaw.current : serializeData(file))
+  // How much the stored data takes: the text kept in this browser, or the Drive files
+  // (the largest one counts against the per-file limit).
+  function measureStored(file: WealthData | null) {
+    if (localMode.current || !driveState.current) {
+      const bytes = !file ? 0 : byteSize(localRaw.current ?? serializeData(file))
+      setStoredBytes(bytes)
+      setStoredTotal({ files: bytes ? 1 : 0, bytes })
+      return
+    }
+    const sizes = storedSizes(driveState.current)
+    setStoredBytes(Math.max(0, ...sizes))
+    setStoredTotal({ files: sizes.length, bytes: sizes.reduce((a, b) => a + b, 0) })
   }
 
   function measureBrowser() {
@@ -233,22 +245,25 @@ export default function App() {
     void storageEstimate().then((estimate) => { if (session === sessionVersion.current) setBrowserStorage(estimate) })
   }
 
-  // Writes the data file to Drive, or to this browser in local mode.
-  async function write(next: WealthData) {
+  // Writes the data to Drive, or to this browser in local mode. Resolves to the data as stored.
+  async function write(next: WealthData): Promise<WealthData> {
     const session = sessionVersion.current
     if (localMode.current) {
       const raw = await saveLocal(next, localRaw.current)
       if (session === sessionVersion.current) {
         localRaw.current = raw
-        setStoredBytes(byteSize(raw))
+        measureStored(next)
         measureBrowser()
       }
-      return
+      return next
     }
-    const result = await saveData(await validToken(), next, driveVersion.current)
-    if (session === sessionVersion.current) {
-      driveVersion.current = result
-      setStoredBytes(storedSize(next))
+    const state = driveState.current ?? emptyDriveState()
+    driveState.current = state
+    try {
+      return await saveDrive(await validToken(), next, state)
+    } finally {
+      // Files written before a failure are recorded in `state` too.
+      if (session === sessionVersion.current) measureStored(next)
     }
   }
 
@@ -310,7 +325,7 @@ export default function App() {
       sessionVersion.current++
       clearSession()
       token.current = null
-      driveVersion.current = undefined
+      driveState.current = null
       saved.current = null
       setReturning(null)
       setRefreshing(false)
@@ -380,10 +395,10 @@ export default function App() {
     try {
       await run(localMode.current ? '儲存到此瀏覽器…' : '儲存到 Google Drive…', async () => {
         const next = recordSave(saved.current, { ...submitted, updatedAt: new Date().toISOString() })
-        await write(next)
+        const written = await write(next)
         if (session !== sessionVersion.current) return
-        saved.current = next
-        setData((current) => current ? finishSave(current, submitted, next) : current)
+        saved.current = written
+        setData((current) => current ? finishSave(current, submitted, written) : current)
         const stillDirty = edits !== editVersion.current
         dirtyRef.current = stillDirty
         setDirty(stillDirty)
@@ -502,7 +517,7 @@ export default function App() {
                 <span className="muted small">
                   資料檔：我的雲端硬碟 / {FOLDER_NAME} / {DATA_FILE_NAME}
                 </span>
-                {storedBytes > 0 && <StorageMeter bytes={storedBytes} />}
+                {storedBytes > 0 && <StorageMeter bytes={storedBytes} total={storedTotal} />}
                 <Link to={PAGES.privacy.path} className="small">
                   隱私權政策 Privacy Policy
                 </Link>

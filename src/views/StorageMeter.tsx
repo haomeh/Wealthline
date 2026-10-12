@@ -18,8 +18,9 @@ function Bar({ share, label, text }: { share: number; label: string; text: strin
   )
 }
 
+// `bytes`: the largest stored file. `total` (Drive): how many files the data takes and their size.
 // `browser` is given in local mode only.
-export function StorageMeter({ bytes, browser }: { bytes: number; browser?: BrowserStorage }) {
+export function StorageMeter({ bytes, total, browser }: { bytes: number; total?: { files: number; bytes: number }; browser?: BrowserStorage }) {
   if (browser !== undefined) {
     return (
       <div className={`storage-meter ${browser ? browserLevel(browser) : 'ok'}`}>
@@ -33,7 +34,8 @@ export function StorageMeter({ bytes, browser }: { bytes: number; browser?: Brow
   }
   return (
     <div className={`storage-meter ${storageLevel(bytes)}`}>
-      <span className="small">資料檔大小：{formatBytes(bytes)} / 上限 {formatBytes(BLOCK_BYTES)}</span>
+      {total && total.files > 1 && <span className="small">資料共 {total.files} 個檔，合計 {formatBytes(total.bytes)}</span>}
+      <span className="small">{total && total.files > 1 ? '最大的檔' : '資料檔大小'}：{formatBytes(bytes)} / 上限 {formatBytes(BLOCK_BYTES)}</span>
       <Bar share={bytes / BLOCK_BYTES} label="資料檔大小" text={`${formatBytes(bytes)}，上限 ${formatBytes(BLOCK_BYTES)}`} />
     </div>
   )
@@ -58,8 +60,8 @@ export function StorageNotice({ bytes, browser }: { bytes: number; browser?: Bro
   return (
     <div className={`banner storage-notice ${level}`} role={level === 'block' ? 'alert' : 'status'}>
       {level === 'block'
-        ? <p>資料檔有 {size}，超過單一檔案 {limit} 的上限，無法再儲存到 Google Drive。請先下載資料備份，再刪除不需要的消費明細或銀行流水。</p>
-        : <p>資料檔已有 {size}，接近單一檔案 {limit} 的上限。主要是消費明細和銀行流水佔用空間；請定期下載資料備份。</p>}
+        ? <p>有一個資料檔已有 {size}，超過單一檔案 {limit} 的上限，無法再儲存到 Google Drive。請先下載資料備份，再刪除不需要的資料。</p>
+        : <p>有一個資料檔已有 {size}，接近單一檔案 {limit} 的上限。請定期下載資料備份。</p>}
     </div>
   )
 }

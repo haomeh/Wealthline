@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { after, before, beforeEach, afterEach, test } from 'node:test'
 import { JSDOM } from 'jsdom'
 import {statementKeyStore} from './helpers/statement-key-store.mjs'
+import { createFakeDrive } from './helpers/fake-drive.mjs'
 import { createServer } from 'vite'
 import { act, createElement, useState, useEffect } from 'react'
 
@@ -68,23 +69,23 @@ const editRate = async (currency, value) => {
   await act(async () => input.blur())
 }
 const fixture = () => ({ ...model.emptyData(), fxRates: { USD: 32, SGD: 24 }, fxUpdatedAt: new Date().toISOString() })
+// A Drive whose main-file writes wait for finish(). `uploaded` is the data that write saves:
+// the main file with its parts, which are written before it.
 const setupDrive = (data) => {
-  let resolveWrite, writes = 0, uploaded, uploadedEtag
-  globalThis.fetch = async (url, init = {}) => {
-    if (url.includes('userinfo')) return Response.json(profile)
-    if (init.method === 'PUT') {
-      writes++
-      uploaded = JSON.parse(init.body)
-      uploadedEtag = init.headers['If-Match']
-      return new Promise((resolve) => { resolveWrite = resolve })
-    }
-    if (new URL(url).searchParams.has('q')) return Response.json({ files: [{ id: 'f' }] })
-    if (new URL(url).searchParams.has('alt')) return Response.json(data)
-    return Response.json({ id: 'f', etag: '"v1"', headRevisionId: 'r1' })
-  }
+  const drive = createFakeDrive()
+  drive.seed(data)
+  let writes = 0, uploaded, uploadedEtag
+  drive.hold((file, init) => {
+    if (file.appProperties.weWealth !== 'data') return false
+    writes++
+    uploaded = drive.joined(init.body)
+    uploadedEtag = init.headers['If-Match']
+    return true
+  })
+  globalThis.fetch = async (url, init = {}) => (String(url).includes('userinfo') ? Response.json(profile) : drive.fetch(url, init))
   auth.storeSession({ token, profile })
   return {
-    finish: async (status = 200) => act(async () => resolveWrite(status === 200 ? Response.json({ id: 'f', etag: '"v2"' }) : new Response('', { status }))),
+    finish: async (status = 200) => act(async () => drive.release(status)),
     get writes() { return writes },
     get uploaded() { return uploaded },
     get uploadedEtag() { return uploadedEtag },
@@ -1013,7 +1014,7 @@ test('direct row edit saves only the selected historical quantity through the ex
  await click(button('編輯數量 2026-09-01'));assert.equal(document.querySelector('input[inputmode="decimal"]').value,'7')
  await setInput(document.querySelector('input[inputmode="decimal"]'),'11');await click(baselineConfirm());await click(button('預覽回補差異'));await click(baselineConfirm());await click(button('儲存完整回補'))
  assert.equal(drive.writes,1)
- assert.equal(drive.uploaded.version,8);assert.equal(drive.uploaded.history.quantityDays[0].entries[0].quantity,11)
+ assert.equal(drive.uploaded.version,14);assert.equal(drive.uploaded.history.quantityDays[0].entries[0].quantity,11)
  assert.deepEqual(drive.uploaded.history.quantityDays[1],data.history.quantityDays[1]);assert.equal(drive.uploaded.accounts[0].positions[0].quantity,900)
  await drive.finish();assert.ok(document.querySelector('.synced'))
  await click(button('編輯數量 2026-09-01'));assert.equal(document.querySelector('input[inputmode="decimal"]').value,'11');await click(button('取消回補'));assert.equal(drive.writes,1)
@@ -1081,11 +1082,11 @@ test('baseline saves and reloads v8 through mock Drive, then row editing preserv
  const h=await server.ssrLoadModule('/src/history.ts');data.history.snapshots=[h.snapshotOf(data,new Date().toISOString())]
  const drive=setupDrive(data)
  await render(App);assert.equal(drive.writes,0);await startBaseline();await setInput(field('合成基底帳戶 A · TWD 目的日數量'),'300');await click(baselineConfirm());await click(button('預覽回補差異'));await click(baselineConfirm());await click(button('儲存完整回補'))
- assert.equal(drive.writes,1);assert.equal(drive.uploaded.version,8)
+ assert.equal(drive.writes,1);assert.equal(drive.uploaded.version,14)
  const parsed=model.parseWealthData(JSON.parse(JSON.stringify(drive.uploaded)));assert.equal(parsed.history.quantityDays[0].inventory.source.date,'2026-10-09');assert.deepEqual(parsed.history.quantityDays[0].entries.map(e=>e.quantity),[300,2,0,3,4])
  await drive.finish();await click(button('編輯數量 2026-09-01'))
  assert.equal(button('清除數量（未知）'),undefined);await setInput(field('合成基底帳戶 A · TWD 目的日數量'),'301');await click(baselineConfirm());await click(button('預覽回補差異'));await click(baselineConfirm());await click(button('儲存完整回補'))
- assert.equal(drive.uploaded.version,8);assert.ok(drive.uploaded.history.quantityDays[0].inventory);assert.equal(drive.uploaded.history.quantityDays[0].entries[0].quantity,301);await drive.finish()
+ assert.equal(drive.uploaded.version,14);assert.ok(drive.uploaded.history.quantityDays[0].inventory);assert.equal(drive.uploaded.history.quantityDays[0].entries[0].quantity,301);await drive.finish()
 })
 
 test('baseline preview discloses destination holding-period basis and leaves later period quantities unchanged',async()=>{
@@ -1447,7 +1448,7 @@ test('expense edits use existing save flow and preserve assets; cancelled import
   await act(async()=>document.querySelector('form').dispatchEvent(new Event('submit',{bubbles:true,cancelable:true})))
   assert.match(document.querySelector('table').textContent,/120/)
   await click(button('儲存變更'))
-  assert.equal(drive.uploaded.version,10)
+  assert.equal(drive.uploaded.version,14)
   assert.equal(drive.uploaded.expenses[0].amount,120)
   assert.deepEqual(drive.uploaded.accounts,data.accounts)
   assert.equal(drive.uploaded.password,undefined)
@@ -1764,7 +1765,7 @@ test('custom rules update existing and preview categories and persist only throu
   assert.match(document.querySelector('.expense-table').textContent,/交通/)
   assert.equal(drive.writes,0)
   await click(button('儲存變更'));assert.equal(drive.writes,1)
-  assert.equal(drive.uploaded.version,11)
+  assert.equal(drive.uploaded.version,14)
   assert.deepEqual(drive.uploaded.expenseCategoryRules,[{keyword:'bus/mrt',category:'交通'}])
   assert.equal(drive.uploaded.expenses[0].category,undefined)
   await drive.finish()
@@ -1796,7 +1797,7 @@ test('saving only category rules writes v11 without requiring expense records',a
   await setInput(field('分類關鍵字'),'BUS/MRT')
   await click(button('新增規則'))
   await click(button('儲存變更'))
-  assert.equal(drive.uploaded.version,11)
+  assert.equal(drive.uploaded.version,14)
   assert.deepEqual(drive.uploaded.expenseCategoryRules,[{keyword:'BUS/MRT',category:'交通'}])
   assert.equal(drive.uploaded.expenses,undefined)
   await drive.finish()
@@ -1831,7 +1832,7 @@ test('unclassified transaction creates a rule in place and updates matching rows
   assert.equal(button('新增分類規則 2026-09-01 BUS/MRT SG'),undefined)
   assert.equal(drive.writes,0)
   await click(button('儲存變更'))
-  assert.equal(drive.uploaded.version,11)
+  assert.equal(drive.uploaded.version,14)
   assert.deepEqual(drive.uploaded.expenseCategoryRules,[{keyword:'BUS/MRT',category:'交通'}])
   assert.deepEqual(drive.uploaded.expenses,expenses)
   await drive.finish()
@@ -1887,7 +1888,7 @@ test('preview creates a rule without losing file rows, edited descriptions or se
   assert.match(document.querySelector('.expense-table').textContent,/購物/)
   assert.equal(drive.writes,0)
   await click(button('儲存變更'))
-  assert.equal(drive.uploaded.version,11)
+  assert.equal(drive.uploaded.version,14)
   assert.equal(drive.uploaded.expenses.length,1)
   assert.equal(drive.uploaded.expenses[0].amount,125)
   assert.equal(drive.uploaded.expenses[0].category,undefined)
@@ -1992,7 +1993,7 @@ test('personal password settings stay masked, auto-apply to import and save only
   assert.deepEqual(pdf.lastPasswords(),['synthetic, literal password'])
   await click(button('確認匯入 1 筆'))
   await click(button('儲存變更'))
-  assert.equal(drive.uploaded.version,12)
+  assert.equal(drive.uploaded.version,14)
   assert.equal(drive.uploaded.statementPasswords.length,1)
   assert.equal(JSON.stringify(drive.uploaded).includes('synthetic, literal password'),false)
   assert.ok(drive.uploaded.statementPasswords[0].ciphertext)
@@ -2001,7 +2002,7 @@ test('personal password settings stay masked, auto-apply to import and save only
   await click(button('移除 Synthetic card 密碼'))
   await click(button('關閉'))
   await click(button('儲存變更'))
-  assert.equal(drive.uploaded.version,12)
+  assert.equal(drive.uploaded.version,14)
   assert.deepEqual(drive.uploaded.statementPasswords,[])
   await drive.finish()
 })
@@ -2011,7 +2012,7 @@ const bankFixture = () => ({...fixture(),version:13,
   bankTransactions:[{id:'bank-row',accountId:'ledger-1',date:'2026-01-01',description:'Example',currency:'TWD',direction:'credit',amount:10,classification:{kind:'pending'}}],
   bankCategoryRules:[]})
 const assertBankPreserved = (uploaded, original) => {
-  assert.equal(uploaded.version,13)
+  assert.equal(uploaded.version,14)
   for(const key of ['bankTransactionAccounts','bankTransactions','bankCategoryRules','accounts','liabilities']) assert.deepEqual(uploaded[key],original[key])
   assert.deepEqual(uploaded.history.changes,original.history.changes)
 }
