@@ -180,3 +180,56 @@ test('undated money in a validated wrapped table below the footer boundary warns
  const closed=hsbc();closed[0].items.push(item('Closing Balance',103,640),right('7.00',482,90));assert.equal(bank.parseBankStatement(closed).status,'recognized');
  const two=hsbc();two[0].items.push(right('7.00',482,90),right('7.00',402,90));assert.equal(bank.parseBankStatement(two).status,'recognized')
 })
+
+// All values are invented. Coordinates and labels reflect the observed DBS SG table.
+const dbsSg=()=>[
+ {page:1,width:594,height:792,items:[item('DBS Bank Ltd',30,740),item('Consolidated Statement',401,711)]},
+ {page:2,width:594,height:792,items:[
+  item('My Account',45,626),item('Account No. 271-000111-7',441,626),
+  item('Date',45,604),item('Description',113,604),item('Withdrawal (-)',338,604),item('Deposit (+)',430,604),item('Balance',515,604),
+  item('CURRENCY: SINGAPORE DOLLAR',53,574),
+  item('Balance Brought Forward',113,549),right('987654.32',548,549),
+  item('02/09/2031',45,531),item('Example incoming',113,531),right('42.50',474,531),right('987696.82',548,531),
+  item('Account No. 271-000111-7',113,521),item('Reference 123456789012',113,510),
+  item('03/09/2031',45,483),item('Example payment',113,483),right('12.00',395,483),right('987684.82',548,483),
+  item('VALUE DATE : 03/09/2031',113,473),
+  item('Total Balance Carried Forward in SGD:',113,122),right('12.00',395,122),right('42.50',474,122),right('987684.82',548,122),
+ ]},
+ {page:3,width:594,height:792,items:[item('Disclosure',34,704),item('04/09/2031',45,600),item('Not an activity table',113,600),right('99.00',395,600)]}
+]
+test('DBS Singapore validates own account and SGD table, separates money from balances, preserves wrapped narration for review',()=>{
+ const pages=dbsSg(),before=JSON.stringify(pages),r=bank.parseBankStatement(pages);
+ assert.equal(r.bank,'DBS Singapore');assert.equal(r.status,'partial');assert.equal(r.recognizedCount,2);assert.equal(r.sections.length,1);
+ assert.deepEqual(r.sections[0].rows.map(row=>[row.date,row.currency,row.direction,row.amount]),[['2031-09-02','SGD','credit',42.5],['2031-09-03','SGD','debit',12]]);
+ assert.ok(r.sections[0].warnings.every(w=>w.code==='ambiguous-trailing-narration'));
+ assert.equal(r.sections[0].rows[0].page,2);assert.match(r.sections[0].rows[0].ambiguousNarration.trailing.join(' '),/帳號已遮蔽/);assert.match(r.sections[0].rows[1].ambiguousNarration.trailing.join(' '),/VALUE DATE/);
+ assert.ok(!JSON.stringify(r).includes('271-000111-7'));assert.ok(!JSON.stringify(r).includes('987684.82'));assert.equal(JSON.stringify(pages),before);
+ pages[1].items.reverse();assert.deepEqual(bank.parseBankStatement(pages),r);
+})
+test('DBS Singapore needs bank identity, complete positional header, own-account heading and exact currency evidence',()=>{
+ for(const kind of ['bank','header','shifted','account','currency','conflict']){
+  const p=dbsSg();
+  if(kind==='bank'){p[0].items[0].text='Other bank';p[1].items.push(item('Payment to DBS Bank',113,450));}
+  if(kind==='header')p[1].items=p[1].items.filter(i=>i.text!=='Deposit (+)');
+  if(kind==='shifted')p[1].items.find(i=>i.text==='Withdrawal (-)').x+=70;
+  if(kind==='account')p[1].items=p[1].items.filter(i=>!i.text.startsWith('Account No.'));
+  if(kind==='currency')p[1].items.find(i=>i.text.startsWith('CURRENCY:')).text='CURRENCY: US DOLLAR';
+  if(kind==='conflict')p[1].items.push(item('Account No. 271-000222-8',441,636),item('My Account',45,636));
+  assert.equal(bank.parseBankStatement(p).recognizedCount,0,kind);
+ }
+})
+test('DBS Singapore rejects missing dates, ambiguous debit/credit, malformed amounts and undated activity without importing balances',()=>{
+ for(const kind of ['missing-date','invalid-date','two-amounts','malformed','undated']){
+  const p=dbsSg();
+  if(kind==='missing-date')p[1].items=p[1].items.filter(i=>i.text!=='03/09/2031');
+  if(kind==='invalid-date')p[1].items.find(i=>i.text==='03/09/2031').text='31/09/2031';
+  if(kind==='two-amounts')p[1].items.push(right('8.00',474,483));
+  if(kind==='malformed')p[1].items.find(i=>i.text==='12.00'&&i.y===483).text='12.xx';
+  if(kind==='undated')p[1].items.push(item('Unexpected payment',113,450),right('8.00',395,450));
+  const r=bank.parseBankStatement(p);assert.equal(r.recognizedCount,kind==='undated'?2:1,kind);assert.ok(r.rejectedCount>0,kind);
+ }
+})
+test('DBS opening and closing balances alone never prove zero transactions',()=>{
+ const p=dbsSg();p[1].items=p[1].items.filter(i=>i.y>=549||i.y===122);const r=bank.parseBankStatement(p);
+ assert.equal(r.status,'unsupported');assert.equal(r.recognizedCount,0);assert.ok(!r.sections.some(s=>s.noTransactions));
+})

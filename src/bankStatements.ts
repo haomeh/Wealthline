@@ -6,7 +6,7 @@ import { layout as singapore } from './bankStatements/hsbcSingapore';
 import { layout as taishin } from './bankStatements/taishin';
 import { layout as fubon, foreignLayout } from './bankStatements/fubon';
 import { layout as esun } from './bankStatements/esun';
-import { DBS_UNSUPPORTED } from './bankStatements/dbs';
+import { DBS_UNSUPPORTED, singaporeLayout as dbsSingapore, dbsSingaporeContext } from './bankStatements/dbs';
 export type { PositionedItem, BankPage, BankSection, BankDraftRow, BankStatementMetadata, BankWarning } from './bankStatements/common';
 export interface BankStatementResult {
     status: 'recognized' | 'partial' | 'unsupported';
@@ -122,6 +122,8 @@ export function parseBankStatement(pages: readonly BankPage[], metadata: BankSta
     const bankMatches = [/HSBC|匯豐|滙豐/i, /台新(?:銀行|國際)/, /(?:台北|臺北)?富邦銀行/, /玉山銀行|E\.?SUN/i, /DBS|星展銀行/i].filter(pattern => pattern.test(masthead));
     if (bankMatches.length > 1 || /HSBC/i.test(masthead) && /Singapore/i.test(masthead) && /Taiwan/i.test(masthead))
         layout = undefined;
+    if (!layout && isDbs && bankMatches.length <= 1 && ordered.some(p => p.lines.some((_, n) => dbsSingaporeContext(p.lines, n))))
+        layout = dbsSingapore;
     const sections: BankSection[] = [], warnings: BankWarning[] = [];
     if (!layout)
         return { status: 'unsupported', ...(isDbs ? { bank: 'DBS Taiwan' } : {}), sections, warnings: [warning(ordered[0]?.page ?? 1, isDbs ? DBS_UNSUPPORTED : 'unsupported-bank-layout')], recognizedCount: 0, rejectedCount: 0 };
@@ -267,7 +269,17 @@ export function parseBankStatement(pages: readonly BankPage[], metadata: BankSta
                 const cs = currencies(before + ' ' + below);
                 const brought = p.lines.slice(n + 1, n + 4).some(r => /Balance Brought Forward/i.test(r.text));
                 const continuing = mayContinue && contextAccount === previousAccount && brought;
-                const resolved = cs.length === 1 ? cs[0] : continuing ? previousCurrency : '';
+                let resolved = cs.length === 1 ? cs[0] : continuing ? previousCurrency : '';
+                if (layout === dbsSingapore) {
+                    const dbs = dbsSingaporeContext(p.lines, n);
+                    if (!dbs) {
+                        issue(p.page, 'unsupported-dbs-sg-account');
+                        table = undefined;
+                        continue;
+                    }
+                    contextAccount = dbs.account;
+                    resolved = dbs.currency;
+                }
                 if (layout === singapore && (resolved !== 'SGD' || (!/Savings/i.test(before) && !continuing && !summary.get(contextAccount ?? '')?.has('SGD')))) {
                     issue(p.page, 'unsupported-hsbc-sg-account');
                     table = undefined;
@@ -366,6 +378,14 @@ export function parseBankStatement(pages: readonly BankPage[], metadata: BankSta
                 const cells = l.items.filter(i => Math.abs(i.x + i.width - table!.debitEdge) < 18 || Math.abs(i.x + i.width - table!.creditEdge) < 18);
                 if (cells.length === 2 && cells.every(i => money(i.text) === 0))
                     section.noTransactions = true;
+            }
+            if (layout === dbsSingapore && /^CURRENCY:\s*SINGAPORE DOLLAR$/i.test(l.text))
+                continue;
+            if (layout === dbsSingapore && /^Total Balance Carried Forward in SGD:/i.test(role)) {
+                discard('unfinished-transaction');
+                closed = true;
+                orphans = [];
+                continue;
             }
             if (nonActivity.test(l.text) || /^(?:[\u3400-\u9fff]{2}結餘|結餘|交易總額|交易筆數|交易次數|交易數目|交易宗數|交易件數|交易總數|Balance (?:Brought|Carried) Forward|Closing Balance|Opening Balance|Transaction (?:total|count))/i.test(role) || l.items.some(i => /^(?:期初.*結餘|期末.*結餘|結餘|餘額)$/.test(i.text))) {
                 if (/Carried Forward/i.test(role || l.text))
@@ -470,7 +490,7 @@ export function parseBankStatement(pages: readonly BankPage[], metadata: BankSta
                     (emitted.ambiguousNarration ??= { leading: [], trailing: [] }).trailing.push(candidate);
                 continue;
             }
-            if (!pending && (date || ((debit.length || credit.length || narrative) && activeLayout.wrapped && lastDate))) {
+            if (!pending && (date || ((debit.length || credit.length || narrative) && activeLayout.wrapped && !activeLayout.datedRowsOnly && lastDate))) {
                 pending = { date: date ?? lastDate, description: [], page: p.page, rowKey: `row-${n + 1}`, invalid: false, ...(orphans.length && { leading: orphans }) };
                 orphans = [];
             }
