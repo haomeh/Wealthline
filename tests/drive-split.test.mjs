@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { after, afterEach, before, test } from 'node:test'
 import { createServer } from 'vite'
+import { createHash } from 'node:crypto'
 import { createFakeDrive } from './helpers/fake-drive.mjs'
 
 // Version 14: the Drive data is a main file plus part files (dataParts.ts, driveStore.ts).
@@ -247,7 +248,7 @@ test('opening reads only the main file; its summaries stand for the parts the ov
   assert.deepEqual(data.bankTransactions, [])
   assert.deepEqual(data.history.snapshots.map((s) => s.date), ['2026-06-01'])
   assert.deepEqual(store.missingParts(state, data, 'ledger').sort(), ['ledger-2025-Q4', 'ledger-2026-Q1', 'ledger-2026-Q3', 'ledger-2026-Q4'])
-  assert.deepEqual(state.summary.cashflow, cashflow.cashflowMonths({ expenses: full.expenses, expenseRules: full.expenseCategoryRules, bankTransactions: full.bankTransactions, bankRules: full.bankCategoryRules }))
+  assert.deepEqual(cashflow.cashflowSummary({ months: store.summaryCashflow(state) }, '2026-10', 12), cashflow.cashflowSummary({ expenses: full.expenses, expenseRules: full.expenseCategoryRules, bankTransactions: full.bankTransactions, bankRules: full.bankCategoryRules }, '2026-10', 12))
   const archive = store.archiveSummary(state)
   assert.deepEqual(archive.points.map((s) => s.date), ['2025-06-01'])
   assert.deepEqual(archive.carried.map((c) => c.at), ['2025-03-01T00:00:00.000Z'])
@@ -279,7 +280,7 @@ test('a new rule recounts the summary from the transaction parts without rewriti
   const from = drive.log.length
   await store.saveDrive(token, { ...data, updatedAt: '2026-10-12T05:00:00.000Z', expenseCategoryRules: [{ keyword: 'Shop e1', category: '交通' }] }, state, NOW)
   assert.deepEqual(writtenParts(from), ['main'])
-  const january = drive.main().summary.cashflow.find((m) => m.month === '2026-01')
+  const january = drive.main().summary.parts['ledger-2026-Q1'].cashflow.find((m) => m.month === '2026-01')
   assert.deepEqual(january.totals.consumptionCategories.map((c) => c.category), ['交通'])
 })
 
@@ -291,5 +292,61 @@ test('records dated in a part this session has not read are added to it, keeping
   assert.deepEqual(writtenParts(from), ['ledger-2026-Q1', 'main'])
   const reloaded = await openAll()
   assert.deepEqual(reloaded.data.expenses.map((e) => e.id).sort(), ['e1', 'e2', 'e3', 'e9'])
-  assert.equal(drive.main().summary.cashflow.find((m) => m.month === '2026-01').coverage.cardCount, 2)
+  assert.equal(drive.main().summary.parts['ledger-2026-Q1'].cashflow.find((m) => m.month === '2026-01').coverage.cardCount, 2)
+})
+
+test('the records hash ignores the header and key order, and changes with any record', async () => {
+  const a = { expenses: [expense('e1', '2026-01-05')] }
+  const reordered = { bankTransactions: [], expenses: [Object.fromEntries(Object.entries(a.expenses[0]).reverse())] }
+  assert.equal(parts.recordsHash('ledger-2026-Q1', a), parts.recordsHash('ledger-2026-Q1', reordered))
+  assert.notEqual(parts.recordsHash('ledger-2026-Q1', a), parts.recordsHash('ledger-2026-Q1', { expenses: [expense('e1', '2026-01-05', 11)] }))
+  assert.match(parts.recordsHash('ledger-2026-Q1', a), /^[0-9a-f]{64}$/)
+  // The same digest as a standard SHA-256.
+  for (const text of ['', 'abc', '中文 · ✓', 'x'.repeat(1000)]) assert.equal(parts.sha256(text), createHash('sha256').update(text).digest('hex'))
+})
+
+test('an edit uploads only its part and updates only that part of the summary', async () => {
+  await splitOnDrive()
+  const before = drive.main().summary.parts
+  const { data, state } = await store.loadDrive(token, model.parseWealthData)
+  const from = drive.log.length
+  await store.saveDrive(token, { ...data, updatedAt: '2026-10-12T05:00:00.000Z', expenses: [expense('e9', '2026-01-10')] }, state, NOW)
+  assert.deepEqual(partReads(from), ['ledger-2026-Q1'])
+  assert.deepEqual(writtenParts(from), ['ledger-2026-Q1', 'main'])
+  const after = drive.main().summary.parts
+  for (const name of Object.keys(before)) if (name !== 'ledger-2026-Q1') assert.deepEqual(after[name], before[name], name)
+  assert.notEqual(after['ledger-2026-Q1'].hash, before['ledger-2026-Q1'].hash)
+  assert.equal(after['ledger-2026-Q1'].md5, createHash('md5').update(drive.part('ledger-2026-Q1').text).digest('hex'))
+})
+
+test('saving the same records in another key order uploads nothing', async () => {
+  await splitOnDrive()
+  const { data, state } = await openAll()
+  const from = drive.log.length
+  await store.saveDrive(token, { ...data, expenses: data.expenses.map((e) => Object.fromEntries(Object.entries(e).reverse())) }, state, NOW)
+  assert.deepEqual(writtenParts(from), [])
+})
+
+test('a part written after its summary (a save that stopped before the main file) is found by its checksum and counted again', async () => {
+  await splitOnDrive()
+  const { data, state } = await openAll()
+  drive.fail((file) => file?.appProperties.weWealth === 'data', 412)
+  await assert.rejects(store.saveDrive(token, { ...data, updatedAt: '2026-10-12T05:00:00.000Z', expenses: data.expenses.map((e) => (e.id === 'e1' ? { ...e, amount: 99 } : e)) }, state, NOW))
+  const from = drive.log.length
+  const opened = await store.loadDrive(token, model.parseWealthData)
+  assert.deepEqual(partReads(from).filter((p) => p !== 'main').sort(), ['ledger-2025-Q4', 'ledger-2026-Q1', 'ledger-2026-Q3', 'ledger-2026-Q4'])
+  const january = store.summaryCashflow(opened.state).find((m) => m.month === '2026-01')
+  assert.equal(january.totals.consumption, 99)
+})
+
+test('another change to an archived year is counted again from that year alone', async () => {
+  await splitOnDrive()
+  const file = drive.part('history-2025')
+  const content = JSON.parse(file.text)
+  file.text = parts.serializePart('history-2025', content.datasetId, { ...content, snapshots: [...content.snapshots, snapshot('2025-07-01')] }, 50)
+  file.version++
+  const from = drive.log.length
+  const { state } = await store.loadDrive(token, model.parseWealthData)
+  assert.deepEqual(partReads(from), ['main', 'history-2025'])
+  assert.deepEqual(store.archiveSummary(state).points.map((s) => s.date), ['2025-06-01', '2025-07-01'])
 })

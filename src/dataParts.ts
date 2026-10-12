@@ -112,22 +112,35 @@ export function parsePart(text: string, datasetId: string): Part {
   return { name, sequence, content }
 }
 
-// The main file's content with its parts put back. Parts come in name order, so transactions
-// come grouped by quarter (the views sort them by date). A record found twice, which an
-// interrupted save that moved it between files can leave, is kept once: transactions by id,
-// preferring the copy written last, then the copy in the part of its own date; history by content.
-export function joinData(main: Row, parts: Part[]): Row {
-  const sorted = [...parts].sort((a, b) => a.name.localeCompare(b.name))
-  const ledger = (key: (typeof LEDGER_KEYS)[number]) => {
-    const byId = new Map<unknown, { row: Row; sequence: number; home: boolean }>()
-    const rows = [...((main[key] ?? []) as Row[]).map((row) => ({ row, part: '', sequence: -1 })), ...sorted.flatMap((p) => (p.content[key] ?? []).map((row) => ({ row, part: p.name, sequence: p.sequence })))]
+// Which copy of each transaction is kept when a record is found twice, which an interrupted
+// save that moved it between files can leave: the copy written last, then the copy in the part
+// of its own date. Returns, by part name ('' for the main file), the rows kept there.
+export function keptLedger(main: Row, parts: Part[]): Map<string, PartContent> {
+  const kept = new Map<string, PartContent>()
+  for (const key of LEDGER_KEYS) {
+    const byId = new Map<unknown, { row: Row; part: string; sequence: number; home: boolean }>()
+    const rows = [...((main[key] ?? []) as Row[]).map((row) => ({ row, part: '', sequence: -1 })), ...parts.flatMap((p) => (p.content[key] ?? []).map((row) => ({ row, part: p.name, sequence: p.sequence })))]
     for (const { row, part, sequence } of rows) {
       const home = part === ledgerPart(String(row.date))
       const seen = byId.get(row.id)
-      if (!seen || sequence > seen.sequence || (sequence === seen.sequence && home && !seen.home)) byId.set(row.id, { row, sequence, home })
+      if (!seen || sequence > seen.sequence || (sequence === seen.sequence && home && !seen.home)) byId.set(row.id, { row, part, sequence, home })
     }
-    return [...byId.values()].map((v) => v.row)
+    for (const { row, part } of byId.values()) {
+      const content = kept.get(part) ?? {}
+      ;(content[key] ??= []).push(row)
+      kept.set(part, content)
+    }
   }
+  return kept
+}
+
+// The main file's content with its parts put back. Parts come in name order, so transactions
+// come grouped by quarter (the views sort them by date). A record found twice is kept once:
+// transactions as keptLedger says, history records by content.
+export function joinData(main: Row, parts: Part[]): Row {
+  const sorted = [...parts].sort((a, b) => a.name.localeCompare(b.name))
+  const kept = keptLedger(main, sorted)
+  const ledger = (key: (typeof LEDGER_KEYS)[number]) => ['', ...sorted.map((p) => p.name)].flatMap((name) => kept.get(name)?.[key] ?? [])
   const history = (main.history ?? {}) as Row
   const merged = (key: (typeof HISTORY_KEYS)[number]) => {
     const seen = new Set<string>()
@@ -148,3 +161,52 @@ export function joinData(main: Row, parts: Part[]): Row {
     history: { ...history, snapshots: merged('snapshots'), changes: merged('changes'), liabilityChanges: merged('liabilityChanges') },
   }
 }
+
+// Records of a part in a fixed form: collections in a fixed order, object keys sorted. Its
+// hash says whether two versions of a part hold the same records, whatever the file's header
+// (data set, part name, sequence) or key order.
+const canonical = (value: unknown): string =>
+  Array.isArray(value) ? `[${value.map(canonical).join(',')}]`
+    : typeof value === 'object' && value !== null ? `{${Object.keys(value).sort().map((k) => `${JSON.stringify(k)}:${canonical((value as Row)[k])}`).join(',')}}`
+      : JSON.stringify(value) ?? 'null'
+
+// SHA-256 as lowercase hex. Synchronous (crypto.subtle is not), so hashing adds no wait to a save.
+const K = Uint32Array.from([
+  0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5, 0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+  0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da, 0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+  0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85, 0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+  0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3, 0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
+])
+export function sha256(text: string): string {
+  const bytes = new TextEncoder().encode(text)
+  const length = Math.ceil((bytes.length + 9) / 64) * 64
+  const message = new Uint8Array(length)
+  message.set(bytes)
+  message[bytes.length] = 0x80
+  const view = new DataView(message.buffer)
+  view.setUint32(length - 8, Math.floor(bytes.length / 0x20000000))
+  view.setUint32(length - 4, bytes.length * 8)
+  const h = Uint32Array.from([0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19])
+  const w = new Uint32Array(64)
+  const rotr = (x: number, n: number) => (x >>> n) | (x << (32 - n))
+  for (let offset = 0; offset < length; offset += 64) {
+    for (let i = 0; i < 16; i++) w[i] = view.getUint32(offset + i * 4)
+    for (let i = 16; i < 64; i++) {
+      const s0 = rotr(w[i - 15], 7) ^ rotr(w[i - 15], 18) ^ (w[i - 15] >>> 3)
+      const s1 = rotr(w[i - 2], 17) ^ rotr(w[i - 2], 19) ^ (w[i - 2] >>> 10)
+      w[i] = w[i - 16] + s0 + w[i - 7] + s1
+    }
+    let [a, b, c, d, e, f, g, hh] = h
+    for (let i = 0; i < 64; i++) {
+      const t1 = (hh + (rotr(e, 6) ^ rotr(e, 11) ^ rotr(e, 25)) + ((e & f) ^ (~e & g)) + K[i] + w[i]) >>> 0
+      const t2 = ((rotr(a, 2) ^ rotr(a, 13) ^ rotr(a, 22)) + ((a & b) ^ (a & c) ^ (b & c))) >>> 0
+      hh = g; g = f; f = e; e = (d + t1) >>> 0; d = c; c = b; b = a; a = (t1 + t2) >>> 0
+    }
+    h[0] += a; h[1] += b; h[2] += c; h[3] += d; h[4] += e; h[5] += f; h[6] += g; h[7] += hh
+  }
+  return [...h].map((x) => x.toString(16).padStart(8, '0')).join('')
+}
+
+export const recordsHash = (name: string, content: PartContent) =>
+  sha256((name.startsWith('ledger-') ? LEDGER_KEYS : HISTORY_KEYS).map((key) => `${key}:${canonical(content[key] ?? [])}`).join('\n'))
+export const canonicalHash = (value: unknown) => sha256(canonical(value))

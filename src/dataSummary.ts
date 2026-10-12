@@ -1,31 +1,58 @@
 // What the overview shows without reading the part files (dataParts.ts). The Drive main file
-// stores it next to the data; it is derived, so a missing or unreadable summary only means the
-// parts it stands for are read instead.
-// - cashflow: totals per currency and month of all card expenses and bank transactions;
-// - history: per archived year, the last snapshot of each month for the trend chart, and the
-//   edits that carry holding quantities into the following years (holdingPeriods.ts).
+// stores one entry per part file; it is derived, so a missing, unreadable or outdated entry only
+// means that part is read and its entry made again (driveStore.ts).
+// - a transaction part: totals per currency and month of its card expenses and bank transactions;
+// - an archived history year: the last snapshot of each month for the trend chart, and the edits
+//   that carry holding quantities into the following years (holdingPeriods.ts).
+// Each entry records which content it was made from:
+// - hash: SHA-256 of the part's records in a fixed form (recordsHash), without the file header;
+// - md5: Drive's MD5 checksum of the part file as this app last wrote it. Drive lists it without
+//   downloading the file, so opening finds parts written since the entry was made (a save that
+//   stopped before the main file, or another device) and reads only those.
+// Transaction entries also depend on the category rules: `rules` is the hash of the rules they
+// were counted with.
 
-import type { CashflowMonthTotals } from './cashflow'
+import { cashflowMonths, type CashflowMonthTotals } from './cashflow'
 import { parseHistory, type Change, type Snapshot } from './history'
 import type { PartContent } from './dataParts'
+import type { BankCategoryRule, BankTransaction } from './bankTransactions'
+import type { Expense, ExpenseCategoryRule } from './expenses'
 
-export interface YearSummary {
-  points: Snapshot[]
-  carried: Change[]
+export interface PartSummary {
+  hash: string
+  md5: string | null
+  sequence: number
+  cashflow?: CashflowMonthTotals[]
+  points?: Snapshot[]
+  carried?: Change[]
 }
 
 export interface DataSummary {
-  cashflow?: CashflowMonthTotals[]
-  history: Record<string, YearSummary>
+  rules?: string
+  parts: Record<string, PartSummary>
 }
 
-export const emptySummary = (): DataSummary => ({ history: {} })
+export const emptySummary = (): DataSummary => ({ parts: {} })
+
+export interface Rules {
+  expenseCategoryRules?: ExpenseCategoryRule[]
+  bankCategoryRules?: BankCategoryRule[]
+}
+export const rulesOf = (r: Rules) => [r.expenseCategoryRules ?? null, r.bankCategoryRules ?? null]
+
+// The overview content of one part's records.
+export function partSummary(name: string, content: PartContent, rules: Rules): Pick<PartSummary, 'cashflow' | 'points' | 'carried'> {
+  if (name.startsWith('ledger-')) {
+    return { cashflow: cashflowMonths({ expenses: content.expenses as unknown as Expense[], expenseRules: rules.expenseCategoryRules, bankTransactions: content.bankTransactions as unknown as BankTransaction[], bankRules: rules.bankCategoryRules }) }
+  }
+  return yearSummary(name.slice('history-'.length), content)
+}
 
 const instrument = (c: Change) => `${c.accountId}|${c.type}|${c.currency}|${c.type === 'cash' ? '' : c.symbol.toUpperCase()}`
 const changesQuantity = (c: Change) => !c.before || !c.after || c.before.quantity !== c.after.quantity
 
 // `content`: one archived year's history part.
-export function yearSummary(year: string, content: PartContent): YearSummary {
+function yearSummary(year: string, content: PartContent): Pick<PartSummary, 'points' | 'carried'> {
   const snapshots = (content.snapshots ?? []) as unknown as Snapshot[]
   const byMonth = new Map<string, Snapshot>()
   for (const s of snapshots) {
@@ -57,22 +84,27 @@ function monthTotals(v: unknown): boolean {
     isObj(c) && isNum(c.cardCount) && isNum(c.bankCount) && isNum(c.recordCount)
 }
 
-// Keeps the parts of a stored summary that are well formed; the rest is left out.
+const isPartName = (name: string) => /^(?:ledger-\d{4}-Q[1-4]|history-\d{4})$/.test(name)
+
+// Keeps the entries of a stored summary that are well formed; the rest is left out.
 export function parseSummary(raw: unknown): DataSummary {
   const summary = emptySummary()
   if (!isObj(raw)) return summary
-  if (Array.isArray(raw.cashflow) && raw.cashflow.every(monthTotals)) {
-    summary.cashflow = (raw.cashflow as CashflowMonthTotals[]).map((m) => ({ ...m, coverage: { ...m.coverage, complete: false } }))
-  }
-  if (isObj(raw.history)) {
-    for (const [year, value] of Object.entries(raw.history)) {
-      if (!/^\d{4}$/.test(year) || !isObj(value)) continue
-      try {
-        const parsed = parseHistory({ snapshots: value.points, changes: value.carried, liabilityChanges: [] }, (why) => { throw new Error(why) })
-        summary.history[year] = { points: parsed.snapshots, carried: parsed.changes }
-      } catch {
-        // Unreadable: that year's part is read instead.
-      }
+  if (typeof raw.rules === 'string') summary.rules = raw.rules
+  if (!isObj(raw.parts)) return summary
+  for (const [name, value] of Object.entries(raw.parts)) {
+    if (!isPartName(name) || !isObj(value) || typeof value.hash !== 'string' || !(value.md5 === null || typeof value.md5 === 'string') || !Number.isInteger(value.sequence)) continue
+    const base = { hash: value.hash, md5: value.md5 as string | null, sequence: value.sequence as number }
+    if (name.startsWith('ledger-')) {
+      if (!Array.isArray(value.cashflow) || !value.cashflow.every(monthTotals)) continue
+      summary.parts[name] = { ...base, cashflow: (value.cashflow as CashflowMonthTotals[]).map((m) => ({ ...m, coverage: { ...m.coverage, complete: false } })) }
+      continue
+    }
+    try {
+      const parsed = parseHistory({ snapshots: value.points, changes: value.carried, liabilityChanges: [] }, (why) => { throw new Error(why) })
+      summary.parts[name] = { ...base, points: parsed.snapshots, carried: parsed.changes }
+    } catch {
+      // Unreadable: that part is read instead.
     }
   }
   return summary

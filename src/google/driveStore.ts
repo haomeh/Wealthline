@@ -1,16 +1,25 @@
 // Reads and writes the user's data as a main file plus part files in Google Drive (dataParts.ts).
 // A version 14 or older single file loads as before and is split by its next save.
 //
-// Opening reads only the main file. The overview uses the summary stored in it (dataSummary.ts);
-// the transaction parts and the archived history years are read when a page needs them
-// (readGroup). Each data object carries which parts it holds (partsOf): a save writes a part only
-// from data that holds it, or after reading it, so records this session never read are kept.
+// Opening reads only the main file. The overview uses the summary stored in it, one entry per
+// part (dataSummary.ts); the transaction parts and the archived history years are read when a
+// page needs them (readGroup). Each data object carries which parts it holds (partsOf): a save
+// writes a part only from data that holds it, or after reading it, so records this session never
+// read are kept.
+//
+// Three checks, each for its own question:
+// - records hash (SHA-256 of the records in a fixed form): did a part's records change? A save
+//   uploads a part only when its hash changes, and updates only that part's summary entry;
+// - Drive MD5 checksum, listed without downloading: is a part file still the one its summary
+//   entry was made from? Opening reads and re-summarizes only the parts where it differs;
+// - ETag with If-Match on every write: has anyone written the file since this session read it?
+//   If so the write is refused (DriveConflictError) and nothing is overwritten.
 
 import type { AccessToken } from './auth'
 import { DriveConflictError, createPart, findDataFile, listParts, parseJson, readFile, saveDataText, updatePart, type DriveVersion } from './drive'
-import { joinData, parsePart, partFileName, serializePart, splitData, type Part, type PartContent } from '../dataParts'
-import { cashflowMonths } from '../cashflow'
-import { emptySummary, parseSummary, yearSummary, type DataSummary } from '../dataSummary'
+import { canonicalHash, joinData, keptLedger, parsePart, partFileName, recordsHash, serializePart, splitData, type Part, type PartContent } from '../dataParts'
+import type { CashflowMonthTotals } from '../cashflow'
+import { emptySummary, parseSummary, partSummary, rulesOf, type DataSummary, type Rules } from '../dataSummary'
 import type { Change, Snapshot } from '../history'
 import { newId, type WealthData } from '../model'
 import { byteSize, serializeData } from '../storageLimits'
@@ -19,13 +28,15 @@ interface StoredFile extends DriveVersion {
   text: string
 }
 
-// A part file. `part` and `text` are set once this session has read or written it.
+// A part file. `part`, `text` and `hash` (recordsHash) are set once this session has read or written it.
 interface StoredPart {
   fileId: string
   size: number | null
+  md5: string | null
   etag?: string
   text?: string
   part?: Part
+  hash?: string
 }
 
 // What this session last read from or wrote to Drive. Writes update it file by file, so a save
@@ -37,9 +48,11 @@ export interface DriveState {
   split: boolean
   parts: Map<string, StoredPart>
   summary: DataSummary
+  // The category rules in the main file, which the transaction summaries are counted with.
+  rules: Rules
 }
 
-export const emptyDriveState = (): DriveState => ({ datasetId: newId(), split: false, parts: new Map(), summary: emptySummary() })
+export const emptyDriveState = (): DriveState => ({ datasetId: newId(), split: false, parts: new Map(), summary: emptySummary(), rules: {} })
 
 export type PartGroup = 'ledger' | 'history'
 export const partGroup = (name: string): PartGroup => (name.startsWith('ledger-') ? 'ledger' : 'history')
@@ -85,8 +98,46 @@ async function readPart(token: AccessToken, state: DriveState, name: string): Pr
   const file = await readFile(token, stored.fileId)
   const part = parsePart(file.text, state.datasetId)
   if (part.name !== name) throw new Error(`Drive 中的分檔 ${name} 格式不正確，已停止載入。`)
-  state.parts.set(name, { ...stored, etag: file.etag, text: file.text, size: byteSize(file.text), part })
+  state.parts.set(name, { ...stored, etag: file.etag, text: file.text, size: byteSize(file.text), part, hash: recordsHash(name, part.content) })
   return part
+}
+
+const entryFor = (state: DriveState, name: string, content: PartContent): DataSummary['parts'][string] => {
+  const stored = state.parts.get(name)!
+  return { hash: stored.hash!, md5: stored.md5, sequence: stored.part!.sequence, ...partSummary(name, content, state.rules) }
+}
+
+// Makes again the summary entries that are missing or that no longer match their part: its
+// records hash differs (the part was read), or its Drive checksum does (not read yet), or the
+// rules changed. A transaction entry is counted from the copies joinData keeps, so a record an
+// interrupted move left in two parts is counted once; that needs every transaction part, so they
+// are all read when one is outdated. History years are made again one by one.
+async function refreshSummary(token: AccessToken, state: DriveState): Promise<void> {
+  const rules = canonicalHash(rulesOf(state.rules))
+  const entries = state.summary.parts
+  const outdated = (name: string) => {
+    const entry = entries[name], stored = state.parts.get(name)!
+    if (!entry) return true
+    if (stored.hash !== undefined) return stored.hash !== entry.hash
+    return stored.md5 !== null && entry.md5 !== null && stored.md5 !== entry.md5
+  }
+  const ledger = [...state.parts.keys()].filter((name) => partGroup(name) === 'ledger')
+  if (state.summary.rules !== rules || ledger.some(outdated)) {
+    const parts = await eachLimited(ledger, (name) => readPart(token, state, name))
+    const kept = keptLedger({}, parts)
+    for (const name of ledger) entries[name] = entryFor(state, name, kept.get(name) ?? {})
+  }
+  for (const name of state.parts.keys()) {
+    if (partGroup(name) === 'history' && outdated(name)) entries[name] = entryFor(state, name, (await readPart(token, state, name)).content)
+  }
+  state.summary.rules = rules
+}
+
+// The overview's monthly cashflow from the summary; undefined when a transaction part has no entry.
+export function summaryCashflow(state: DriveState): CashflowMonthTotals[] | undefined {
+  const ledger = [...state.parts.keys()].filter((name) => partGroup(name) === 'ledger')
+  if (ledger.some((name) => !state.summary.parts[name]?.cashflow)) return undefined
+  return ledger.flatMap((name) => state.summary.parts[name].cashflow!)
 }
 
 // Returns null when the user has no data file yet. `parse` validates the data.
@@ -97,28 +148,38 @@ export async function loadDrive(token: AccessToken, parse: (raw: unknown) => Wea
   const raw = parseJson(main.text) as Record<string, unknown>
   const datasetId = raw?.version === 15 && typeof raw.datasetId === 'string' && raw.datasetId ? raw.datasetId : ''
   // An older file, or one without a data set (a restored backup), holds everything itself.
-  if (!datasetId) return { data: withParts(parse(raw), 'all'), state: { ...emptyDriveState(), main } }
+  const rules = rulesFrom(raw)
+  if (!datasetId) return { data: withParts(parse(raw), 'all'), state: { ...emptyDriveState(), main, rules } }
   const parts = new Map<string, StoredPart>()
   // Two files for one part (two devices created it at once): the first is used.
-  for (const p of await listParts(token, datasetId)) if (!parts.has(p.name)) parts.set(p.name, { fileId: p.id, size: p.size })
+  for (const p of await listParts(token, datasetId)) if (!parts.has(p.name)) parts.set(p.name, { fileId: p.id, size: p.size, md5: p.md5 })
   const { summary, ...rest } = raw
-  return { data: withParts(parse(joinData(rest, [])), new Set()), state: { datasetId, main, split: true, parts, summary: parseSummary(summary) } }
+  const data = withParts(parse(joinData(rest, [])), new Set())
+  const state: DriveState = { datasetId, main, split: true, parts, summary: parseSummary(summary), rules }
+  await refreshSummary(token, state)
+  return { data, state }
 }
 
-// Reads every part of `group`; parts read before are not read again.
+const rulesFrom = (raw: Record<string, unknown>): Rules => ({ expenseCategoryRules: raw.expenseCategoryRules as Rules['expenseCategoryRules'], bankCategoryRules: raw.bankCategoryRules as Rules['bankCategoryRules'] })
+
+// Reads every part of `group`; parts read before are not read again. Summary entries that do not
+// match what was read are made again.
 export async function readGroup(token: AccessToken, state: DriveState, group: PartGroup): Promise<Part[]> {
-  return eachLimited([...state.parts.keys()].filter((name) => partGroup(name) === group), (name) => readPart(token, state, name))
+  const parts = await eachLimited([...state.parts.keys()].filter((name) => partGroup(name) === group), (name) => readPart(token, state, name))
+  await refreshSummary(token, state)
+  return parts
 }
 
 // What the overview shows for the archived years while they are not loaded; null when a year
 // has no summary (its part is read instead) or nothing is archived.
 export function archiveSummary(state: DriveState): { points: Snapshot[]; carried: Change[]; from: string } | null {
-  const years = [...state.parts.keys()].filter((name) => partGroup(name) === 'history').map((name) => name.slice('history-'.length)).sort()
-  if (!years.length || years.some((year) => !state.summary.history[year])) return null
+  const names = [...state.parts.keys()].filter((name) => partGroup(name) === 'history').sort()
+  const entries = names.map((name) => state.summary.parts[name])
+  if (!names.length || entries.some((entry) => !entry?.points)) return null
   return {
-    points: years.flatMap((year) => state.summary.history[year].points),
-    carried: years.flatMap((year) => state.summary.history[year].carried),
-    from: `${Number(years.at(-1)) + 1}-01-01`,
+    points: entries.flatMap((entry) => entry.points!),
+    carried: entries.flatMap((entry) => entry.carried!),
+    from: `${Number(names.at(-1)!.slice('history-'.length)) + 1}-01-01`,
   }
 }
 
@@ -137,9 +198,6 @@ export function mergeParts(data: WealthData, parts: Part[], parse: (raw: unknown
   }
   return withParts(next, held === 'all' ? 'all' : new Set([...held, ...added.map((p) => p.name)]))
 }
-
-const sameRules = (a: Record<string, unknown>, b: WealthData) =>
-  JSON.stringify([a.expenseCategoryRules ?? null, a.bankCategoryRules ?? null]) === JSON.stringify([b.expenseCategoryRules ?? null, b.bankCategoryRules ?? null])
 
 // Writes `data`, uploading only the files whose content changed. Order keeps every record
 // readable if the save stops part way (a lost connection, or another device's write):
@@ -178,11 +236,12 @@ export async function saveDrive(token: AccessToken, data: WealthData, state: Dri
   }
 
   // Parts the data holds but that no longer have records keep their file, emptied. A part is
-  // changed when its records differ; its sequence alone does not count.
-  const names = new Set([...parts.keys(), ...[...state.parts.keys()].filter((name) => holds(held, name))])
-  const changed = [...names].filter((name) => {
+  // changed when its records hash differs; its header and key order do not count.
+  const names = [...new Set([...parts.keys(), ...[...state.parts.keys()].filter((name) => holds(held, name))])]
+  const hashes = new Map(names.map((name) => [name, recordsHash(name, parts.get(name) ?? {})]))
+  const changed = names.filter((name) => {
     const old = state.parts.get(name)
-    return !old?.part || serializePart(name, state.datasetId, parts.get(name) ?? {}, old.part.sequence) !== old.text
+    return !old?.part || old.hash !== hashes.get(name)
   })
   const loses = (name: string) => {
     const old = state.parts.get(name)?.part
@@ -192,43 +251,25 @@ export async function saveDrive(token: AccessToken, data: WealthData, state: Dri
   }
   const ordered = [...changed.filter((name) => !loses(name)), ...changed.filter(loses)]
 
-  // The cashflow summary covers every transaction part. Parts this session has not read are read
-  // when transactions or the rules that set their categories change, or the summary is missing;
-  // before writing, so that write sequences stay above every copy of a record (joinData).
-  const ledger = [...state.parts.keys()].filter((name) => partGroup(name) === 'ledger')
-  const summary: DataSummary = { ...state.summary, history: { ...state.summary.history } }
-  const recount = !state.split || summary.cashflow === undefined || !sameRules(before, data) || ordered.some((name) => partGroup(name) === 'ledger')
-  if (recount) await eachLimited(ledger, (name) => readPart(token, state, name))
-
+  // Each written part gets a new summary entry; the others keep theirs. The sequence continues
+  // from every part, read or not (their summary entries record theirs).
+  const summary: DataSummary = { ...state.summary, parts: { ...state.summary.parts } }
+  state.summary = summary
+  state.rules = rulesFrom(data as unknown as Record<string, unknown>)
   const created: string[] = []
   // One at a time: creating parts may create their folders, which must not happen twice.
   for (const name of ordered) {
     const old = state.parts.get(name)
-    const sequence = Math.max(-1, ...[...state.parts.values()].map((p) => p.part?.sequence ?? -1)) + 1
+    const sequence = Math.max(-1, ...[...state.parts.values()].map((p) => p.part?.sequence ?? -1), ...Object.values(summary.parts).map((e) => e.sequence)) + 1
     const part = { name, sequence, content: parts.get(name) ?? {} }
     const text = serializePart(name, state.datasetId, part.content, sequence)
     const written = old ? await updatePart(token, { fileId: old.fileId, etag: old.etag! }, text) : await createPart(token, name, partFileName(name), state.datasetId, text)
     if (!old) created.push(name)
-    state.parts.set(name, { fileId: written.fileId, etag: written.etag, text, size: byteSize(text), part })
+    state.parts.set(name, { fileId: written.fileId, etag: written.etag, md5: written.md5, text, size: byteSize(text), part, hash: hashes.get(name) })
+    summary.parts[name] = entryFor(state, name, part.content)
   }
-
-  if (recount) {
-    const all = [...state.parts.entries()].filter(([name]) => partGroup(name) === 'ledger').map(([, p]) => p.part!)
-    const rows = joinData({ expenses: [], bankTransactions: [] }, all)
-    summary.cashflow = cashflowMonths({
-      expenses: rows.expenses as WealthData['expenses'],
-      expenseRules: data.expenseCategoryRules,
-      bankTransactions: rows.bankTransactions as WealthData['bankTransactions'],
-      bankRules: data.bankCategoryRules,
-    })
-  }
-  // Each archived year's summary is made when its part is written, or read when it is missing.
-  for (const name of state.parts.keys()) {
-    if (partGroup(name) !== 'history') continue
-    const year = name.slice('history-'.length)
-    if (summary.history[year] && !ordered.includes(name)) continue
-    summary.history[year] = yearSummary(year, (await readPart(token, state, name)).content)
-  }
+  // Changed rules recount every transaction part; missing entries are made.
+  await refreshSummary(token, state)
 
   const mainText = serializeData({ ...main, summary })
   if (state.main?.text !== mainText) {
@@ -236,7 +277,6 @@ export async function saveDrive(token: AccessToken, data: WealthData, state: Dri
     state.main = { ...written, text: mainText }
   }
   state.split = true
-  state.summary = summary
   return withParts({ ...data, version: 15 }, held === 'all' ? 'all' : new Set([...held, ...created]))
 }
 

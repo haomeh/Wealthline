@@ -13,7 +13,7 @@ import {
   type UserProfile,
 } from './google/auth'
 import { DATA_FILE_NAME, FOLDER_NAME } from './google/drive'
-import { archiveSummary, emptyDriveState, loadDrive, mergeParts, missingParts, readGroup, saveDrive, storedSizes, type DriveState, type PartGroup } from './google/driveStore'
+import { archiveSummary, summaryCashflow, emptyDriveState, loadDrive, mergeParts, missingParts, readGroup, saveDrive, storedSizes, type DriveState, type PartGroup } from './google/driveStore'
 import { applyFetchedRates, emptyData, missingRates, parseWealthData, ratesStale, usedCurrencies, type WealthData } from './model'
 import { finishSave } from './saveState'
 import { clearLocal, downloadDataFile, hasLocalData, loadLocal, opensLocal, readDataFile, replaceLocal, saveLocal, setLocalActive, storageEstimate, type LocalFile } from './localStore'
@@ -503,7 +503,7 @@ export default function App() {
   const missing = (group: PartGroup) => !!state && !!data && missingParts(state, data, group).length > 0
   const archive = state && missing('history') ? archiveSummary(state) : null
   const needs = (group: PartGroup) => missing(group) && (group === 'ledger'
-    ? tab === 'expenses' || tab === 'bank-transactions' || (tab === 'overview' && !state!.summary.cashflow)
+    ? tab === 'expenses' || tab === 'bank-transactions' || (tab === 'overview' && !summaryCashflow(state!))
     : route.tab === 'history' || (route.tab === 'accounts' && route.page === 'detail') || (tab === 'overview' && !archive))
   const needed = (['ledger', 'history'] as const).filter(needs)
   useEffect(() => {
@@ -660,7 +660,7 @@ export default function App() {
             onNewAccount={() => goAccounts({ page: 'new' })}
             onImport={() => goAccounts({ page: 'list', importing: true })}
             onOpenAccount={(id) => goAccounts({ page: 'detail', id })}
-            cashflowMonths={state && missing('ledger') ? state.summary.cashflow : undefined}
+            cashflowMonths={state && missing('ledger') ? summaryCashflow(state) : undefined}
             archive={archive ?? undefined}
             onLoadHistory={() => void loadGroup('history')}
             loadingHistory={groupLoad.history === 'loading'}

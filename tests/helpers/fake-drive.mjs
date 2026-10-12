@@ -2,6 +2,9 @@
 // queries, v2 metadata and pinned media reads, conditional media updates, multipart creates
 // and folder creates. Install `fetch` as globalThis.fetch.
 
+import { createHash } from 'node:crypto'
+
+const md5 = (text) => createHash('md5').update(text).digest('hex')
 const json = (value, status = 200) => new Response(JSON.stringify(value), { status, headers: { 'Content-Type': 'application/json' } })
 
 export function createFakeDrive({ profile } = {}) {
@@ -51,7 +54,7 @@ export function createFakeDrive({ profile } = {}) {
     const path = url.pathname
 
     if (method === 'GET' && path === '/drive/v3/files') {
-      return json({ files: query(url.searchParams.get('q') ?? '').map((f) => ({ id: f.id, appProperties: f.appProperties, size: String(new TextEncoder().encode(f.text).length) })) })
+      return json({ files: query(url.searchParams.get('q') ?? '').map((f) => ({ id: f.id, appProperties: f.appProperties, size: String(new TextEncoder().encode(f.text).length), md5Checksum: md5(f.text) })) })
     }
     if (method === 'POST' && path === '/drive/v3/files') {
       const meta = JSON.parse(init.body)
@@ -74,7 +77,7 @@ export function createFakeDrive({ profile } = {}) {
       const { metadata, text } = parseMultipart(init.body)
       const appProperties = Object.fromEntries((metadata.properties ?? []).map((p) => [p.key, p.value]))
       const f = add({ name: metadata.title, appProperties, parents: (metadata.parents ?? []).map((p) => p.id), text })
-      return json({ id: f.id, etag: etag(f) })
+      return json({ id: f.id, etag: etag(f), md5Checksum: md5(f.text) })
     }
     m = path.match(/^\/upload\/drive\/v2\/files\/([^/]+)$/)
     if (method === 'PUT' && m) {
@@ -86,7 +89,7 @@ export function createFakeDrive({ profile } = {}) {
         if (init.headers['If-Match'] !== etag(f)) return new Response('', { status: 412 })
         f.text = init.body
         f.version++
-        return json({ id: f.id, etag: etag(f) })
+        return json({ id: f.id, etag: etag(f), md5Checksum: md5(f.text) })
       }
       if (hold?.(f, init)) return new Promise((resolve) => held.push({ resolve, write }))
       return write()

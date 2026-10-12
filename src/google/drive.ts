@@ -22,6 +22,12 @@ export interface DriveVersion {
   etag: string
 }
 
+// A written part file, with Drive's MD5 checksum of its content (null when Drive does not say).
+export interface PartVersion extends DriveVersion {
+  md5: string | null
+}
+const partVersionOf = (raw: { id?: string; etag?: string; md5Checksum?: string }): PartVersion => ({ ...versionOf(raw), md5: raw.md5Checksum ?? null })
+
 function versionOf(raw: { id?: string; etag?: string }): DriveVersion {
   if (!raw.id || !raw.etag || !/^"[^"]+"$/.test(raw.etag)) {
     throw new Error('Drive 未提供有效版本，無法安全儲存。請保留本機修改並重新載入。')
@@ -136,11 +142,12 @@ export async function loadData<T>(token: AccessToken, parse: (raw: unknown) => T
 }
 
 // The ids of every part file of data set `datasetId` (see dataParts.ts).
-// A part file as listed: its id, part name and size in bytes (null when Drive does not say).
+// A part file as listed: its id, part name, size in bytes and MD5 checksum (null when Drive does not say).
 export interface ListedPart {
   id: string
   name: string
   size: number | null
+  md5: string | null
 }
 
 export async function listParts(token: AccessToken, datasetId: string): Promise<ListedPart[]> {
@@ -149,11 +156,11 @@ export async function listParts(token: AccessToken, datasetId: string): Promise<
   const parts: ListedPart[] = []
   let page = ''
   do {
-    const url = `${API}?q=${encodeURIComponent(q)}&spaces=drive&fields=files(id,appProperties,size),nextPageToken&orderBy=createdTime&pageSize=1000${page && `&pageToken=${encodeURIComponent(page)}`}`
-    const { files, nextPageToken } = (await (await driveFetch(token, url, { cache: 'no-store' })).json()) as { files: { id: string; appProperties?: Record<string, string>; size?: string }[]; nextPageToken?: string }
+    const url = `${API}?q=${encodeURIComponent(q)}&spaces=drive&fields=files(id,appProperties,size,md5Checksum),nextPageToken&orderBy=createdTime&pageSize=1000${page && `&pageToken=${encodeURIComponent(page)}`}`
+    const { files, nextPageToken } = (await (await driveFetch(token, url, { cache: 'no-store' })).json()) as { files: { id: string; appProperties?: Record<string, string>; size?: string; md5Checksum?: string }[]; nextPageToken?: string }
     for (const f of files) {
       const size = Number(f.size)
-      parts.push({ id: f.id, name: f.appProperties?.part ?? '', size: f.size !== undefined && Number.isFinite(size) ? size : null })
+      parts.push({ id: f.id, name: f.appProperties?.part ?? '', size: f.size !== undefined && Number.isFinite(size) ? size : null, md5: f.md5Checksum ?? null })
     }
     page = nextPageToken ?? ''
   } while (page)
@@ -161,7 +168,7 @@ export async function listParts(token: AccessToken, datasetId: string): Promise<
 }
 
 // Creates part file `name` (e.g. ledger-2026-Q4) in its subfolder. Refuses oversized content.
-export async function createPart(token: AccessToken, name: string, fileName: string, datasetId: string, content: string): Promise<DriveVersion> {
+export async function createPart(token: AccessToken, name: string, fileName: string, datasetId: string, content: string): Promise<PartVersion> {
   assertWritable(content)
   const folder = PART_FOLDERS[name.startsWith('ledger-') ? 'ledger' : 'history']
   const parent = await ensureFolder(token, folder.role, folder.name, await ensureFolder(token))
@@ -178,20 +185,20 @@ export async function createPart(token: AccessToken, name: string, fileName: str
     },
     content,
   )
-  const res = await driveFetch(token, `${UPLOAD}?uploadType=multipart&fields=id,etag`, { method: 'POST', headers: { 'Content-Type': contentType }, body })
-  return versionOf(await res.json())
+  const res = await driveFetch(token, `${UPLOAD}?uploadType=multipart&fields=id,etag,md5Checksum`, { method: 'POST', headers: { 'Content-Type': contentType }, body })
+  return partVersionOf(await res.json())
 }
 
 // Replaces a part file's content, only if it is still at `version`.
-export async function updatePart(token: AccessToken, version: DriveVersion, content: string): Promise<DriveVersion> {
+export async function updatePart(token: AccessToken, version: DriveVersion, content: string): Promise<PartVersion> {
   assertWritable(content)
   versionOf({ id: version.fileId, etag: version.etag })
-  const res = await driveFetch(token, `${UPLOAD}/${version.fileId}?uploadType=media&fields=id,etag`, {
+  const res = await driveFetch(token, `${UPLOAD}/${version.fileId}?uploadType=media&fields=id,etag,md5Checksum`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json', 'If-Match': version.etag },
     body: content,
   })
-  return versionOf(await res.json())
+  return partVersionOf(await res.json())
 }
 
 // Refuses, before any request, a file over the size limit (storageLimits.ts).

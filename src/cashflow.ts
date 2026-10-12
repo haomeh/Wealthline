@@ -205,9 +205,10 @@ export function cashflowSummary(input: CashflowInput, endMonth: string, period: 
     if (!monthSet.has(point.month)) continue
     let group = currencies.get(point.currency)
     if (!group) { group = {totals:emptyTotals(),months:new Map(),coverage:sourceCoverage()}; currencies.set(point.currency,group) }
-    const copy = {...point,totals:emptyTotals(),coverage:sourceCoverage()}
+    // One month can come in several entries (the summaries of two parts).
+    let copy = group.months.get(point.month)
+    if (!copy) { copy = {...point,totals:emptyTotals(),coverage:sourceCoverage()}; group.months.set(point.month,copy) }
     addTotals(copy.totals,point.totals); addCoverage(copy.coverage,point.coverage)
-    group.months.set(point.month,copy)
     addTotals(group.totals,point.totals); addCoverage(group.coverage,point.coverage)
   }
   return [...currencies].sort(([a],[b])=>a.localeCompare(b)).map(([currency,group])=> {
