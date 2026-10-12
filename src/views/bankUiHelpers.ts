@@ -18,7 +18,7 @@ const BANK_WARNINGS: Record<string,[WarningKind,string]> = {
  'activity-below-table-boundary':['amount','表格下方頁尾區域出現疑似交易的金額列，該列未匯入；請對照原帳單，確有交易時手動補登'],
  'ambiguous-transaction':['amount','有金額的交易列無法唯一判定日期、幣別、帳戶或入出帳欄位，該列未匯入；請對照原帳單手動補登'],
  'partial-outgoing-transfer-coverage':['scope','此版型僅涵蓋局部轉出明細，不是完整月流水'],
- 'unsupported-dbs-activity-layout':['scope','星展交易版型尚未支持，未匯入任何交易'],
+ 'unsupported-dbs-activity-layout':['scope','未辨識到支援的星展收支交易表；若文件只有帳戶摘要，請另下載交易明細。未匯入任何交易'],
 }
 /** Actionable text that always keeps the diagnostic code recognizable, including unknown codes. */
 export const bankWarningText = (code:string) => `${BANK_WARNINGS[code]?.[1] ?? '尚無中文說明的解析問題，請對照原帳單核對'}〔${code}〕`

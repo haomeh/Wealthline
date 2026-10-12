@@ -20,7 +20,7 @@ test('validated activity-shaped footer row is warned rather than silently droppe
  const r=bank.parseBankStatement(p);assert.equal(r.recognizedCount,1);assert.equal(r.status,'partial');assert.ok(r.sections[0].warnings.some(w=>w.code==='activity-below-table-boundary'));
 })
 let server,bank
-before(async()=>{server=await createServer({configFile:false,envDir:false,server:{middlewareMode:true,watch:null,hmr:false,ws:false}});bank=await server.ssrLoadModule('/src/bankStatements.ts')})
+before(async()=>{server=await createServer({cacheDir:'node_modules/.vite-bank-statements',configFile:false,envDir:false,server:{middlewareMode:true,watch:null,hmr:false,ws:false}});bank=await server.ssrLoadModule('/src/bankStatements.ts')})
 after(()=>server?.close())
 test('observed HSBC variants group wrapped rows; amounts not balances or narrative numbers',()=>{
  for(const sg of [false,true]) {const r=bank.parseBankStatement(hsbc(sg));assert.equal(r.status,'recognized');assert.equal(r.sections[0].rows.length,1);assert.equal(r.sections[0].rows[0].amount,42.5);assert.equal(r.sections[0].rows[0].direction,'debit');assert.equal(r.sections[0].rows[0].date,sg?'2031-07-09':'2031-06-17');assert.match(r.sections[0].rows[0].description,/123456789012/);assert.ok(!JSON.stringify(r).includes('7700001111'))}
@@ -66,7 +66,7 @@ test('positional parser limits, invalid coordinates and duplicate pages reject w
 })
 
 test('neutral PDF lifecycle bounds, local resources, retries, abort and cleanup without card scoping',async()=>{
- const mockServer=await createServer({configFile:false,envDir:false,ssr:{noExternal:['pdfjs-dist']},server:{middlewareMode:true,watch:null,hmr:false,ws:false},plugins:[{name:'bank-pdf-lifecycle-mock',enforce:'pre',resolveId(id){if(id==='pdfjs-dist/legacy/build/pdf.mjs')return '\0bank-pdf-test'},load(id){if(id==='\0bank-pdf-test')return `
+ const mockServer=await createServer({cacheDir:'node_modules/.vite-bank-pdf-lifecycle',configFile:false,envDir:false,ssr:{noExternal:['pdfjs-dist']},server:{middlewareMode:true,watch:null,hmr:false,ws:false},plugins:[{name:'bank-pdf-lifecycle-mock',enforce:'pre',resolveId(id){if(id==='pdfjs-dist/legacy/build/pdf.mjs')return '\0bank-pdf-test'},load(id){if(id==='\0bank-pdf-test')return `
  export const GlobalWorkerOptions={};export class PasswordException extends Error{};
  export function getDocument(options){const s=globalThis.__bankPdfLifecycle;s.options=options;s.opened++;let reject;const task={destroy:async()=>{s.destroyed++;reject?.(new Error('destroyed'))}};
  task.promise=new Promise((resolve,fail)=>{reject=fail;queueMicrotask(()=>{try {if(s.password){for(let n=0;n<10;n++){let candidate;task.onPassword(value=>candidate=value);if(candidate instanceof Error)throw new PasswordException();s.tried.push(candidate);if(candidate===s.password)break;if(n===9)throw new PasswordException()}}
@@ -74,7 +74,8 @@ test('neutral PDF lifecycle bounds, local resources, retries, abort and cleanup 
  const reset=extra=>globalThis.__bankPdfLifecycle={opened:0,destroyed:0,cleaned:0,tried:[],...extra}
  try {const doc=await mockServer.ssrLoadModule('/src/statementDocument.ts');
   let state=reset({password:'synthetic-secret'});const r=await doc.readBankDocument(new Uint8Array([1]),['wrong','synthetic-secret'],new AbortController().signal);assert.equal(r.mode,'bank');assert.deepEqual(r.pages[0].items[0],{text:'HSBC Taiwan',x:30,y:820,width:60,height:9});assert.deepEqual(state.tried,['wrong','synthetic-secret']);assert.equal(state.cleaned,1);assert.equal(state.destroyed,1);assert.equal(state.options.useWorkerFetch,false);assert.equal(state.options.useWasm,false);
-  state=reset({password:'synthetic-secret'});await assert.rejects(doc.readBankDocument(new Uint8Array([1]),['wrong'],new AbortController().signal),/密碼/);assert.equal(state.destroyed,1)
+  state=reset({password:'synthetic-secret'});await assert.rejects(doc.readBankDocument(new Uint8Array([1]),['wrong'],new AbortController().signal),/提供的密碼無法開啟/);assert.equal(state.destroyed,1)
+  for(const passwords of ['',[],[''], ' , ']){state=reset({password:'synthetic-secret'});await assert.rejects(doc.readBankDocument(new Uint8Array([1]),passwords,new AbortController().signal),/此帳單需要密碼/);assert.equal(state.destroyed,1)}
   state=reset({numPages:101});await assert.rejects(doc.readBankDocument(new Uint8Array([1]),'',new AbortController().signal),/100 頁/);assert.equal(state.destroyed,1)
   state=reset({items:[{str:'x'.repeat(500001),transform:[1,0,0,1,1,1],width:1,height:1}]});await assert.rejects(doc.readBankDocument(new Uint8Array([1]),'',new AbortController().signal),/文字過多/);assert.equal(state.cleaned,1);assert.equal(state.destroyed,1)
   state=reset({items:[]});await assert.rejects(doc.readBankDocument(new Uint8Array([1]),'',new AbortController().signal),/沒有可讀取/);assert.equal(state.destroyed,1)

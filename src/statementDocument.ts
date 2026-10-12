@@ -1,6 +1,7 @@
 import { GlobalWorkerOptions, getDocument, PasswordException } from 'pdfjs-dist/legacy/build/pdf.mjs';
 import workerUrl from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url';
 import { statementPasswordHandler } from './statements';
+import { BANK_PDF_ERRORS, bankStatementErrorMessage } from './bankStatementErrors';
 import type { BankPage } from './bankStatements/common';
 GlobalWorkerOptions.workerSrc = workerUrl;
 // Both document modes use local assets; no remote character-map/font fetches.
@@ -25,7 +26,7 @@ export function openStatementDocument(mode: StatementDocumentMode, bytes: Uint8A
     if (mode !== 'bank' && mode !== 'credit-card')
         throw new Error('不支援的帳單文件模式');
     if (bytes.byteLength > 20 * 1024 * 1024)
-        throw new Error('帳單超過 20MB，請拆分後再匯入');
+        throw new Error(BANK_PDF_ERRORS.size);
     const task = getDocument({ data: new Uint8Array(bytes), password: '', BinaryDataFactory: LocalBinaryData, useWorkerFetch: false, useWasm: false, stopAtErrors: true, verbosity: 0 });
     task.onPassword = statementPasswordHandler(password);
     return task;
@@ -42,7 +43,7 @@ export async function readBankDocument(bytes: Uint8Array, password: string | rea
     try {
         const pdf = await task.promise;
         if (pdf.numPages > 100)
-            throw new Error('帳單超過 100 頁，請拆分後再匯入');
+            throw new Error(BANK_PDF_ERRORS.pages);
         const pages: BankPage[] = [];
         let chars = 0;
         for (let n = 1; n <= pdf.numPages; n++) {
@@ -60,7 +61,7 @@ export async function readBankDocument(bytes: Uint8Array, password: string | rea
                     return [{ text: i.str, x, y: viewport.height - y, width: Math.abs(i.width), height: Math.abs(i.height) }];
                 });
                 if (chars > 500000)
-                    throw new Error('帳單文字過多，請拆分後再匯入');
+                    throw new Error(BANK_PDF_ERRORS.textLimit);
                 pages.push({ page: n, width: viewport.width, height: viewport.height, items });
             }
             finally {
@@ -68,15 +69,17 @@ export async function readBankDocument(bytes: Uint8Array, password: string | rea
             }
         }
         if (!chars)
-            throw new Error('此 PDF 沒有可讀取的文字。第一版暫不支援掃描／圖片帳單。');
+            throw new Error(BANK_PDF_ERRORS.noText);
         return { pages, mode: 'bank' };
     }
     catch (e) {
         if (signal.aborted)
             throw new Error('已取消解析');
-        if (e instanceof PasswordException)
-            throw new Error('帳單需要密碼，或密碼不正確。請重新輸入。');
-        throw new Error(e instanceof Error && /^(帳單超過|帳單文字過多|此 PDF 沒有)/.test(e.message) ? e.message : '無法讀取此 PDF，請確認檔案完整且為支援的文字帳單。');
+        if (e instanceof PasswordException) {
+            const hasPassword = typeof password === 'string' ? password.split(',').some(p => p.trim()) : password.some(p => p.length > 0);
+            throw new Error(hasPassword ? BANK_PDF_ERRORS.passwordIncorrect : BANK_PDF_ERRORS.passwordRequired);
+        }
+        throw new Error(bankStatementErrorMessage(e));
     }
     finally {
         signal.removeEventListener('abort', cancel);
