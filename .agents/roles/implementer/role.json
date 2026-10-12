@@ -1,0 +1,22 @@
+{
+  "tier": "large",
+  "claudeTools": [
+    "Read",
+    "Edit",
+    "Write",
+    "Bash",
+    "Grep",
+    "Glob"
+  ],
+  "codexSandbox": "workspace-write",
+  "codexPlugins": [
+    "superpowers@claude-plugins-official",
+    "ponytail@ponytail"
+  ],
+  "agyMode": null,
+  "agySandbox": false,
+  "claudePlugins": [
+    "superpowers@claude-plugins-official",
+    "ponytail@ponytail"
+  ]
+}

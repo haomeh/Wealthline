@@ -31,3 +31,11 @@ dist-ssr
 
 # Generated locally from pinned OCR packages before dev/build/test
 public/ocr/
+
+# Local Pi validation logs (may contain sensitive test output)
+.pi/artifacts/
+
+# Role launcher state: quota snapshots, rendered prompts/settings, validation logs
+.agents/state/
+
+.codegraph
