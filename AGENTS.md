@@ -22,5 +22,6 @@ Apply this policy only to this repository.
 
 - DEV: `implementer`; QA: `tester`; independent review: `reviewer`; product decisions: `pm`; code mapping: `scout`.
 - Prefer `wealthline_validate` for test/lint/typecheck. Do not bypass its three-failure stop through bash. Report actual outcomes and checks not run.
-- Do not access secrets or modify `.git`/agent policy. Do not commit, push, install dependencies, deploy, or change services without explicit user approval.
+- Do not access secrets or modify `.git`/agent policy. Do not commit, push, deploy, or change services without explicit user approval.
+- In cloud/sandbox containers, Agents may run `npm ci` (strictly from the lockfile) without asking. Adding, removing, or upgrading dependencies, or any change to `package.json` or the lockfile, needs explicit user approval.
 - DEV shell and trusted project scripts are not sandboxed. Do not claim complete isolation or full end-to-end coverage.
