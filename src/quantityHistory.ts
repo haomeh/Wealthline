@@ -38,6 +38,10 @@ export type HistoricalPoint = Omit<Snapshot, 'total' | 'accounts' | 'categories'
   liabilityAssumed?: boolean
   periodDerived?: boolean
   manual?: boolean
+  // Accounts the day's records left unknown, shown with an earlier value (history.ts
+  // fillUnknownAccounts); `from` is that value's date, null when there is none and only the
+  // account's known entries count.
+  filled?: { id: string; from: string | null }[]
 }
 export const instrumentKey = <T extends Pick<HistoricalInstrument,'accountId'|'type'|'symbol'|'currency'>>(p: T) => JSON.stringify([p.accountId, p.type, p.type === 'cash' ? '' : p.symbol.toUpperCase(), p.currency])
 export function validDate(date: string): boolean {

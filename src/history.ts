@@ -5,7 +5,7 @@ import { parseBankStatementBalances } from './bankStatementAssets'
 import { dataVersion } from './dataVersion'
 import { validateBankLedger } from './bankTransactions'
 import { expandPeriodDays, parseHoldingPeriods, type HoldingPeriod } from './holdingPeriods'
-import { isUnrecordedPartialDay, parseQuantityDays, quantityPoint, validDate, type QuantityDay, type HistoricalPoint } from './quantityHistory'
+import { entryValue, isUnrecordedPartialDay, parseQuantityDays, quantityPoint, validDate, type QuantityDay, type HistoricalPoint } from './quantityHistory'
 import { balanceSheet, parseLiability, type Liability } from './liabilities'
 import { accountBaseValue, baseValue, type Account, type Position, type WealthData } from './model'
 
@@ -165,12 +165,52 @@ function upsert(snapshots: Snapshot[], s: Snapshot): Snapshot[] {
   return [...snapshots.filter((x) => x.date !== s.date), s].sort((x, y) => x.date.localeCompare(y.date))
 }
 
+// Accounts that a day's records leave unknown keep the value they last had, so that a
+// record naming only some accounts (a bank statement balance, one single-day entry) or a
+// missing quote does not blank the whole day. The value comes from the original snapshot of
+// that day, else the latest earlier point; with neither, from the account's known entries,
+// unknown quantities counted as 0 (a known quantity without a quote keeps the day unknown).
+// `filled` lists these accounts for the views.
+function fillUnknownAccounts(points: HistoricalPoint[], days: Map<string, QuantityDay>, data: WealthData): HistoricalPoint[] {
+  const last = new Map<string, { value: number; date: string }>()
+  return points.map(point => {
+    const day = days.get(point.date), original = data.history.snapshots.find(s => s.date === point.date)
+    let result = point
+    if (day && point.total === null) {
+      const accounts = [...point.accounts]
+      if (!day.inventory) for (const a of original?.accounts ?? []) if (!accounts.some(x => x.id === a.id)) accounts.push({ id: a.id, name: a.name, value: null })
+      const filled: { id: string; from: string | null }[] = []
+      const categories: Record<string, number> = Object.create(null)
+      const add = (category: string, value: number) => { categories[category] = (categories[category] ?? 0) + value }
+      const known = accounts.map(a => {
+        const entries = day.entries.filter(e => e.accountId === a.id)
+        if (a.value !== null) {
+          for (const e of entries) add(e.category, entryValue(e) ?? 0)
+          return a
+        }
+        const same = original?.accounts.find(x => x.id === a.id), prior = last.get(a.id)
+        // Without an earlier value, a held quantity whose quote or rate is missing has no value to show.
+        const value = same ? same.value : prior ? prior.value : entries.reduce((sum, e) => sum + (e.error ? NaN : e.quantity === null ? 0 : entryValue(e) ?? NaN), 0)
+        filled.push({ id: a.id, from: same ? point.date : prior?.date ?? null })
+        add(data.accounts.find(x => x.id === a.id)?.category ?? entries[0]?.category ?? '未分類', value)
+        return { ...a, value }
+      })
+      const total = known.reduce((sum, a) => sum + (a.value ?? 0), 0)
+      if (filled.length && Number.isFinite(total)) result = { ...point, total, accounts: known, categories, filled, netWorth: point.liabilityTotal === null ? null : total - (point.liabilityTotal ?? 0) }
+    }
+    const carried = new Set(result.filled?.filter(f => f.from !== result.date).map(f => f.id))
+    for (const a of result.accounts) if (a.value !== null && !carried.has(a.id)) last.set(a.id, { value: a.value, date: result.date })
+    return result
+  })
+}
+
 // Shared history source: original snapshots plus current today, with explicit
-// quantity days taking precedence. Unknown totals remain gaps, not zeros.
+// quantity days taking precedence. Accounts a day leaves unknown are filled (fillUnknownAccounts).
 export function totalPoints(data: WealthData, now: string): HistoricalPoint[] {
   const today = snapshotOf(data, now)
   const byDate = new Map<string, HistoricalPoint>(data.history.snapshots.map(s => [s.date, s]))
   byDate.set(today.date, today)
+  const days = new Map<string, QuantityDay>()
   for (const day of data.history.valuedQuantityDays ?? expandPeriodDays(data,now)) {
     const original = data.history.snapshots.find(s => s.date === day.date)
     if (day.periodDerived && original || isUnrecordedPartialDay(day)) continue
@@ -178,11 +218,13 @@ export function totalPoints(data: WealthData, now: string): HistoricalPoint[] {
     // Past days retain the recorded debt (including unknown), never backfill it.
     const basis = day.date === today.date ? { ...(original ?? today), liabilityTotal: today.liabilityTotal, netWorth: today.netWorth, liabilityEstimated: today.liabilityEstimated } : original
     byDate.set(day.date, quantityPoint(day, basis))
+    days.set(day.date, day)
   }
-  return [...byDate.values()].map(point => {
+  const sorted = [...byDate.values()].sort((a,b) => a.date.localeCompare(b.date))
+  return fillUnknownAccounts(sorted, days, data).map(point => {
     const liabilityTotal = point.liabilityTotal === undefined ? 0 : point.liabilityTotal
     return { ...point, liabilityAssumed: point.liabilityAssumed ?? point.liabilityTotal === undefined, liabilityTotal, netWorth: point.netWorth === null || point.total === null || liabilityTotal === null ? null : point.total - liabilityTotal }
-  }).sort((a,b) => a.date.localeCompare(b.date))
+  })
 }
 
 // The edits a save would record, for review before saving.

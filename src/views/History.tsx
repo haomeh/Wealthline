@@ -2,13 +2,14 @@ import { accountLabel } from '../model'
 import { ActionIcon } from './ActionIcon'
 import { removalMessage } from '../historyCompletion'
 import { useCalendarNow } from '../useCalendarNow'
-import { useRef, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useHistoricalValuations } from '../useHistoricalValuations'
 import { fmt } from '../format'
 import { localDate, snapshotOf, totalPoints, type Change } from '../history'
 import { type WealthData } from '../model'
 import { displaySymbol } from '../quotes'
 import { LiabilityChangeRow } from './LiabilityChange'
+import { filledNote } from './historySeries'
 import { QuantityHistory, QuantityRecord, type QuantityEditRequest } from './QuantityHistory'
 import { instrumentKey } from '../quantityHistory'
 
@@ -39,6 +40,11 @@ export function HistoryView({ initialDate, data, dirty, busy, onSave, onChange, 
   const points = totalPoints(historical.data, now)
   const sourcePoint = points.find(p => p.date === sourceDate) ?? points.at(-1)
   const sourceDay = sourcePoint && (sourcePoint.manual || sourcePoint.periodDerived) ? historical.data.history.valuedQuantityDays?.find(d => d.date === sourcePoint.date) ?? historical.data.history.quantityDays?.find(d => d.date === sourcePoint.date) : undefined
+
+  // Opened for one day (from the overview): bring that day's details and edit buttons into view.
+  useEffect(() => {
+    if (initialDate) { sourcePanel.current?.scrollIntoView?.({ block: 'start' }); sourcePanel.current?.focus() }
+  }, [initialDate])
 
   // Accounts that have since been deleted keep their name from the last snapshot they appear in.
   const accountNames = new Map<string, string>()
@@ -75,7 +81,8 @@ export function HistoryView({ initialDate, data, dirty, busy, onSave, onChange, 
         <p className="muted">{sourcePoint.periodDerived ? '持有期間推算' : sourcePoint.manual ? '單日補登／完整回補' : sourcePoint.date === today.date ? '目前餘額／當日快照' : '原始每日快照'} · {sourcePoint.date} · 總資產 {sourcePoint.total === null ? '資料不完整' : `NT$ ${fmt(sourcePoint.total, 0)}`}</p>
         {sourceDay?.inventory && <p className="muted small">持倉清單來源：{sourceDay.inventory.source.date} · {sourceDay.inventory.source.kind === 'current' ? '目前完整持倉' : '已確認完整清單'}</p>}
         {sourceDay?.completion && <p className="muted small">當日補齊來源：{sourceDay.completion.source.date} · {sourceDay.completion.source.kind === 'current' ? '目前完整持倉' : '已確認完整清單'}</p>}
-        <ul className="snapshot-accounts">{sourcePoint.accounts.map(a => <li key={a.id}><span>{accountLabel({ name: a.name, country: sourceDay?.entries.find(e => e.accountId === a.id)?.country ?? data.accounts.find(x => x.id === a.id)?.country })}</span><strong>{a.value === null ? '資料不完整' : `NT$ ${fmt(a.value, 0)}`}</strong></li>)}</ul>
+        <ul className="snapshot-accounts">{sourcePoint.accounts.map(a => <li key={a.id}><span>{accountLabel({ name: a.name, country: sourceDay?.entries.find(e => e.accountId === a.id)?.country ?? data.accounts.find(x => x.id === a.id)?.country })}{filledNote(sourcePoint, a.id) && <small className="muted"> · {filledNote(sourcePoint, a.id)}</small>}</span><strong>{a.value === null ? '資料不完整' : `NT$ ${fmt(a.value, 0)}`}</strong></li>)}</ul>
+        {!!sourcePoint.filled?.length && <p className="muted small">{sourcePoint.filled.length} 個帳戶這天沒有紀錄，沿用之前最近一筆金額；沒有更早紀錄的以 0 計。可在下方逐項編輯數量補登這天。</p>}
         <p className="muted small">分類總額：{Object.entries(sourcePoint.categories).map(([name, value]) => `${name} ${value === null ? '未知' : `NT$ ${fmt(value, 0)}`}`).join(' · ') || '未記錄'}</p>
         {sourceDay ? <div className="quantity-rows">{sourceDay.entries.map(entry => <QuantityRecord key={instrumentKey(entry)} entry={entry} actions={
           <button title="編輯來源數量" aria-label="編輯來源數量" disabled={busy || !!quantityRequest} data-history-entry={`source:${sourcePoint.date}:${instrumentKey(entry)}`} onClick={() => setQuantityRequest({ date: sourcePoint.date, expected: data.history.quantityDays?.find(d => d.date === sourcePoint.date), entryKey: instrumentKey(entry), focusKey: `source:${sourcePoint.date}:${instrumentKey(entry)}` })}><ActionIcon name="edit" /></button>
@@ -118,7 +125,7 @@ export function HistoryView({ initialDate, data, dirty, busy, onSave, onChange, 
         <section className="panel daily" aria-label="每日紀錄">
           <div className="panel-head">
             <h3>每日紀錄</h3>
-            <span className="muted small">{points.length} 天 · 與總覽時間線共用資料；未知值不視為零。</span>
+            <span className="muted small">{points.length} 天 · 與總覽時間線共用資料；當天沒有紀錄的帳戶沿用之前最近一筆金額。</span>
           </div>
           <div className="scroll">
             <table className="data">
@@ -135,7 +142,7 @@ export function HistoryView({ initialDate, data, dirty, busy, onSave, onChange, 
               <tbody>
                 {[...points].reverse().slice(0,visibleDays).map((s) => (
                   <tr key={s.date}>
-                    <td data-label="日期"><span className="daily-cell-value daily-date"><time dateTime={s.date}>{s.date.replace(/-/g, '/')}</time><span className="daily-source muted small">{s.periodDerived ? '期間推算' : s.manual ? (data.history.quantityDays?.find(d=>d.date===s.date)?.inventory ? '完整回補' : '手動') : s.date === today.date ? '目前' : '原始快照'}</span></span></td>
+                    <td data-label="日期"><span className="daily-cell-value daily-date"><time dateTime={s.date}>{s.date.replace(/-/g, '/')}</time><span className="daily-source muted small">{s.periodDerived ? '期間推算' : s.manual ? (data.history.quantityDays?.find(d=>d.date===s.date)?.inventory ? '完整回補' : '手動') : s.date === today.date ? '目前' : '原始快照'}{s.filled?.length ? ` · ${s.filled.length} 個帳戶沿用` : ''}</span></span></td>
                     <td className="num" data-label="總資產"><span className="daily-cell-value">{s.total === null ? '資料不完整' : `NT$ ${fmt(s.total, 0)}`}</span></td>
                     <td className="num" data-label="總負債"><span className="daily-cell-value">{s.liabilityEstimated && '預估 · '}{s.liabilityAssumed ? '未記錄（以 0 計）' : s.liabilityTotal === undefined ? '未記錄' : s.liabilityTotal === null ? '無法換算' : `NT$ ${fmt(s.liabilityTotal, 0)}`}</span></td>
                     <td className="num" data-label="淨資產"><span className="daily-cell-value">{s.liabilityEstimated && '預估 · '}{s.netWorth === undefined ? '未記錄' : s.netWorth === null ? '無法換算' : `NT$ ${fmt(s.netWorth, 0)}`}</span></td>

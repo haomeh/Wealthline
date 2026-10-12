@@ -40,3 +40,10 @@ export function seriesFor(mode: Mode, points: HistoricalPoint[], accountNames: M
   }
   return series
 }
+
+// Where an account's value on this point comes from when the day did not record it (history.ts).
+export function filledNote(point: HistoricalPoint, id: string): string {
+  const f = point.filled?.find(x => x.id === id)
+  if (!f) return ''
+  return f.from === null ? '無紀錄，以 0 計' : f.from === point.date ? '沿用當天快照' : `沿用 ${f.from.replaceAll('-', '/')}`
+}

@@ -920,7 +920,7 @@ test('review: unrelated edits retain values; refresh retains same-target values,
  assert.equal(renders.length,beforeUnmount)
 })
 
-test('overview compares actual last record and history preserves omitted or explicitly unknown dates',async()=>{
+test('overview compares actual last record, history omits uncovered dates and fills an explicitly unknown day',async()=>{
  const data=historicalFixture();data.accounts[0].positions[0].quantity=100
  data.accounts.push({...data.accounts[0],id:'b',name:'合成B'})
  const {snapshotOf,localDate}=await server.ssrLoadModule('/src/history.ts')
@@ -939,10 +939,11 @@ test('overview compares actual last record and history preserves omitted or expl
  assert.match(document.body.textContent,/持倉數量不足的推算日/)
  const entry={...data.history.holdingPeriods[0],quantity:null}
  const unknown={...data,history:{...data.history,quantityDays:[{date:yesterday,updatedAt:new Date().toISOString(),sparse:true,entries:[entry]}]}}
- await render(ChangeSinceLast,{data:unknown});assert.match(document.body.textContent,/資料不完整，無法比較/)
+ // The other accounts keep their earlier snapshot values, so yesterday can be compared.
+ await render(ChangeSinceLast,{data:unknown});assert.match(document.body.textContent,/\+200.*較昨天/);assert.doesNotMatch(document.body.textContent,/資料不完整/)
  await render(HistoryView,{...props,data:unknown});
  const unknownRow=[...document.querySelectorAll('section.daily tbody tr')].find(row=>row.textContent.includes(yesterday.replaceAll('-','/')))
- assert.match(unknownRow.textContent,/資料不完整/)
+ assert.match(unknownRow.textContent,/2 個帳戶沿用NT\$ 200/);assert.doesNotMatch(unknownRow.textContent,/資料不完整/)
 })
 
 test('crypto cash preview shows depeg conversion legs, persists provenance, and failed refresh stays unknown',async()=>{
