@@ -9,7 +9,7 @@ import { localDate, snapshotOf, totalPoints, type Change } from '../history'
 import { type WealthData } from '../model'
 import { displaySymbol } from '../quotes'
 import { LiabilityChangeRow } from './LiabilityChange'
-import { QuantityHistory, Valuation, type QuantityEditRequest } from './QuantityHistory'
+import { QuantityHistory, QuantityRecord, type QuantityEditRequest } from './QuantityHistory'
 import { instrumentKey } from '../quantityHistory'
 
 
@@ -77,12 +77,9 @@ export function HistoryView({ initialDate, data, dirty, busy, onSave, onChange, 
         {sourceDay?.completion && <p className="muted small">當日補齊來源：{sourceDay.completion.source.date} · {sourceDay.completion.source.kind === 'current' ? '目前完整持倉' : '已確認完整清單'}</p>}
         <ul className="snapshot-accounts">{sourcePoint.accounts.map(a => <li key={a.id}><span>{accountLabel({ name: a.name, country: sourceDay?.entries.find(e => e.accountId === a.id)?.country ?? data.accounts.find(x => x.id === a.id)?.country })}</span><strong>{a.value === null ? '資料不完整' : `NT$ ${fmt(a.value, 0)}`}</strong></li>)}</ul>
         <p className="muted small">分類總額：{Object.entries(sourcePoint.categories).map(([name, value]) => `${name} ${value === null ? '未知' : `NT$ ${fmt(value, 0)}`}`).join(' · ') || '未記錄'}</p>
-        {sourceDay ? <div className="quantity-rows">{sourceDay.entries.map(entry => <div className="quantity-row" key={instrumentKey(entry)}>
-          <strong>{accountLabel({ name: entry.account, country: entry.country })} · {entry.symbol || entry.currency} · {entry.currency}</strong>
-          <span>數量 {entry.quantity === null ? '未知' : fmt(entry.quantity, 8)}{entry.quantityAsOf && ` · 數量基準 ${entry.quantityAsOf}`}</span>
-          <Valuation entry={entry} />
-          <button disabled={busy || !!quantityRequest} data-history-entry={`source:${sourcePoint.date}:${instrumentKey(entry)}`} onClick={() => setQuantityRequest({ date: sourcePoint.date, expected: data.history.quantityDays?.find(d => d.date === sourcePoint.date), entryKey: instrumentKey(entry), focusKey: `source:${sourcePoint.date}:${instrumentKey(entry)}` })}>編輯來源數量</button>
-        </div>)}</div> : <p className="muted small">原始快照只保存帳戶與分類總額，無法還原當時各項數量與行情；可從下方每日紀錄補登數量。目前持倉可在帳戶頁編輯。</p>}
+        {sourceDay ? <div className="quantity-rows">{sourceDay.entries.map(entry => <QuantityRecord key={instrumentKey(entry)} entry={entry} actions={
+          <button title="編輯來源數量" aria-label="編輯來源數量" disabled={busy || !!quantityRequest} data-history-entry={`source:${sourcePoint.date}:${instrumentKey(entry)}`} onClick={() => setQuantityRequest({ date: sourcePoint.date, expected: data.history.quantityDays?.find(d => d.date === sourcePoint.date), entryKey: instrumentKey(entry), focusKey: `source:${sourcePoint.date}:${instrumentKey(entry)}` })}><ActionIcon name="edit" /></button>
+        } />)}</div> : <p className="muted small">原始快照只保存帳戶與分類總額，無法還原當時各項數量與行情；可從下方每日紀錄補登數量。目前持倉可在帳戶頁編輯。</p>}
       </section>}
       <QuantityHistory data={data} busy={busy} onChange={onChange} request={quantityRequest} onRequest={setQuantityRequest} displayDays={historical.data.history.valuedQuantityDays ?? historical.data.history.quantityDays}/>
       <section className="panel">
@@ -121,7 +118,7 @@ export function HistoryView({ initialDate, data, dirty, busy, onSave, onChange, 
         <section className="panel daily" aria-label="每日紀錄">
           <div className="panel-head">
             <h3>每日紀錄</h3>
-            <span className="muted small">{points.length} 天 · 與總覽時間線共用資料；未知值不視為零。表格可左右滑動</span>
+            <span className="muted small">{points.length} 天 · 與總覽時間線共用資料；未知值不視為零。</span>
           </div>
           <div className="scroll">
             <table className="data">

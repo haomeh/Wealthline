@@ -102,40 +102,28 @@ export function PositionHistory({
         <>
           <TrendChart dates={days.map((x) => x.date)} series={[{ key: 'v', label: '台幣價值', color: 'var(--s1)', values: days.map((x) => x.value) }]} area />
           {notes.length > 0 && <p className="muted small chart-note">{notes.join(' ')}</p>}
-          <div className="scroll">
-            <table className="data">
-              <thead>
-                <tr>
-                  <th>日期</th>
-                  <th className="num">{p.type === 'cash' ? '餘額' : '數量'}</th>
-                  {p.type === 'holding' && <th className="num">價格</th>}
-                  <th className="num">匯率</th>
-                  <th className="num">{BASE_CURRENCY}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {[...days]
-                  .reverse()
-                  .slice(0, shown)
-                  .map((v) => (
-                    <tr key={v.date}>
-                      <td>
-                        {v.date.replace(/-/g, '/')}
-                        {v.live && <span className="muted small"> 目前</span>}
-                      </td>
-                      <td className="num">{v.quantity === null ? '未知' : fmt(v.quantity, 8)}</td>
-                      {p.type === 'holding' && (
-                        <td className="num">
-                          {v.price === null ? '未知' : fmt(v.price, 4)} <span className="muted small">{p.currency}</span><div className="muted small">{v.priceDate}</div>
-                        </td>
-                      )}
-                      <td className="num">{p.currency === BASE_CURRENCY ? '—' : v.rate === null ? '未知' : fmt(v.rate, 4)}{v.rateQuote?.source==='derived' && <HistoricalFxValue quote={v.rateQuote}/>} {v.error && <div className="muted small">{v.error}</div>}</td>
-                      <td className="num">{v.value === null ? '未知' : fmt(v.value, 0)}<div className="muted small">{v.rateDate && `匯率日 ${v.rateDate}`}</div></td>
-                    </tr>
-                  ))}
-              </tbody>
-            </table>
-          </div>
+          <ul className="position-history-days">
+            {[...days].reverse().slice(0, shown).map((v) => (
+              <li key={v.date}>
+                <details className="position-day">
+                  <summary>
+                    <span><time dateTime={v.date}>{v.date.replace(/-/g, '/')}</time>{v.live && <span className="muted small"> 目前</span>}</span>
+                    <strong className={`num position-day-value${v.value === null ? ' tag warn' : ''}`}>{v.value === null ? '未知' : `${BASE_CURRENCY} ${fmt(v.value, 0)}`}</strong>
+                  </summary>
+                  <dl className="position-day-evidence">
+                    <dt>{p.type === 'cash' ? '餘額' : '數量'}</dt><dd className="num">{v.quantity === null ? '未知' : fmt(v.quantity, 8)}{p.type === 'cash' && ` ${p.currency}`}</dd>
+                    {p.type === 'holding' && <>
+                      <dt>價格</dt><dd className="num">{v.price === null ? '未知' : fmt(v.price, 4)} {p.currency}</dd>
+                      <dt>行情日</dt><dd>{v.priceDate ?? '未知'}</dd>
+                    </>}
+                    <dt>匯率</dt><dd className="num">{p.currency === BASE_CURRENCY ? '—' : v.rate === null ? '未知' : fmt(v.rate, 4)}{v.rateQuote?.source === 'derived' && <HistoricalFxValue quote={v.rateQuote} />}</dd>
+                    {v.rateDate && <><dt>匯率日</dt><dd>{v.rateDate}</dd></>}
+                    {v.error && <><dt>資料狀態</dt><dd>{v.error}</dd></>}
+                  </dl>
+                </details>
+              </li>
+            ))}
+          </ul>
           {days.length > shown && (
             <button className="ghost small" onClick={() => setShown(shown + 30)}>
               顯示更早的紀錄（還有 {days.length - shown} 天）

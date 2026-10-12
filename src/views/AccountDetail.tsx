@@ -148,7 +148,6 @@ export function AccountDetail({ data, account: a, onChange, onEdit, onBack, onRe
                       </td>
                       <td className="num">{fmt(baseValue(data, p), 0)}</td>
                       <td className="row-actions">
-                        <TrendToggle open={open === p.id} onClick={() => setOpen(open === p.id ? null : p.id)} />
                         <button
                           className="icon"
                           aria-label="刪除"

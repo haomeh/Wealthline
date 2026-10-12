@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import { applyHoldingPeriod, expandPeriodDays, periodConflicts, periodQuantityOn, periodRevision, shiftDate, type HoldingPeriod } from '../holdingPeriods'
-import type { WealthData } from '../model'
+import { accountLabel, type WealthData } from '../model'
+import type { ReactNode } from 'react'
+import { DetailRecord } from './DetailRecord'
+import { ActionIcon } from './ActionIcon'
 import { localDate } from '../history'
 import { entriesForDate, entryValue, historyCatalog, instrumentKey, parseQuantityDays, quantityPoint, validatePastDate, valueDays, valueEntries, type QuantityDay, type QuantityEntry } from '../quantityHistory'
 import { useHistoryExit } from '../useHistoryExit'
@@ -55,10 +58,9 @@ export function QuantityHistory({ data, busy = false, onChange, request: editing
       {!days.length ? <p className="muted">尚未單日補登。舊每日快照只有總額，無法還原各持倉數量。</p> : <label className="field"><span>篩選已補登帳戶</span><select value={activeFilter} onChange={e => setFilter(e.target.value)}><option value="">全部帳戶</option>{accounts.map(([id,name]) => <option key={id} value={id}>{name}</option>)}</select></label>}
       {[...days].reverse().filter(day => !activeFilter || day.entries.some(e => e.accountId === activeFilter)).map(day => <details className="quantity-day" key={day.date}>
         <summary>{day.date}{day.inventory ? ' · 完整回補' : day.completion ? ' · 當日補齊' : ''} · {day.entries.filter(e => (!activeFilter || e.accountId === activeFilter) && e.quantity !== null).length} 項已填數量</summary>
-        <div className="quantity-rows">{(displayDays?.find(d => d.date === day.date)?.entries ?? day.entries).filter(e => !activeFilter || e.accountId === activeFilter).map(entry => <div className="quantity-row" key={instrumentKey(entry)}>
-          <strong>{nameOf(entry)}</strong><span>數量 {entry.quantity === null ? '未知' : fmt(entry.quantity, 8)}</span><Valuation entry={entry} />
-          <button disabled={busy} data-history-entry={`item:${day.date}:${instrumentKey(entry)}`} aria-label={`編輯 ${day.date} ${nameOf(entry)}`} onClick={() => setEditing({ date: day.date, expected: day, entryKey: instrumentKey(entry),focusKey:`item:${day.date}:${instrumentKey(entry)}` })}>編輯這項數量</button>
-        </div>)}</div>
+        <div className="quantity-rows">{(displayDays?.find(d => d.date === day.date)?.entries ?? day.entries).filter(e => !activeFilter || e.accountId === activeFilter).map(entry => <QuantityRecord key={instrumentKey(entry)} entry={entry} actions={
+          <button disabled={busy} title="編輯這項數量" data-history-entry={`item:${day.date}:${instrumentKey(entry)}`} aria-label={`編輯 ${day.date} ${nameOf(entry)}`} onClick={() => setEditing({ date: day.date, expected: day, entryKey: instrumentKey(entry),focusKey:`item:${day.date}:${instrumentKey(entry)}` })}><ActionIcon name="edit" /></button>
+        } />)}</div>
         <div className="row"><button disabled={busy} data-history-entry={`list:${day.date}`} onClick={() => setEditing({ date: day.date, mode:'baseline', expected: day,focusKey:`list:${day.date}` })}>編輯 {day.date}</button><button disabled={busy} className="danger" onClick={() => {
           if (confirm(removalMessage(data,day.date))) apply({ ...data, history: { ...data.history, quantityDays: days.filter(d => d !== day) } })
         }}>移除 {day.date}</button></div>
@@ -245,12 +247,12 @@ export function QuantityEditor({ data, busy = false, date: initialDate, expected
   </dialog>
 }
 
-export function Valuation({ entry: e }: { entry: QuantityEntry }) {
+export function Valuation({ entry: e, showValue = true }: { entry: QuantityEntry; showValue?: boolean }) {
   const value = entryValue(e)
   const price = e.price?.source === 'Yahoo' ? `Yahoo ${e.price.symbol} · ${e.price.date} 收盤 ${fmt(e.price.value, 6)} ${e.currency}` : undefined
   return (
     <div className="small">
-      <span>{value === null ? '估值未知' : `NT$ ${fmt(value, 2)}`}</span>
+      {showValue && <span>{value === null ? '估值未知' : `NT$ ${fmt(value, 2)}`}</span>}
       {e.quantity !== null && e.quantity !== 0 && (
         <>
           <div>{e.type === 'cash' ? '單位值 1' : (price ?? '缺歷史收盤價')}</div>
@@ -260,4 +262,15 @@ export function Valuation({ entry: e }: { entry: QuantityEntry }) {
       {e.error && <p className="notice">{e.error}</p>}
     </div>
   )
+}
+
+export function QuantityRecord({ entry, actions }: { entry: QuantityEntry; actions: ReactNode }) {
+  const value = entryValue(entry)
+  const title = `${accountLabel({name:entry.account,country:entry.country})} · ${entry.symbol || entry.currency}${entry.symbol ? ` · ${entry.currency}` : ''}`
+  return <DetailRecord className="quantity-record" title={title} label={`查看來源 ${title}`} actions={actions}
+    value={<strong className={value === null ? 'record-unknown' : ''}>{value === null ? '估值未知' : `NT$ ${fmt(value, 2)}`}</strong>}>
+    <p>{title}</p>
+    <p>數量 {entry.quantity === null ? '未知' : fmt(entry.quantity, 8)}{entry.quantityAsOf && ` · 數量基準 ${entry.quantityAsOf}`}</p>
+    <Valuation entry={entry} showValue={false} />
+  </DetailRecord>
 }

@@ -42,7 +42,7 @@ export function ExpenseCategoryRules({rules,busy,onChange}: {rules:ExpenseCatego
 export function CategoryRuleButton({expense,rules,busy,onClick,label,editLabel}: {expense:Expense;rules:ExpenseCategoryRule[];busy:boolean;onClick:(index?:number)=>void;label?:string;editLabel?:string}) {
   const index = expenseCategoryRuleIndex(expense.description,rules)
   if(expense.category!==undefined || (index<0 && expenseCategory(expense,rules)!=='未分類')) return null
-  return <button type="button" className="add-category-rule" disabled={busy} aria-label={index>=0 ? editLabel ?? `編輯分類規則 ${expense.date} ${expense.description}` : label ?? `新增分類規則 ${expense.date} ${expense.description}`} title={index>=0?'編輯套用的分類規則':'為此商家新增分類規則'} onClick={()=>onClick(index>=0?index:undefined)}><ActionIcon name={index>=0?'edit':'add'}/></button>
+  return <button type="button" className="add-category-rule" disabled={busy} aria-label={index>=0 ? editLabel ?? `編輯分類規則 ${expense.date} ${expense.description}` : label ?? `新增分類規則 ${expense.date} ${expense.description}`} title={index>=0?'編輯套用的分類規則':'為此商家新增分類規則'} onClick={()=>onClick(index>=0?index:undefined)}><ActionIcon name={index>=0?'tag':'add'}/></button>
 }
 
 export function CategoryRuleDialog({expense,rule,busy,onSave,onCancel}: {expense:Expense;rule?:ExpenseCategoryRule;busy:boolean;onSave:(rule:ExpenseCategoryRule)=>void;onCancel:()=>void}) {
