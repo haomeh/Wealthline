@@ -21,13 +21,17 @@ export function SaveReview({ changes, liabilityChanges = [], onRevertLiability, 
   useEffect(() => {
     ref.current?.showModal()
   }, [])
-  const big = changes.filter((c) => c.before && c.after && changeRatio(c) >= 0.5).length
+  const isBig = (c: Change) => !!c.before && !!c.after && changeRatio(c) >= 0.5
+  const big = changes.filter(isBig).length
+  // Large changes first: they are the likely typos.
+  const ordered = [...changes].sort((x, y) => Number(isBig(y)) - Number(isBig(x)))
+  const total = changes.length + liabilityChanges.length
 
   return (
     <dialog ref={ref} className="review" onCancel={(event) => { event.preventDefault(); if (!busy) onCancel() }} aria-labelledby="review-title">
-      <h3 id="review-title">確認要儲存的變更</h3>
+      <h3 id="review-title">確認 {total} 筆修改</h3>
       <p className="muted small">
-        以下 {changes.length + liabilityChanges.length} 項會記錄到歷史，原本的數字會保留。打錯的可以按「復原」改回去。
+        儲存後會記入歷史，原本的數字會保留。打錯的可以按「復原」改回去。
       </p>
       {big > 0 && (
         <p className="notice">
@@ -36,17 +40,18 @@ export function SaveReview({ changes, liabilityChanges = [], onRevertLiability, 
       )}
       <div className="changes review-list">
         <ul>
-          {changes.map((c, i) => {
+          {ordered.map((c, i) => {
             const ratio = changeRatio(c)
             return (
               <ChangeRow
                 key={i}
+                className={isBig(c) ? 'big' : ''}
                 c={c}
                 showAccount
                 showTime={false}
                 extra={
                   <>
-                    {Number.isFinite(ratio) && ratio >= 0.5 && <span className="tag warn">變動 {Math.round(ratio * 100)}%</span>}
+                    {Number.isFinite(ratio) && ratio >= 0.5 && <span className="tag warn">變動 {Math.round(ratio * 100)}%，請確認不是打錯</span>}
                     {canRevert(c) && (
                       <button className="small" onClick={() => onRevert(c)} disabled={busy}>
                         復原

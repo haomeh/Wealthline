@@ -11,6 +11,7 @@ import { BankRowFields } from './BankTransactionEditor'
 import { ActionIcon } from './ActionIcon'
 import { fmt } from '../format'
 import { BANK_SUMMARY_PENDING, BANK_TEXT_NOTICE, bankFileSummary, classificationLabel, summarizeBankWarnings } from './bankUiHelpers'
+import { ImportSteps } from './ImportSteps'
 
 type PreviewRow={draft:BankTransaction;original:BankTransactionRow;provenance:BankRowProvenance;selected:boolean;manual?:boolean;narration?:{leading:string[];trailing:string[]}}
 type PreviewSection={automatic?:boolean;id:string;bank:string;currency:string;hash:string;rows:PreviewRow[];accountId:string;newId:string;label:string;noTransactions:boolean;partial:boolean;warnings:ReturnType<typeof summarizeBankWarnings>}
@@ -106,7 +107,7 @@ export function BankStatementImport({data,accounts,existing,rules,passwords,pass
  const selectedCount=sections.reduce((n,s)=>n+s.rows.filter(r=>r.selected).length,0)
  const narrationCount=sections.reduce((n,s)=>n+s.rows.filter(r=>r.selected&&r.narration).length,0)
  return <section className="panel bank-import">
-  <div className="panel-head"><h2>匯入銀行帳單</h2><button onClick={()=>{controller.current?.abort();onCancel()}}>取消匯入</button></div>
+  <div className="panel-head"><h2>匯入銀行帳單</h2><ImportSteps step={sections.length ? 2 : 1} /><button onClick={()=>{controller.current?.abort();onCancel()}}>取消匯入</button></div>
   <p className="bank-import-intro muted">PDF 在本機解析，不上傳原始文件。核對並匯入後，請按「儲存變更」。</p>
   <details className="bank-help"><summary>支援範圍與資料保護</summary>
    <p className="muted">不保存原始文件或完整擷取文字；確認後保存收支明細，並將已辨識的期末餘額補入資產歷史。{BANK_TEXT_NOTICE}</p>

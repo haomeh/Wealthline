@@ -68,6 +68,8 @@
 
 ### 統計與圖表
 - [x] 總覽：總資產、資產配置（依類別）、各帳戶、國家分布、幣別曝險。
+- [x] 收支總覽頁：收支差額、收入、實際消費、近 6 個月對照與消費分類，信用卡與銀行流水合併成同一套收支。
+- [x] 介面：左側分組導覽、圓角磚版面與襯線數字；Newsreader 與 Noto Serif TC 字型由本站提供（SIL Open Font License 1.1，授權見 `/third-party/fonts/`）。
 - [x] 點選圖表中的帳戶可直接進入帳戶明細。
 
 ### 歷史紀錄
@@ -165,7 +167,7 @@
 | `src/liabilities.ts` | 負債資料驗證與資產／負債／淨資產計算 |
 | `src/bankTransactions.ts`、`src/bankTextPrivacy.ts` | 獨立銀行流水、分類規則、去重與已識別文字識別碼遮蔽 |
 | `src/bankStatements.ts`、`src/statementDocument.ts` | 銀行版型解析與區分銀行／信用卡的本機 PDF 讀取 |
-| `src/cashflow.ts`、`src/views/CashflowSummary.tsx` | 不修改來源資料的多幣別收支投影及統一 Overview |
+| `src/cashflow.ts`、`src/views/CashflowSummary.tsx`、`src/views/Cashflow.tsx` | 不修改來源資料的多幣別收支投影、總覽收支卡片及收支總覽頁 |
 | `src/views/Liabilities.tsx` | 負債清單及編輯／試算表單 |
 | `src/loanEstimate.ts` | 按月攤還試算與數值驗證 |
 | `src/history.ts` | 歷史：異動紀錄與每日快照 |

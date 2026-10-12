@@ -1420,7 +1420,7 @@ test('public home and legal pages need no sign-in and legal pages do not restore
     assert.ok(document.querySelector('footer a[href="/privacy"]'))
     assert.ok(document.querySelector('footer a[href="/terms"]'))
     assert.equal(document.querySelectorAll('script[src*="accounts.google.com"]').length, 0)
-    assert.equal(document.querySelector('.topbar'), null)
+    assert.equal(document.querySelector('.sidebar'), null)
     assert.equal(calls, 0, path)
     if (path === '/' || path === '/app') assert.ok(button('使用 Google 登入'))
     else assert.ok(document.querySelector('.legal article'))
@@ -1432,7 +1432,7 @@ test('restored home session moves to /app without replacing a protected deep lin
   setupDrive(fixture())
   await render(App)
   assert.equal(window.location.pathname, '/app')
-  assert.ok(document.querySelector('.topbar'))
+  assert.ok(document.querySelector('.sidebar'))
   await act(async () => { window.history.replaceState(null, '', '/history'); window.dispatchEvent(new PopStateEvent('popstate')) })
   assert.equal(window.location.pathname, '/history')
   assert.ok(document.querySelector('section.daily'))
@@ -1749,7 +1749,7 @@ test('expense summary follows total assets without linking expense month to asse
   const data={...fixture(),accounts:[{id:'account',name:'Synthetic bank',kind:'bank',category:'現金',country:'TW',positions:[]}],expenses:[{id:'bus',date:'2026-09-01',description:'BUS/MRT',card:'Card',currency:'TWD',amount:12}],expenseCategoryRules:[{keyword:'BUS/MRT',category:'交通'}]}
   await render(Overview,{data,onGoRates(){},onNewAccount(){},onImport(){},onOpenAccount(){}})
   const original=structuredClone(data)
-  assert.equal(document.querySelector('.hero').nextElementSibling.getAttribute('aria-label'),'統一收支總覽')
+  assert.equal(document.querySelector('.overview-tiles').nextElementSibling.getAttribute('aria-label'),'統一收支總覽')
   const assetTimeline=document.querySelector('.snapshot-timeline').textContent
   await selectCashflowMonth(2026,9)
   assert.equal(document.querySelector('[data-cashflow-metric="consumption"]').textContent,'12')
@@ -2099,7 +2099,7 @@ test('a split Drive file opens from its main file; the transaction and history p
   // The overview's spending and trend come from the main file's summary.
   assert.ok(document.querySelector('[aria-label="統一收支總覽"]'))
   assert.match(document.body.textContent,/2026 年以前只顯示每月最後一筆原始快照，不含補登與期間推算/)
-  await click(button('消費明細'));await settle()
+  await click(button('信用卡消費'));await settle()
   assert.match(document.body.textContent,/Old shop/)
   assert.deepEqual(reads(from).filter(p=>p!=='main').sort(),['ledger-2025-Q4','ledger-2026-Q3'])
   await click(button('歷史明細'));await settle()

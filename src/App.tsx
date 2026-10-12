@@ -1,5 +1,5 @@
 import { dataVersion } from './dataVersion'
-import { useEffect, useReducer, useRef, useState } from 'react'
+import { Fragment, useEffect, useReducer, useRef, useState } from 'react'
 import {
   clearSession,
   fetchProfile,
@@ -16,6 +16,7 @@ import { DATA_FILE_NAME, FOLDER_NAME, HISTORY_FOLDER_NAME, LEDGER_FOLDER_NAME } 
 import { archiveSummary, summaryCashflow, emptyDriveState, loadDrive, mergeParts, missingParts, readGroup, saveDrive, storedSizes, type DriveState, type PartGroup } from './google/driveStore'
 import { applyFetchedRates, emptyData, missingRates, parseWealthData, ratesStale, usedCurrencies, type WealthData } from './model'
 import { finishSave } from './saveState'
+import { classifyBankTransaction } from './bankTransactions'
 import { clearLocal, downloadDataFile, hasLocalData, loadLocal, opensLocal, readDataFile, replaceLocal, saveLocal, setLocalActive, storageEstimate, type LocalFile } from './localStore'
 import { localDate, pendingChanges, pendingLiabilityChanges, recordSave, revertChange, revertLiabilityChange } from './history'
 import { applyQuotes, fetchHoldingQuotes } from './quotes'
@@ -25,6 +26,7 @@ import { Liabilities } from './views/Liabilities'
 import { Expenses } from './views/Expenses'
 import { BankTransactions } from './views/BankTransactions'
 import { Overview } from './views/Overview'
+import { Cashflow } from './views/Cashflow'
 import { HistoryView } from './views/History'
 import { Rates } from './views/Rates'
 import { SaveReview } from './views/SaveReview'
@@ -32,11 +34,20 @@ import { Landing } from './views/Landing'
 import { Opening, type OpeningStep } from './views/Opening'
 import { LegalPage } from './views/Legal'
 import { PAGES, goBack, navigate, usePage, usePath } from './site'
-import { TABS, parseRoute, routePath, tabPath, type Route, type Tab } from './routes'
-import { Link, Logo, PrivacyNotice, SiteFooter } from './views/Site'
+import { NAV_GROUPS, TABS, parseRoute, routePath, tabPath, type Route } from './routes'
+import { Link, PrivacyNotice, SiteFooter } from './views/Site'
 import { DeviceIcon, UploadButton } from './views/LocalData'
 import { StorageMeter, StorageNotice } from './views/StorageMeter'
 import { byteSize, serializeData } from './storageLimits'
+
+// When the data was last saved, as the sidebar shows it: the time today, else the date.
+function savedLabel(iso: string) {
+  const at = new Date(iso)
+  if (!Number.isFinite(at.getTime())) return ''
+  return localDate(iso) === localDate(new Date().toISOString())
+    ? `今天 ${at.toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit', hour12: false })}`
+    : at.toLocaleDateString('zh-TW', { month: 'numeric', day: 'numeric' })
+}
 
 type Status = { kind: 'idle' } | { kind: 'busy'; text: string } | { kind: 'error'; text: string }
 
@@ -512,7 +523,7 @@ export default function App() {
   const missing = (group: PartGroup) => !!state && !!data && missingParts(state, data, group).length > 0
   const archive = state && missing('history') ? archiveSummary(state) : null
   const needs = (group: PartGroup) => missing(group) && (group === 'ledger'
-    ? tab === 'expenses' || tab === 'bank-transactions' || (tab === 'overview' && !summaryCashflow(state!))
+    ? tab === 'expenses' || tab === 'bank-transactions' || ((tab === 'overview' || tab === 'cashflow') && !summaryCashflow(state!))
     // The bank page uses the history when it imports statement balances (bankStatementAssets.ts).
     : route.tab === 'history' || tab === 'bank-transactions' || (route.tab === 'accounts' && route.page === 'detail') || (tab === 'overview' && !archive))
   const needed = (['ledger', 'history'] as const).filter(needs)
@@ -526,6 +537,13 @@ export default function App() {
       ? <div className="banner error" role="alert"><p>{failed}</p><button onClick={() => void loadGroup(group)}>重試</button></div>
       : <p className="muted">正在載入{GROUP_NAMES[group]}…</p>}</section>
   }
+
+  // Bank rows still to classify, for the sidebar badge: from the rows, or the stored monthly totals before they load.
+  const ledgerSummary = state && missing('ledger') ? summaryCashflow(state) : undefined
+  const unclassified = !data ? 0 : ledgerSummary
+    ? ledgerSummary.reduce((n, m) => n + m.totals.pending.count, 0)
+    : (data.bankTransactions ?? []).filter((t) => classifyBankTransaction(t, data.bankCategoryRules ?? []).kind === 'pending').length
+  const savedAt = saved.current?.updatedAt ? savedLabel(saved.current.updatedAt) : ''
 
   const go = (r: Route, replace = false) => navigate(routePath(r), { replace })
   const goAccounts = (view: AccountsView, replace = false) => go({ tab: 'accounts', ...view }, replace)
@@ -549,94 +567,111 @@ export default function App() {
   }
 
   return (
-    <div className="app-enter">
-      <header className="topbar">
-        <div className="topbar-inner">
-          <div className="brand">
-            <Logo />
-            <span className="brand-name">Wealthline</span>
-          </div>
-          <nav className="tabs" aria-label="分頁">
-            {(Object.keys(TABS) as Tab[]).map((t) => (
-              <button
-                key={t}
-                className={t === tab ? 'active' : ''}
-                aria-current={t === tab ? 'page' : undefined}
-                onClick={() => navigate(tabPath(t))}
-              >
-                {TABS[t]}
-              </button>
-            ))}
-          </nav>
-          <div className="topbar-right">
-            {dirty ? (
+    <div className="app-enter shell">
+      <aside className="sidebar" aria-label="導覽">
+        <div className="brand">
+          <span className="brand-mark" aria-hidden>W</span>
+          <span className="brand-name">Wealthline</span>
+        </div>
+        <nav className="side-nav" aria-label="分頁">
+          {NAV_GROUPS.map((g) => (
+            <Fragment key={g.label}>
+              <span className="nav-group">{g.label}</span>
+              {g.tabs.map((t) => (
+                <button
+                  key={t}
+                  className={t === tab ? 'active' : ''}
+                  aria-current={t === tab ? 'page' : undefined}
+                  onClick={() => navigate(tabPath(t))}
+                >
+                  {TABS[t]}
+                  {t === 'bank-transactions' && unclassified > 0 && <span className="nav-badge" title={`${unclassified} 筆銀行流水未分類`}>{unclassified}</span>}
+                </button>
+              ))}
+            </Fragment>
+          ))}
+        </nav>
+        <div className="side-foot">
+          {dirty ? (
+            <div className="sync-card dirty" role="status">
+              <strong>● 有修改未儲存</strong>
+              <span>關閉分頁前會提醒你</span>
               <button className="primary save" onClick={requestSave} disabled={busy}>
                 {busy ? '儲存中…' : '儲存變更'}
               </button>
-            ) : refreshing || saving ? (
-              <span className="refreshing" role="status">
-                <span className="spinner" aria-hidden /> {saving ? '儲存中…' : '更新報價'}
-              </span>
-            ) : status.kind === 'error' ? (
-              <span className="muted">同步未完成</span>
-            ) : local ? (
-              <span className="synced" title="資料存在這個瀏覽器的儲存空間（IndexedDB）">
-                <span aria-hidden>✓</span> 已存在此瀏覽器
-              </span>
-            ) : (
-              <span className="synced" title={`我的雲端硬碟 / ${FOLDER_NAME}`}>
-                <span aria-hidden>✓</span> 已同步
-              </span>
-            )}
-            {user ? <details className="account-menu">
-              <summary aria-label="帳號選單">
+            </div>
+          ) : refreshing || saving ? (
+            <div className="sync-card refreshing" role="status">
+              <strong><span className="spinner" aria-hidden /> {saving ? '儲存中…' : '更新報價'}</strong>
+            </div>
+          ) : status.kind === 'error' ? (
+            <div className="sync-card"><strong className="muted">同步未完成</strong></div>
+          ) : (
+            <div className="sync-card" title={local ? '資料存在這個瀏覽器的儲存空間（IndexedDB）' : `我的雲端硬碟 / ${FOLDER_NAME}`}>
+              <strong className="synced"><span aria-hidden>✓</span> {local ? '已存在此瀏覽器' : '已同步 Google Drive'}</strong>
+              {savedAt && <span>{savedAt} 儲存</span>}
+            </div>
+          )}
+          {user ? <details className="account-menu">
+            <summary aria-label="帳號選單">
+              {user.picture ? <img src={user.picture} alt="" referrerPolicy="no-referrer" /> : <span className="avatar">{user.email[0]}</span>}
+              <span className="who"><span>{user.name}</span><small>帳號與備份</small></span>
+            </summary>
+            <div className="menu">
+              <div className="menu-who">
                 {user.picture ? <img src={user.picture} alt="" referrerPolicy="no-referrer" /> : <span className="avatar">{user.email[0]}</span>}
-              </summary>
-              <div className="menu">
-                <strong>{user.name}</strong>
-                <span className="muted">{user.email}</span>
-                <span className="muted small">
-                  資料位置：我的雲端硬碟 / {FOLDER_NAME}（主檔 {DATA_FILE_NAME}，消費明細、銀行流水與往年歷史在「{LEDGER_FOLDER_NAME}」「{HISTORY_FOLDER_NAME}」子資料夾）
+                <div><strong>{user.name}</strong><span className="muted small">{user.email}</span></div>
+              </div>
+              <div className="menu-where">
+                <span>
+                  我的雲端硬碟 / {FOLDER_NAME} / {DATA_FILE_NAME}<br />消費明細、銀行流水與往年歷史在「{LEDGER_FOLDER_NAME}」「{HISTORY_FOLDER_NAME}」子資料夾
                 </span>
                 {storedBytes > 0 && <StorageMeter bytes={storedBytes} total={storedTotal} />}
-                <button onClick={() => void downloadBackup()} disabled={busy || dirty || !saved.current}>
-                  下載完整備份
-                </button>
-                {dirty ? <span className="muted small">請先儲存變更，再下載備份。</span> : <span className="muted small">一個檔案包含所有資料，可在本機模式上傳還原。</span>}
+              </div>
+              <button onClick={() => void downloadBackup()} disabled={busy || dirty || !saved.current}>
+                下載完整備份
+              </button>
+              {dirty ? <span className="muted small">請先儲存變更，再下載備份。</span> : <span className="muted small">一個檔案包含所有資料，可在本機模式上傳還原。</span>}
+              <div className="menu-foot">
                 <Link to={PAGES.privacy.path} className="small">
                   隱私權政策 Privacy Policy
                 </Link>
-                <button onClick={signOut} disabled={busy}>
+                <button className="link danger" onClick={signOut} disabled={busy}>
                   登出
                 </button>
               </div>
-            </details> : <details className="account-menu">
-              <summary aria-label="本機模式選單">
-                <span className="avatar"><DeviceIcon /></span>
-              </summary>
-              <div className="menu">
-                <strong>本機模式（未登入）</strong>
-                <span className="muted small">資料只存在這個瀏覽器。清除網站資料、換瀏覽器或換裝置都看不到，請定期下載資料檔備份。</span>
+            </div>
+          </details> : <details className="account-menu">
+            <summary aria-label="本機模式選單">
+              <span className="avatar"><DeviceIcon /></span>
+              <span className="who"><span>本機模式</span><small>資料與備份</small></span>
+            </summary>
+            <div className="menu">
+              <strong>本機模式（未登入）</strong>
+              <div className="menu-where">
+                <span>資料只存在這個瀏覽器。清除網站資料、換瀏覽器或換裝置都看不到，請定期下載資料檔備份。</span>
                 {storedBytes > 0 && <StorageMeter bytes={storedBytes} browser={browserStorage} />}
-                <button onClick={() => saved.current && downloadDataFile(saved.current)} disabled={busy || dirty || !saved.current}>
-                  下載資料檔
-                </button>
-                {dirty ? <span className="muted small">請先儲存變更，再下載資料檔。</span> : !saved.current && <span className="muted small">儲存過資料後就能下載。</span>}
-                <UploadButton onFile={upload} disabled={busy}>上傳資料檔</UploadButton>
+              </div>
+              <button onClick={() => saved.current && downloadDataFile(saved.current)} disabled={busy || dirty || !saved.current}>
+                下載資料檔
+              </button>
+              {dirty ? <span className="muted small">請先儲存變更，再下載資料檔。</span> : !saved.current && <span className="muted small">儲存過資料後就能下載。</span>}
+              <UploadButton onFile={upload} disabled={busy}>上傳資料檔</UploadButton>
+              <button onClick={() => leaveLocal()} disabled={saving}>
+                離開本機模式
+              </button>
+              <button className="danger" onClick={() => leaveLocal(true)} disabled={saving}>
+                刪除此瀏覽器中的資料
+              </button>
+              <div className="menu-foot">
                 <Link to={PAGES.privacy.path} className="small">
                   隱私權政策 Privacy Policy
                 </Link>
-                <button onClick={() => leaveLocal()} disabled={saving}>
-                  離開本機模式
-                </button>
-                <button className="danger" onClick={() => leaveLocal(true)} disabled={saving}>
-                  刪除此瀏覽器中的資料
-                </button>
               </div>
-            </details>}
-          </div>
+            </div>
+          </details>}
         </div>
-      </header>
+      </aside>
 
       {reviewing && data && (pending.length > 0 || pendingDebts.length > 0) && (
         <SaveReview
@@ -654,6 +689,7 @@ export default function App() {
         />
       )}
 
+      <div className="shell-main">
       <main className="content view-enter" key={tab}>
         <PrivacyNotice />
         {status.kind === 'busy' && !data && <p className="muted">{status.text}</p>}
@@ -661,7 +697,7 @@ export default function App() {
           <p>{status.text}</p>
           {data && <button onClick={() => void completeData(data).then((full) => full && downloadDataFile(full, 'we-wealth-local-backup.json'))}>下載本機資料備份</button>}
         </div>}
-        {(tab === 'overview' || tab === 'expenses' || tab === 'bank-transactions') && <StorageNotice bytes={storedBytes} browser={local ? browserStorage : undefined} />}
+        {(tab === 'overview' || tab === 'cashflow' || tab === 'expenses' || tab === 'bank-transactions') && <StorageNotice bytes={storedBytes} browser={local ? browserStorage : undefined} />}
 
         {data && tab === 'overview' && (
           <Overview
@@ -674,10 +710,18 @@ export default function App() {
             onNewAccount={() => goAccounts({ page: 'new' })}
             onImport={() => goAccounts({ page: 'list', importing: true })}
             onOpenAccount={(id) => goAccounts({ page: 'detail', id })}
-            cashflowMonths={state && missing('ledger') ? summaryCashflow(state) : undefined}
+            cashflowMonths={ledgerSummary}
             archive={archive ?? undefined}
             onLoadHistory={() => void loadGroup('history')}
             loadingHistory={groupLoad.history === 'loading'}
+          />
+        )}
+        {data && tab === 'cashflow' && (
+          <Cashflow
+            data={data}
+            months={ledgerSummary}
+            onGoExpenses={() => go({ tab: 'expenses' })}
+            onGoBankTransactions={() => go({ tab: 'bank-transactions' })}
           />
         )}
         {data && route.tab === 'history' && missing('history') && waiting('history')}
@@ -707,6 +751,7 @@ export default function App() {
         {data && tab === 'rates' && <Rates data={data} onChange={update} onRefresh={async () => void (await refreshRates(data))} error={ratesError} />}
       </main>
       <SiteFooter />
+      </div>
     </div>
   )
 }
