@@ -1,5 +1,6 @@
 import { PasswordException } from 'pdfjs-dist/legacy/build/pdf.mjs'
 import { openStatementDocument } from './statementDocument'
+import { readStatementText } from './statementText'
 import { hsbcMerchantRegions, hsbcSgPage, hsbcTransactionBounds, ocrMerchantLine, statementMetadata, textLines, textRows } from './statements'
 
 export async function readStatementPdf(bytes: Uint8Array, password:string | readonly string[], signal:AbortSignal, fileName = '', onProgress?:(message:string)=>void): Promise<{lines:string[];title:string;ocrUsed:boolean;ocrError?:string;transactionIndexes?:number[]}> {
@@ -21,7 +22,7 @@ export async function readStatementPdf(bytes: Uint8Array, password:string | read
     for(let i=1;i<=pdf.numPages;i++) {
       if(signal.aborted) throw new Error('已取消解析')
       const page = await pdf.getPage(i)
-      const text = await page.getTextContent()
+      const text = await readStatementText(page)
       let pageLines=textLines(text.items)
       let allowed=pageLines.map((_,index)=>index)
       const pageInfo=statementMetadata(pageLines,title,fileName)

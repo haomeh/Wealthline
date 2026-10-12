@@ -3,6 +3,7 @@ import workerUrl from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url';
 import { statementPasswordHandler } from './statements';
 import { BANK_PDF_ERRORS, bankStatementErrorMessage, type BankImportStage } from './bankStatementErrors';
 import type { BankPage } from './bankStatements/common';
+import { readStatementText } from './statementText';
 GlobalWorkerOptions.workerSrc = workerUrl;
 // Both document modes use local assets; no remote character-map/font fetches.
 const maps = import.meta.glob('/node_modules/pdfjs-dist/cmaps/*.bcmap', { eager: true, query: '?url&no-inline', import: 'default' }) as Record<string, string>;
@@ -56,7 +57,7 @@ export async function readBankDocument(bytes: Uint8Array, password: string | rea
             const page = await pdf.getPage(n);
             try {
                 stage = 'text';
-                const viewport = page.getViewport({ scale: 1 }), text = await page.getTextContent();
+                const viewport = page.getViewport({ scale: 1 }), text = await readStatementText(page);
                 if (signal.aborted)
                     throw new Error('已取消解析');
                 const items = text.items.flatMap(i => {
