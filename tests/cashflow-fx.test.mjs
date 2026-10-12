@@ -19,9 +19,10 @@ test('monthly rates convert signed categories, directional review and recovery; 
  const calls=[]
  const result=await convert(summary({months}),'2026-03-10',async(symbol,from)=>{calls.push([symbol,from]);return history(symbol,[['2026-01-30',30],['2026-02-27',32],['2026-03-09',99]])})
  assert.deepEqual(calls,[['USDTWD=X','2026-01-31']])
- assert.equal(result.currency,'TWD');assert.equal(result.income,5840);assert.equal(result.consumption,2410);assert.equal(result.difference,3430)
+ assert.equal(result.currency,'TWD');assert.equal(result.income,5840);assert.equal(result.consumption,2500);assert.equal(result.difference,3340)
  assert.equal(result.incomeCategories.find(c=>c.category==='薪資').net,5680)
  assert.equal(result.consumptionCategories[0].net,2410)
+ assert.deepEqual(result.consumptionCategories.find(c=>c.category==='未分類'),{category:'未分類',count:1,net:90})
  assert.deepEqual(result.pending,{count:1,debitCount:1,creditCount:0,debitAmount:90,creditAmount:0})
  assert.equal(result.excluded.creditAmount,128);assert.equal(result.exclusions[0].creditAmount,128)
  assert.deepEqual(result.investmentRecovery,{count:1,net:160,hasRecords:true})

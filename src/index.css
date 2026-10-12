@@ -2667,17 +2667,26 @@ dialog.expense-rule-dialog { max-width: 440px; }
 .cashflow-summary { min-width: 0; overflow-wrap: anywhere; }
 .cashflow-summary .panel-head, .cashflow-source-links { flex-wrap: wrap; }
 .cashflow-summary button { min-height: 44px; }
-.cashflow-period-trigger { border: 0; background: transparent; padding: 0; font-size: 1.3rem; font-weight: 600; margin: 4px 0 20px; }
-.cashflow-period-trigger span { font-size: .75rem; color: var(--ink-2); }
-.cashflow-picker { max-width: 440px; background: var(--surface-2); border: 1px solid var(--hairline); border-radius: 10px; padding: 16px; margin-bottom: 20px; }
-.cashflow-picker-head, .cashflow-picker-year { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 12px; }
+.cashflow-period { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 16px; margin: 8px 0 20px; }
+.cashflow-range { flex: none; }
+.cashflow-summary .cashflow-range button { min-height: 40px; padding: 6px 16px; font-size: .92rem; }
+.cashflow-stepper { display: inline-flex; align-items: stretch; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); overflow: hidden; }
+.cashflow-stepper button { border: 0; border-radius: 0; background: transparent; min-height: 48px; }
+.cashflow-step { min-width: 48px; padding: 0 12px; font-size: 1.4rem; line-height: 1; color: var(--ink-2); }
+.cashflow-period-trigger { display: inline-flex; align-items: center; gap: 10px; padding: 0 16px; font-size: 1.25rem; font-weight: 600; border-left: 1px solid var(--border) !important; border-right: 1px solid var(--border) !important; }
+.cashflow-period-trigger span { font-size: .8rem; color: var(--accent); }
+.cashflow-period-trigger[aria-expanded="true"] { background: var(--surface-2); }
+.cashflow-picker { max-width: 440px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 12px; padding: 16px; margin: -8px 0 20px; box-shadow: 0 8px 24px rgb(0 0 0 / .12); }
+.cashflow-picker-head, .cashflow-picker-year { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.cashflow-picker-head { margin-bottom: 8px; }
 .cashflow-picker-head button, .cashflow-picker-year button { border: 0; background: transparent; }
 .cashflow-picker-head button { color: var(--accent); }
-.cashflow-picker-year { margin: 12px 0; }
-.cashflow-picker .segmented { display: flex; }
-.cashflow-picker .segmented button { flex: 1; padding: 6px 8px; }
+.cashflow-picker-year { margin: 4px 0 12px; }
+.cashflow-picker-year button { min-width: 44px; font-size: 1.2rem; }
+.cashflow-picker > p { margin: 10px 0 0; }
 .cashflow-month-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
-.cashflow-month-grid button { position: relative; border: 0; background: transparent; padding: 8px; }
+.cashflow-month-grid button { position: relative; border: 1px solid transparent; background: var(--surface); padding: 8px; }
+.cashflow-month-grid button:hover:not(:disabled) { border-color: var(--border); }
 .cashflow-month-grid button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); }
 .cashflow-month-grid .has-records::after { content: ''; position: absolute; bottom: 4px; left: calc(50% - 2px); width: 4px; height: 4px; border-radius: 50%; background: currentColor; }
 .cashflow-currency { border-top: 1px solid var(--hairline); padding: 20px 0; }
@@ -2711,7 +2720,9 @@ dialog.expense-rule-dialog { max-width: 440px; }
 .cashflow-review-item strong { min-width: 140px; }
 .cashflow-sources > div { border-left: 2px solid var(--hairline); padding-left: 16px; margin: 16px 0; }
 .cashflow-sources h4 { margin-bottom: 8px; }
-.cashflow-no-record { padding: 24px 0; }
+.cashflow-no-record { padding: 24px 0; display: grid; justify-items: start; gap: 12px; }
+.cashflow-no-record p { margin: 0; }
+.cashflow-pending { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; }
 .cashflow-footnote { margin: 0; }
 @media (max-width: 700px) {
   .cashflow-nested { grid-template-columns: minmax(0, 1fr); gap: 24px; }
@@ -2721,6 +2732,10 @@ dialog.expense-rule-dialog { max-width: 440px; }
 @media (max-width: 400px) {
   .cashflow-summary .panel-head { align-items: start; flex-direction: column; gap: 8px; }
   .cashflow-picker { padding: 10px; }
+  .cashflow-period, .cashflow-range, .cashflow-stepper { width: 100%; }
+  .cashflow-range { display: flex; }
+  .cashflow-range button { flex: 1; }
+  .cashflow-period-trigger { flex: 1; justify-content: center; }
 }
 
 /* Independent bank ledger: compact editorial records, not the card table. */

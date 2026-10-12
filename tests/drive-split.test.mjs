@@ -351,3 +351,27 @@ test('another change to an archived year is counted again from that year alone',
   assert.deepEqual(partReads(from), ['main', 'history-2025'])
   assert.deepEqual(store.archiveSummary(state).points.map((s) => s.date), ['2025-06-01', '2025-07-01'])
 })
+
+// Summaries counted before unclassified bank records counted by direction (2026-10-12) are counted again.
+test('summaries counted the old way are counted again when the data is opened, and saved with the next save', async () => {
+  await splitOnDrive()
+  const file = drive.dataFile()
+  const main = JSON.parse(file.text)
+  main.summary.rules = parts.canonicalHash([main.expenseCategoryRules ?? null, main.bankCategoryRules ?? null])
+  const july = main.summary.parts['ledger-2026-Q3'].cashflow.find((m) => m.month === '2026-07')
+  assert.equal(july.totals.consumption, 5)
+  // The old counting left the unclassified debit out of consumption.
+  july.totals.consumption = 0
+  july.totals.consumptionCategories = []
+  file.text = JSON.stringify(main, null, 2)
+  const from = drive.log.length
+  const opened = await store.loadDrive(token, model.parseWealthData)
+  assert.ok(partReads(from).includes('ledger-2026-Q3'))
+  const counted = store.summaryCashflow(opened.state).find((m) => m.month === '2026-07')
+  assert.equal(counted.totals.consumption, 5)
+  assert.deepEqual(counted.totals.consumptionCategories, [{ category: '未分類', count: 1, net: 5 }])
+  await store.saveDrive(token, { ...opened.data, updatedAt: '2026-10-12T05:00:00.000Z' }, opened.state, NOW)
+  const again = drive.log.length
+  await store.loadDrive(token, model.parseWealthData)
+  assert.deepEqual(partReads(again), ['main'])
+})

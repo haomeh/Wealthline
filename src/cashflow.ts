@@ -47,6 +47,7 @@ export interface CashflowTotals {
   consumptionCategories: CashflowCategoryTotal<ExpenseCategory>[]
   excluded: CashflowReviewTotals
   exclusions: CashflowExclusionTotal[]
+  /** Unclassified bank records. They are also counted by direction under the 未分類 categories. */
   pending: CashflowReviewTotals
   investmentRecovery: CashflowInvestmentRecovery
 }
@@ -116,7 +117,13 @@ function addBank(total: CashflowTotals, row: BankTransaction, classification: Cl
     let reason = total.exclusions.find(item=>item.reason === classification.reason)
     if (!reason) { reason = {reason:classification.reason,...reviewTotals()}; total.exclusions.push(reason) }
     addReview(reason,row)
-  } else addReview(total.pending,row)
+  } else {
+    // Unclassified: an incoming row is income and an outgoing row is consumption, under 未分類,
+    // until the user classifies it or marks it 不計收支.
+    addReview(total.pending,row)
+    if (row.direction === 'credit') { total.income += row.amount; addCategory(total.incomeCategories,'未分類',row.amount) }
+    else { total.consumption += row.amount; addCategory(total.consumptionCategories,'未分類',row.amount) }
+  }
 }
 function finish(total: CashflowTotals): void {
   total.difference = total.income - total.consumption
@@ -193,7 +200,8 @@ export const cashflowMonthList = (input: CashflowInput) =>
 /**
  * Immutable, currency-separated projection using card dates and bank booked dates as supplied.
  * Only currencies with records in the requested window are returned. Period totals sum observed
- * months; excluded/pending records establish coverage but never income or consumption. No FX,
+ * months; excluded records establish coverage but never income or consumption, and unclassified
+ * bank records count by direction under 未分類. No FX,
  * asset valuation, deduplication, persistence or inferred completeness occurs here.
  * `input.months`, when given, stands for the records (cashflowMonths of them).
  */

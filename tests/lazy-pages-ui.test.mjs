@@ -169,11 +169,10 @@ test('nested cashflow selects summary-only months and all periods without loadin
   while(currentYear()!==2026) await click(button(currentYear()>2026?'前一年':'後一年'))
   const january=document.querySelector('.cashflow-month-grid button[aria-label="1 月，有紀錄"]')
   assert.ok(january)
-  await click(january);await click(button('套用'))
+  await click(january)
   assert.equal(document.querySelector('[data-cashflow-metric="consumption"]').textContent,'10')
   assert.equal(document.querySelector('[data-cashflow-metric="difference"]').textContent,'-10')
-  await click(document.querySelector('.cashflow-period-trigger'))
-  await click(button('全部期間'));await click(button('套用'))
+  await click(button('全部期間'))
   assert.equal(document.querySelector('[data-cashflow-metric="consumption"]').textContent,'10')
   assert.match(document.querySelector('.cashflow-currency-heading').textContent,/2 筆紀錄/)
   assert.deepEqual(drive.reads,[])
@@ -198,4 +197,21 @@ test('the Drive main file itself is refused as a backup', async () => {
   const drive = await splitDrive()
   const text = drive.drive.dataFile().text
   await assert.rejects(local.readDataFile(new File([text], 'we-wealth-data.json')), /主檔.*下載完整備份/)
+})
+
+// Harvey's case (2026-10-12): an unclassified income row in August, with a main file counted the old way.
+test('the overview recounts an old summary and shows an unclassified August income without loading the parts', async () => {
+  const data = fixture()
+  data.bankTransactions = [{ id: 't8', accountId: 'acct', date: '2026-08-15', description: '跨行轉入', currency: 'TWD', direction: 'credit', amount: 3000 }]
+  const drive = await splitDrive(data)
+  const file = drive.drive.dataFile()
+  const mainFile = JSON.parse(file.text)
+  const old = Object.values(mainFile.summary.parts).flatMap((p) => p.cashflow ?? []).find((m) => m.month === '2026-08')
+  Object.assign(old.totals, { income: 0, incomeCategories: [] })
+  mainFile.summary.rules = 'counted-the-old-way'
+  file.text = JSON.stringify(mainFile, null, 2)
+  await open('/app')
+  assert.match(document.querySelector('.cashflow-period-trigger').textContent, /2026 年 8 月/)
+  assert.equal(document.querySelector('[data-cashflow-metric="income"]').textContent, '3,000')
+  assert.match(document.querySelector('[data-cashflow-pending]').textContent, /1 筆銀行流水未分類/)
 })

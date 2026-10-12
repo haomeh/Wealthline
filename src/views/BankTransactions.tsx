@@ -2,7 +2,7 @@ import { bankStatementIdentity, statementAccountLabel, importStatementBalances, 
 import { useLayoutEffect, useRef, useState } from 'react'
 import type { WealthData } from '../model'
 import { dataVersion } from '../dataVersion'
-import { bankCategoryRuleIndex, mergeBankTransactions, validateBankLedger, type BankTransaction, type BankTransactionAccount, type BankCategoryRule } from '../bankTransactions'
+import { bankCategoryRuleIndex, classifyBankTransaction, mergeBankTransactions, validateBankLedger, type BankTransaction, type BankTransactionAccount, type BankCategoryRule } from '../bankTransactions'
 import { protectBankText } from '../bankTextPrivacy'
 import { mergeStatementPasswords, parseStatementPasswords } from '../statementPasswords'
 import { StatementPasswordSettings } from './StatementPasswordSettings'
@@ -69,7 +69,7 @@ function BankRecord({row,account,rules,busy,onEdit,onRule}:{row:BankTransaction;
  return <DetailRecord className="bank-record" title={row.description} label={`查看流水 ${row.id}`}
   value={<span className="record-money" data-direction={row.direction} aria-label={`${direction} ${row.currency} ${fmt(row.amount)}`}><small>{row.currency}</small><strong>{row.direction==='credit'?'+':'−'}{fmt(row.amount)}</strong></span>}
   actions={<>
-   <button type="button" className="bank-record-rule" data-pending={category==='待確認'||undefined} disabled={busy} aria-label={`分類規則：${category}`} title="編輯匹配規則／新增規則" onClick={onRule}><ActionIcon name="tag"/></button>
+   <button type="button" className="bank-record-rule" data-pending={classifyBankTransaction(row,rules).kind==='pending'||undefined} disabled={busy} aria-label={`分類規則：${category}`} title="編輯匹配規則／新增規則" onClick={onRule}><ActionIcon name="tag"/></button>
    <button type="button" disabled={busy} aria-label={`編輯流水 ${row.id}`} title="編輯流水" onClick={onEdit}><ActionIcon name="edit"/></button>
   </>}>
   <p>{row.description}</p><dl className="record-evidence"><dt>日期／帳戶</dt><dd>{row.date} · {account}</dd><dt>分類</dt><dd>{category}</dd></dl>

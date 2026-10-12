@@ -1641,7 +1641,6 @@ async function selectCashflowMonth(year,month) {
   const currentYear=()=>Number(document.querySelector('.cashflow-picker-year strong').textContent.replace(' 年',''))
   while(currentYear()!==year) await click(button(currentYear()>year?'前一年':'後一年'))
   await click(document.querySelector(`.cashflow-month-grid button[aria-label^="${month} 月"]`))
-  await click(button('套用'))
 }
 
 test('overview expense totals convert currencies monthly and preserve refunds and months without asset accounts',async()=>{

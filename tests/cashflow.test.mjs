@@ -20,7 +20,7 @@ function freeze(value) {
   return value
 }
 
-test('combines signed card and bank consumption once, leaving excluded/pending visible and inputs unchanged', () => {
+test('combines signed card and bank consumption once, counts unclassified by direction, leaves excluded visible and inputs unchanged', () => {
   const input = {
     expenses:[card(200,{category:'購物'}),card(-10,{id:'refund',category:'購物'})],expenseRules:[],bankRules:[],
     bankTransactions:[
@@ -33,7 +33,8 @@ test('combines signed card and bank consumption once, leaving excluded/pending v
   }
   const before = structuredClone(input)
   const [g] = summarize(freeze(input))
-  assert.equal(g.income,1000); assert.equal(g.consumption,270); assert.equal(g.difference,730)
+  assert.equal(g.income,1500); assert.equal(g.consumption,270); assert.equal(g.difference,1230)
+  assert.equal(categoryNet(g.incomeCategories,'未分類'),500)
   assert.deepEqual(g.pending,{count:1,debitCount:0,creditCount:1,debitAmount:0,creditAmount:500})
   assert.deepEqual(g.excluded,{count:1,debitCount:1,creditCount:0,debitAmount:200,creditAmount:0})
   assert.equal(g.exclusions[0].reason,'信用卡繳款')
@@ -43,6 +44,23 @@ test('combines signed card and bank consumption once, leaving excluded/pending v
   assert.deepEqual(input,before)
   g.consumptionCategories[0].net = -999
   assert.equal(summarize(input)[0].consumption,270)
+})
+
+// Harvey (2026-10-12): an unclassified row is still income or spending, just without a category.
+test('unclassified bank rows count by direction under 未分類 unless marked 不計收支', () => {
+  const [g] = summarize({bankTransactions:[
+    bank({id:'in',amount:0.23,description:'REF ZMFI-08847'}),
+    bank({id:'out',direction:'debit',amount:2000,description:'SGV08044MB93EQ9S HIB-'}),
+    bank({id:'explicit',direction:'debit',amount:5,classification:{kind:'pending'}}),
+    bank({id:'own',direction:'debit',amount:1060,description:'TO 4835',classification:excluded('自有帳戶轉帳')}),
+  ]})
+  assert.equal(g.income,0.23); assert.equal(g.consumption,2005)
+  assert.deepEqual(g.incomeCategories,[{category:'未分類',count:1,net:0.23}])
+  assert.deepEqual(g.consumptionCategories,[{category:'未分類',count:2,net:2005}])
+  assert.deepEqual(g.pending,{count:3,debitCount:2,creditCount:1,debitAmount:2005,creditAmount:0.23})
+  assert.equal(g.excluded.count,1)
+  const [ruled] = summarize({bankTransactions:[bank({id:'out',direction:'debit',amount:2000,description:'SGV08044MB93EQ9S HIB-'})],bankRules:[{keyword:'SGV0804',target:excluded('自有帳戶轉帳')}]})
+  assert.equal(ruled.consumption,0); assert.equal(ruled.pending.count,0); assert.equal(ruled.excluded.count,1)
 })
 
 test('income reversals and excess refunds retain signed categories; whole investment recovery carries warning', () => {
@@ -84,16 +102,16 @@ test('month/date/period validation and calendar generation handle all periods ac
   }
 })
 
-test('currency-local coverage distinguishes missing months, pending-only zero, and recorded zero amounts', () => {
+test('currency-local coverage distinguishes missing months, unclassified-only months, and recorded zero amounts', () => {
   const groups = summarize({
     expenses:[card(0,{currency:'USD',date:'2025-12-01'}),card(90,{currency:'EUR',date:'2025-10-01'})],
     bankTransactions:[bank({amount:500,date:'2026-01-01',classification:{kind:'pending'}})],
   },'2026-01',3)
   assert.deepEqual(groups.map(g=>g.currency),['TWD','USD'])
   const [twd,usd] = groups
-  assert.deepEqual(twd.months.map(m=>m.income),[null,null,0])
+  assert.deepEqual(twd.months.map(m=>m.income),[null,null,500])
   assert.deepEqual(twd.months.map(m=>m.consumption),[null,null,0])
-  assert.deepEqual(twd.months.map(m=>m.difference),[null,null,0])
+  assert.deepEqual(twd.months.map(m=>m.difference),[null,null,500])
   assert.equal(twd.months[2].pending.creditAmount,500)
   assert.equal(twd.coverage.recordedMonths,1)
   assert.equal(twd.months[0].coverage.recordCount,0)
@@ -117,12 +135,13 @@ test('manual classification, first-match directed rules and builtins recompute w
     {keyword:'salary',target:income('薪資')},
   ],expenses:[card(200,{category:'醫療',description:'Example'}),card(-10,{description:'Example'})],expenseRules:[{keyword:'example',category:'購物'}]})
   const before = structuredClone(input), [g] = summarize(input)
-  assert.equal(g.income,1000); assert.equal(g.consumption,90)
+  // The manual 未分類 row is 100 of income and generic-transfer 20 of consumption, both under 未分類.
+  assert.equal(g.income,1100); assert.equal(g.consumption,110)
   assert.equal(categoryNet(g.consumptionCategories,'醫療'),200)
   assert.equal(categoryNet(g.consumptionCategories,'購物'),-110)
   assert.equal(g.pending.count,2)
   const [changed] = summarize({...input,bankRules:[{keyword:'example',target:income('其他收入')}],expenseRules:[{keyword:'example',category:'交通'}]})
-  assert.equal(changed.income,1100); assert.equal(changed.consumption,190)
+  assert.equal(changed.income,1200); assert.equal(changed.consumption,210)
   assert.equal(categoryNet(changed.consumptionCategories,'交通'),-10)
   assert.deepEqual(input,before)
 })
@@ -155,12 +174,13 @@ test('period totals sum observed monthly categories and review amounts without c
     bank({id:'pending-credit',amount:30}),
   ]},'2026-01',3)
   const [twd,usd] = groups
-  assert.equal(twd.income,100)
-  assert.equal(twd.consumption,0.1+0.2)
+  assert.equal(twd.income,100+30)
+  assert.equal(twd.consumption,0.1+20+0.2)
   assert.equal(twd.income,twd.months.reduce((sum,m)=>sum+(m.income ?? 0),0))
   assert.equal(twd.consumption,twd.months.reduce((sum,m)=>sum+(m.consumption ?? 0),0))
-  assert.equal(categoryNet(twd.incomeCategories,'未分類'),0)
-  assert.equal(twd.incomeCategories.find(c=>c.category==='未分類').count,2)
+  assert.equal(categoryNet(twd.incomeCategories,'未分類'),30)
+  assert.equal(twd.incomeCategories.find(c=>c.category==='未分類').count,3)
+  assert.equal(categoryNet(twd.consumptionCategories,'未分類'),0.1+20+0.2)
   assert.equal(twd.investmentRecovery.hasRecords,true)
   assert.deepEqual(twd.pending,{count:2,debitCount:1,creditCount:1,debitAmount:20,creditAmount:30})
   assert.equal(twd.coverage.recordedMonths,3)

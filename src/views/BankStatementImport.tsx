@@ -144,7 +144,7 @@ export function BankStatementImport({data,accounts,existing,rules,passwords,pass
     <div className="bank-preview-overview">
      <label className="bank-preview-select"><input aria-label={`區段 ${index+1} 選取 ${i+1}`} type="checkbox" disabled={locked} checked={r.selected} onChange={e=>patch(s.id,{rows:s.rows.map((v,j)=>j===i?{...v,selected:e.target.checked}:v)})}/><span className="muted small">{i+1}</span></label>
      <div className="bank-preview-copy"><time className="muted small">{r.draft.date||'日期待填'}</time><strong title={protectBankText(r.draft.description)||undefined}>{protectBankText(r.draft.description)||'摘要待填'}</strong>
-      <div className="bank-preview-tags"><button type="button" className="bank-preview-category" disabled={locked} title="編輯匹配規則／新增規則" aria-label={`區段 ${index+1} 交易 ${i+1} 分類規則`} onClick={()=>onAddRule(r.draft)}><span>{category==='待確認'?'未分類':category}</span><ActionIcon name={bankCategoryRuleIndex(r.draft,rules)>=0?'edit':'add'}/></button>{r.narration && <span className="bank-summary-pending">補充敘述</span>}</div>
+      <div className="bank-preview-tags"><button type="button" className="bank-preview-category" disabled={locked} title="編輯匹配規則／新增規則" aria-label={`區段 ${index+1} 交易 ${i+1} 分類規則`} onClick={()=>onAddRule(r.draft)}><span>{category}</span><ActionIcon name={bankCategoryRuleIndex(r.draft,rules)>=0?'edit':'add'}/></button>{r.narration && <span className="bank-summary-pending">補充敘述</span>}</div>
      </div>
      <div className="bank-preview-amount"><span className="muted small">{r.draft.direction==='debit'?'支出':'入帳'}</span><strong>{fmt(r.draft.amount)}</strong><span className="muted small">{r.draft.currency}</span></div>
     </div>
