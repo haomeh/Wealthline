@@ -136,7 +136,7 @@ test('Chinese section currencies and zero transaction counts do not become amoun
  const p=hsbc();p[0].items=p[0].items.filter(i=>i.y>=700);p[0].items.find(i=>i.text.includes('活期')).text='綜合外幣存款';p[0].items.push(item('美金',559,686),item('17/06/2031',53,678),item('承前結餘',103,678),right('100.00',573,678),item('結餘',103,670),right('100.00',573,670),item('交易總額',103,662),right('0.00',402,662),right('0.00',482,662),item('交易次數',103,654),right('0',402,654),right('0',482,654));const r=bank.parseBankStatement(p);assert.equal(r.status,'recognized');assert.equal(r.sections[0].currency,'USD');assert.equal(r.sections[0].noTransactions,true);assert.equal(r.recognizedCount,0)
 })
 test('raster DBS logo requires statement plus branded footer; generic/disclosure headers fail closed',()=>{
- const p=[page(1,[item('綜合對帳單',325,533),item('DBS Bank',138,67)])];assert.equal(bank.parseBankStatement(p).bank,'DBS Taiwan');assert.equal(bank.parseBankStatement(p).warnings[0].code,'unsupported-dbs-activity-layout');
+ const p=[page(1,[item('綜合對帳單',325,533),item('DBS Bank',138,67)])];assert.equal(bank.parseBankStatement(p).bank,'DBS');assert.equal(bank.parseBankStatement(p).warnings[0].code,'unsupported-dbs-activity-layout');
  const generic=hsbc();generic[0].items=generic[0].items.filter(i=>i.y<=700);generic[0].items.push(item('Disclosure mentions HSBC',30,200));assert.equal(bank.parseBankStatement(generic).status,'unsupported');
  const bad=hsbc();bad[0].items.find(i=>i.text.includes('活期')).text='信用卡摘要 SGD';assert.equal(bank.parseBankStatement(bad).recognizedCount,0)
 })
@@ -232,4 +232,34 @@ test('DBS Singapore rejects missing dates, ambiguous debit/credit, malformed amo
 test('DBS opening and closing balances alone never prove zero transactions',()=>{
  const p=dbsSg();p[1].items=p[1].items.filter(i=>i.y>=549||i.y===122);const r=bank.parseBankStatement(p);
  assert.equal(r.status,'unsupported');assert.equal(r.recognizedCount,0);assert.ok(!r.sections.some(s=>s.noTransactions));
+})
+
+const dbsSgWithoutNarration=()=>{
+ const p=dbsSg();p[1].items=p[1].items.filter(i=>![521,510,473,122].includes(i.y));return p;
+}
+test('DBS Singapore closes foreign currency blocks and warns before or after an SGD total',()=>{
+ for(const withTotal of [false,true]){
+  const p=dbsSgWithoutNarration();
+  if(withTotal)p[1].items.push(item('Total Balance Carried Forward in SGD:',113,470),right('12.00',395,470),right('42.50',474,470),right('987684.82',548,470));
+  p[1].items.push(item('CURRENCY: US DOLLAR',53,450),item('04/09/2031',45,420),item('Foreign payment',113,420),right('55.00',395,420),right('145.00',548,420));
+  const r=bank.parseBankStatement(p);assert.equal(r.status,'partial',String(withTotal));assert.equal(r.recognizedCount,2);assert.equal(r.sections.length,1);
+  assert.deepEqual(r.sections[0].rows.map(row=>[row.currency,row.amount]),[['SGD',42.5],['SGD',12]]);
+  assert.deepEqual(r.sections[0].warnings.map(w=>w.code),['unsupported-dbs-sg-account']);
+  assert.equal(r.rejectedCount,1);assert.ok(!JSON.stringify(r).includes('Foreign payment'));
+ }
+})
+test('DBS foreign currency boundary discards pending and requires a new validated table to resume',()=>{
+ for(const marker of ['CURRENCY: US DOLLAR','CURRENCY : EURO','CURRENCY:']){
+  const p=dbsSgWithoutNarration();
+  p[1].items.push(item('04/09/2031',45,470),item('Unfinished SGD payment',113,470),item(marker,53,450),right('55.00',395,430),item('CURRENCY: SINGAPORE DOLLAR',53,410),item('05/09/2031',45,390),item('Unvalidated return to SGD',113,390),right('66.00',395,390));
+  const r=bank.parseBankStatement(p);assert.equal(r.recognizedCount,2);assert.equal(r.status,'partial');
+  assert.deepEqual(r.sections[0].warnings.map(w=>w.code),['currency-boundary','unsupported-dbs-sg-account']);
+  assert.ok(!JSON.stringify(r).includes('Unfinished SGD payment'));assert.ok(!JSON.stringify(r).includes('Unvalidated return to SGD'));
+ }
+})
+test('unrecognized DBS region is generic even when the masthead mentions Singapore',()=>{
+ for(const brand of ['DBS Singapore','DBS Taiwan','DBS Bank Ltd']){
+  const r=bank.parseBankStatement([{page:1,width:594,height:792,items:[item(brand,30,740),item('Account Summary',30,600)]}]);
+  assert.equal(r.status,'unsupported');assert.equal(r.bank,'DBS');assert.equal(r.recognizedCount,0);
+ }
 })

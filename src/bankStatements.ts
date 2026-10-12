@@ -126,7 +126,7 @@ export function parseBankStatement(pages: readonly BankPage[], metadata: BankSta
         layout = dbsSingapore;
     const sections: BankSection[] = [], warnings: BankWarning[] = [];
     if (!layout)
-        return { status: 'unsupported', ...(isDbs ? { bank: 'DBS Taiwan' } : {}), sections, warnings: [warning(ordered[0]?.page ?? 1, isDbs ? DBS_UNSUPPORTED : 'unsupported-bank-layout')], recognizedCount: 0, rejectedCount: 0 };
+        return { status: 'unsupported', ...(isDbs ? { bank: 'DBS' } : {}), sections, warnings: [warning(ordered[0]?.page ?? 1, isDbs ? DBS_UNSUPPORTED : 'unsupported-bank-layout')], recognizedCount: 0, rejectedCount: 0 };
     // Collect only explicit identifier contexts and validated own-account columns, never arbitrary long references.
     const accounts = new Set<string>(), identities = new Set<string>(), summary = new Map<string, Set<string>>();
     for (const p of ordered) {
@@ -379,8 +379,23 @@ export function parseBankStatement(pages: readonly BankPage[], metadata: BankSta
                 if (cells.length === 2 && cells.every(i => money(i.text) === 0))
                     section.noTransactions = true;
             }
-            if (layout === dbsSingapore && /^CURRENCY:\s*SINGAPORE DOLLAR$/i.test(l.text))
+            if (layout === dbsSingapore && /^CURRENCY\s*:/i.test(l.text)) {
+                if (/^CURRENCY\s*:\s*SINGAPORE DOLLAR$/i.test(l.text))
+                    continue;
+                // A foreign block also ends a closed SGD table: report its exclusion.
+                discard('currency-boundary');
+                issue(p.page, 'unsupported-dbs-sg-account');
+                table = undefined;
+                section = undefined;
+                lastDate = undefined;
+                account = undefined;
+                currency = '';
+                orphans = [];
+                emitted = undefined;
+                closed = true;
+                context = [l.text];
                 continue;
+            }
             if (layout === dbsSingapore && /^Total Balance Carried Forward in SGD:/i.test(role)) {
                 discard('unfinished-transaction');
                 closed = true;
