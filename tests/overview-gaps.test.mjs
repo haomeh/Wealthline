@@ -79,3 +79,23 @@ test('the snapshot panel shows every account, where filled values come from, cur
   assert.doesNotMatch(plain, /資料不完整|資料不足/)
   assert.doesNotMatch(plain, /補登這天/)
 })
+
+test('a later statement for the same day replaces the carried value and is carried itself afterwards', async () => {
+  const hsbc = { id: 'ledger-hsbc', label: 'HSBC', bank: 'HSBC Taiwan' }
+  const data = { ...model.emptyData(), accounts: accounts(), fxRates: { SGD: 24, USD: 32 }, bankTransactionAccounts: [ledger, hsbc], history: { changes: [], snapshots: [snapshot('2026-09-29', { dbs: 480000, hsbc: 300000, schwab: 38000 })] } }
+  const dbsOnly = statements.importStatementBalances(data, [{ bank: 'DBS Singapore', date: '2026-09-30', currency: 'SGD', quantity: 22335.25, fileHash: 'a'.repeat(64), ledgerAccountId: ledger.id }], now).data
+  const both = statements.importStatementBalances(dbsOnly, [
+    { bank: 'HSBC Taiwan', date: '2026-09-30', currency: 'TWD', quantity: 250000, fileHash: 'b'.repeat(64), ledgerAccountId: hsbc.id, confirmedAccountId: 'hsbc' },
+    { bank: 'DBS Singapore', date: '2026-10-05', currency: 'SGD', quantity: 23000, fileHash: 'c'.repeat(64), ledgerAccountId: ledger.id },
+  ], now).data
+  const valued = await quantity.valueDays(periods.expandPeriodDays(both, now), fetcher)
+  const points = history.totalPoints({ ...both, history: { ...both.history, valuedQuantityDays: valued } }, now)
+  const day = points.find((p) => p.date === '2026-09-30')
+  assert.equal(day.accounts.find((a) => a.id === 'hsbc').value, 250000)
+  assert.deepEqual(day.filled, [{ id: 'schwab', from: '2026-09-29' }])
+  assert.equal(day.total, 536046 + 250000 + 38000)
+  // The next statement day carries the statement value, not the older snapshot.
+  const later = points.find((p) => p.date === '2026-10-05')
+  assert.equal(later.accounts.find((a) => a.id === 'hsbc').value, 250000)
+  assert.deepEqual(later.filled.find((f) => f.id === 'hsbc'), { id: 'hsbc', from: '2026-09-30' })
+})
