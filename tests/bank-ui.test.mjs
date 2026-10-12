@@ -151,9 +151,11 @@ test('transaction parser failure reports parsing stage without raw PDF text',asy
  pdf.reset([{parseError:new Error('SECRET PARSER TEXT')}]);const latest=await render();await click('匯入銀行帳單');await files();await submitImport();const report=document.querySelector('[aria-label="銀行解析結果"]').textContent;assert.match(report,/BANK-PARSE/);assert.ok(!report.includes('SECRET'));assert.ok(!document.querySelector('.bank-preview-row'));assert.equal(latest().bankTransactions.length,0);
 })
 test('preview construction failure rolls back all sections and success reports of that file',async()=>{
- const first=parsed();pdf.reset([{...first,recognizedCount:2,sections:[first.sections[0],{...first.sections[0],key:'section-2'}]},parsed()]);const latest=await render();await click('匯入銀行帳單');await files(2);
- const original=Object.getOwnPropertyDescriptor(crypto,'randomUUID'),uuid=crypto.randomUUID.bind(crypto);let calls=0;Object.defineProperty(crypto,'randomUUID',{configurable:true,value:()=>{if(++calls===4)throw new Error('SECRET PREVIEW FAILURE');return uuid()}});
- try{await submitImport();const reports=[...document.querySelectorAll('[aria-label="銀行解析結果"] li')].map(n=>n.textContent);assert.ok(reports.some(r=>r.includes('檔案 1')&&r.includes('BANK-PREVIEW')));assert.ok(!reports.some(r=>r.includes('檔案 1')&&r.includes('已辨識')));assert.ok(!reports.join('').includes('SECRET'));assert.equal(document.querySelectorAll('.bank-preview-row').length,1);assert.equal(latest().bankTransactions.length,0)}finally{if(original)Object.defineProperty(crypto,'randomUUID',original);else delete crypto.randomUUID}
+ const first=parsed(),second={...first.sections[0],key:'section-2'};
+ // Fail when preparing the second section, independently of UUID allocation order.
+ Object.defineProperty(second,'rows',{get(){throw new Error('SECRET PREVIEW FAILURE')}});
+ pdf.reset([{...first,recognizedCount:2,sections:[first.sections[0],second]},parsed()]);const latest=await render();await click('匯入銀行帳單');await files(2);
+ await submitImport();const reports=[...document.querySelectorAll('[aria-label="銀行解析結果"] li')].map(n=>n.textContent);assert.ok(reports.some(r=>r.includes('檔案 1')&&r.includes('BANK-PREVIEW')));assert.ok(!reports.some(r=>r.includes('檔案 1')&&r.includes('已辨識')));assert.ok(!reports.join('').includes('SECRET'));assert.equal(document.querySelectorAll('.bank-preview-row').length,1);assert.equal(latest().bankTransactions.length,0);
 })
 
 test('PDF opening distinguishes worker, runtime and document failures using only fixed diagnostics',async()=>{
@@ -161,4 +163,22 @@ test('PDF opening distinguishes worker, runtime and document failures using only
  for(const [error,code] of [[new Error('Setting up fake worker failed: SECRET https://private.test/path'),'BANK-OPEN-WORKER'],[new TypeError('SECRET runtime variable'),'BANK-OPEN-RUNTIME'],[new ReferenceError('SECRET missing variable'),'BANK-OPEN-RUNTIME'],[Object.assign(new Error('SECRET document bytes'),{name:'InvalidPDFException'}),'BANK-OPEN-DOCUMENT']]){
   const message=bankStatementErrorMessage(error,'open');assert.ok(message.includes(code));assert.ok(!message.includes('SECRET'));assert.ok(!message.includes('private.test'));assert.ok(!message.includes('variable'));
  }
+})
+
+
+test('wrapped PDF worker failures keep the processing stage and never expose message or details',async()=>{
+ const {bankStatementErrorMessage}=await server.ssrLoadModule('/src/bankStatementErrors.ts');
+ for(const details of ['TypeError: SECRET API','ReferenceError: SECRET VARIABLE','FormatError: SECRET DOCUMENT']){
+  const error=Object.assign(new Error('SECRET https://private.test/document'),{name:'UnknownErrorException',details});
+  for(const [stage,code] of [['open','BANK-OPEN-INTERNAL'],['page','BANK-PAGE-INTERNAL'],['text','BANK-TEXT-INTERNAL']]){
+   const message=bankStatementErrorMessage(error,stage);assert.ok(message.includes(code));assert.match(message,/解析程式或檔案格式/);assert.ok(!message.includes('SECRET'));assert.ok(!message.includes('private.test'));assert.ok(!message.includes(details));
+  }
+  assert.ok(bankStatementErrorMessage(error,'cleanup').includes('BANK-CLEANUP'));
+ }
+})
+test('wrapped worker failure reaches the import report safely and later files still preview',async()=>{
+ pdf.reset([Object.assign(new Error('SECRET CUSTOMER'),{name:'UnknownErrorException',details:'TypeError: SECRET PDF URL'}),parsed()]);
+ const latest=await render();await click('匯入銀行帳單');await files(2);await submitImport();
+ const report=document.querySelector('[aria-label="銀行解析結果"]').textContent;
+ assert.match(report,/BANK-OPEN-INTERNAL/);assert.match(report,/解析程式或檔案格式/);assert.ok(!report.includes('SECRET'));assert.match(report,/檔案 2.*有效 1 筆/);assert.equal(document.querySelectorAll('.bank-preview-row').length,1);assert.equal(latest().bankTransactions.length,0);
 })

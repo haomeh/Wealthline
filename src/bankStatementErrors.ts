@@ -14,6 +14,9 @@ export const BANK_PDF_ERRORS = {
   openWorker: '無法啟動 PDF 背景解析程式，請重新開啟頁面並回報診斷代碼〔BANK-OPEN-WORKER〕',
   openRuntime: 'PDF 解析程式執行失敗，請回報診斷代碼〔BANK-OPEN-RUNTIME〕',
   openDocument: 'PDF 內容無法開啟，請重新下載原始檔案後重試〔BANK-OPEN-DOCUMENT〕',
+  openInternal: 'PDF 開啟失敗：解析程式或檔案格式發生錯誤，請回報診斷代碼〔BANK-OPEN-INTERNAL〕',
+  pageInternal: 'PDF 頁面讀取失敗：解析程式或檔案格式發生錯誤，請回報診斷代碼〔BANK-PAGE-INTERNAL〕',
+  textInternal: 'PDF 文字擷取失敗：解析程式或檔案格式發生錯誤，請回報診斷代碼〔BANK-TEXT-INTERNAL〕',
   open: '無法開啟 PDF，請回報診斷代碼以確認解析環境或檔案問題〔BANK-OPEN〕',
   page: '無法讀取 PDF 頁面，請回報診斷代碼〔BANK-PAGE〕',
   text: '無法擷取 PDF 文字，請回報診斷代碼〔BANK-TEXT〕',
@@ -29,6 +32,12 @@ const messages = new Set<string>(Object.values(BANK_PDF_ERRORS))
 export function bankStatementErrorMessage(error: unknown, stage?: BankImportStage): string {
   if (error instanceof Error) {
     if (messages.has(error.message) && error.message !== BANK_PDF_ERRORS.unreadable) return error.message
+    // PDF.js wraps worker runtime and format failures alike; never expose details.
+    if (error.name === 'UnknownErrorException') {
+      if (stage === 'open') return BANK_PDF_ERRORS.openInternal
+      if (stage === 'page') return BANK_PDF_ERRORS.pageInternal
+      if (stage === 'text') return BANK_PDF_ERRORS.textInternal
+    }
     if (stage === 'open') {
       if (error.message.startsWith('Setting up fake worker failed:')) return BANK_PDF_ERRORS.openWorker
       if (error.name === 'TypeError' || error.name === 'ReferenceError') return BANK_PDF_ERRORS.openRuntime
