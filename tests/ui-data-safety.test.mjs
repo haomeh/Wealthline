@@ -2070,3 +2070,32 @@ test('v13 Drive conflict retains ledger, unsaved edits and ETag guard',async()=>
   assert.ok(button('儲存變更'))
   assert.equal(document.querySelector('[aria-label="USD 匯率"]').value,'33')
 })
+
+test('a split Drive file opens from its main file; the transaction and history pages read their parts when opened',async()=>{
+  const store=await server.ssrLoadModule('/src/google/driveStore.ts')
+  const fake=createFakeDrive()
+  const snapshot=(date)=>({date,at:`${date}T04:00:00.000Z`,total:100,accounts:[],categories:{}})
+  fake.seed({...fixture(),version:13,
+    expenses:[{id:'old',date:'2025-11-03',card:'Card',description:'Old shop',currency:'TWD',amount:40},{id:'new',date:'2026-09-03',card:'Card',description:'New shop',currency:'TWD',amount:60}],
+    history:{changes:[],liabilityChanges:[],snapshots:[snapshot('2025-06-01'),snapshot('2025-06-20'),snapshot('2026-06-01')]}})
+  globalThis.fetch=fake.fetch
+  const opened=await store.loadDrive(token,model.parseWealthData)
+  await store.saveDrive(token,opened.data,opened.state,'2026-10-12T04:00:00.000Z')
+  const reads=(start=0)=>fake.log.slice(start).filter(r=>r.url.includes('alt=media')).map(r=>fake.files.get(r.url.match(/files\/([^?]+)/)[1]).appProperties.part ?? 'main')
+  const from=fake.log.length
+  globalThis.fetch=async(url,init={})=>String(url).includes('userinfo')?Response.json(profile):fake.fetch(url,init)
+  auth.storeSession({token,profile})
+  window.history.replaceState(null,'','/app')
+  await render(App)
+  const settle=async()=>{for(let i=0;i<20;i++) await act(async()=>new Promise(r=>setTimeout(r,0)))}
+  await settle()
+  assert.deepEqual(reads(from),['main'])
+  // The overview's spending and trend come from the main file's summary.
+  assert.ok(document.querySelector('[aria-label="統一收支總覽"]'))
+  assert.match(document.body.textContent,/2026 年以前只顯示每月最後一筆紀錄/)
+  await click(button('消費明細'));await settle()
+  assert.match(document.body.textContent,/Old shop/)
+  assert.deepEqual(reads(from).filter(p=>p!=='main').sort(),['ledger-2025-Q4','ledger-2026-Q3'])
+  await click(button('歷史明細'));await settle()
+  assert.ok(reads(from).includes('history-2025'))
+})

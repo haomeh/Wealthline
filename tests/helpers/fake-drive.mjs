@@ -51,7 +51,7 @@ export function createFakeDrive({ profile } = {}) {
     const path = url.pathname
 
     if (method === 'GET' && path === '/drive/v3/files') {
-      return json({ files: query(url.searchParams.get('q') ?? '').map((f) => ({ id: f.id })) })
+      return json({ files: query(url.searchParams.get('q') ?? '').map((f) => ({ id: f.id, appProperties: f.appProperties, size: String(new TextEncoder().encode(f.text).length) })) })
     }
     if (method === 'POST' && path === '/drive/v3/files') {
       const meta = JSON.parse(init.body)

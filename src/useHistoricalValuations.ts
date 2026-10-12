@@ -20,13 +20,15 @@ export function historicalProjectionKey(data: WealthData, today: string) {
 }
 
 // Query-only values. Never retain an old instrument/quantity's valuation for a new key.
-export function useHistoricalValuations(data: WealthData) {
+// `from`: only days from this date on are valued (earlier history is not loaded).
+export function useHistoricalValuations(data: WealthData, from = '') {
   const now = useCalendarNow()
   const today = localDate(now)
-  const key = historicalProjectionKey(data,today)
+  const key = JSON.stringify([historicalProjectionKey(data,today), from])
   const source = useMemo(() => {
-    const projection=JSON.parse(key) as {today:string;data:WealthData}
-    try { return { days: expandPeriodDays(projection.data, `${projection.today}T12:00:00`), error: '' } }
+    const [projectionKey, start] = JSON.parse(key) as [string, string]
+    const projection=JSON.parse(projectionKey) as {today:string;data:WealthData}
+    try { return { days: expandPeriodDays(projection.data, `${projection.today}T12:00:00`).filter(d => d.date >= start), error: '' } }
     catch (e) { return { days: [] as QuantityDay[], error: e instanceof Error ? e.message : '期間資料無法估值' } }
     // key represents all inputs used by expansion; unrelated data must keep identity.
   }, [key])

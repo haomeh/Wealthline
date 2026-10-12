@@ -13,7 +13,7 @@ import {
   type UserProfile,
 } from './google/auth'
 import { DATA_FILE_NAME, FOLDER_NAME } from './google/drive'
-import { emptyDriveState, loadDrive, saveDrive, storedSizes, type DriveState } from './google/driveStore'
+import { archiveSummary, emptyDriveState, loadDrive, mergeParts, missingParts, readGroup, saveDrive, storedSizes, type DriveState, type PartGroup } from './google/driveStore'
 import { applyFetchedRates, emptyData, missingRates, parseWealthData, ratesStale, usedCurrencies, type WealthData } from './model'
 import { finishSave } from './saveState'
 import { clearLocal, downloadDataFile, hasLocalData, loadLocal, opensLocal, readDataFile, replaceLocal, saveLocal, setLocalActive, storageEstimate, type LocalFile } from './localStore'
@@ -40,6 +40,8 @@ import { byteSize, serializeData } from './storageLimits'
 
 type Status = { kind: 'idle' } | { kind: 'busy'; text: string } | { kind: 'error'; text: string }
 
+const GROUP_NAMES: Record<PartGroup, string> = { ledger: '消費明細與銀行流水', history: '往年歷史' }
+
 export default function App() {
   const token = useRef<AccessToken | null>(null)
   // What this session last read from or wrote to Drive (driveStore.ts).
@@ -65,6 +67,11 @@ export default function App() {
   const [storedBytes, setStoredBytes] = useState(0)
   // Drive: how many files the data takes and their total size.
   const [storedTotal, setStoredTotal] = useState({ files: 0, bytes: 0 })
+  // Drive: transactions and earlier years of history are read when a page needs them
+  // (driveStore.ts). A load in progress, or the message of a failed one.
+  const [groupLoad, setGroupLoad] = useState<Partial<Record<PartGroup, string>>>({})
+  const groupLoads = useRef(new Map<PartGroup, Promise<void>>())
+  const [, setSummaryVersion] = useState(0)
   // Local mode: how much of this browser's storage the site uses, when the browser says.
   const [browserStorage, setBrowserStorage] = useState<{ usage: number; quota: number } | null>(null)
   const [dirty, setDirty] = useState(false)
@@ -134,6 +141,7 @@ export default function App() {
     storeSession({ profile: p, token: t })
     setUser(p)
     driveState.current = file?.state ?? emptyDriveState()
+    setGroupLoad({})
     startSession(file?.data ?? null)
   }
 
@@ -239,6 +247,45 @@ export default function App() {
     setStoredTotal({ files: sizes.length, bytes: sizes.reduce((a, b) => a + b, 0) })
   }
 
+  // Reads the parts of `group` the data does not hold yet and adds their records.
+  function loadGroup(group: PartGroup): Promise<void> {
+    const state = driveState.current
+    const running = groupLoads.current.get(group)
+    if (running) return running
+    if (localMode.current || !state) return Promise.resolve()
+    const session = sessionVersion.current
+    setGroupLoad((s) => ({ ...s, [group]: 'loading' }))
+    const task = (async () => {
+      try {
+        const parts = await readGroup(await validToken(), state, group)
+        if (session !== sessionVersion.current) return
+        if (saved.current) saved.current = mergeParts(saved.current, parts, parseWealthData)
+        setData((d) => d && mergeParts(d, parts, parseWealthData))
+        measureStored(saved.current)
+        setGroupLoad((s) => ({ ...s, [group]: undefined }))
+      } catch (e) {
+        if (session === sessionVersion.current) setGroupLoad((s) => ({ ...s, [group]: `無法載入${GROUP_NAMES[group]}：${e instanceof Error ? e.message : String(e)}` }))
+      } finally {
+        groupLoads.current.delete(group)
+      }
+    })()
+    groupLoads.current.set(group, task)
+    return task
+  }
+
+  // The data with every record, for a backup: parts not loaded yet are read first.
+  async function completeData(from: WealthData): Promise<WealthData | null> {
+    const state = driveState.current
+    if (localMode.current || !state) return from
+    try {
+      let full = from
+      for (const group of ['ledger', 'history'] as const) full = mergeParts(full, await readGroup(await validToken(), state, group), parseWealthData)
+      return full
+    } catch {
+      return confirm('無法讀取部分消費明細或往年歷史，備份只會包含已載入的資料（其餘仍完整保存在 Google Drive）。要下載嗎？') ? from : null
+    }
+  }
+
   function measureBrowser() {
     if (!localMode.current) return setBrowserStorage(null)
     const session = sessionVersion.current
@@ -263,7 +310,10 @@ export default function App() {
       return await saveDrive(await validToken(), next, state)
     } finally {
       // Files written before a failure are recorded in `state` too.
-      if (session === sessionVersion.current) measureStored(next)
+      if (session === sessionVersion.current) {
+        measureStored(next)
+        setSummaryVersion((v) => v + 1)
+      }
     }
   }
 
@@ -327,6 +377,7 @@ export default function App() {
       token.current = null
       driveState.current = null
       saved.current = null
+      setGroupLoad({})
       setReturning(null)
       setRefreshing(false)
       setUser(null)
@@ -445,6 +496,26 @@ export default function App() {
   }, [missingAccount])
 
   const busy = saving || status.kind === 'busy'
+
+  // Drive parts the current page needs. The overview uses the stored summaries and reads the
+  // parts only when a summary is missing.
+  const state = !local ? driveState.current : null
+  const missing = (group: PartGroup) => !!state && !!data && missingParts(state, data, group).length > 0
+  const archive = state && missing('history') ? archiveSummary(state) : null
+  const needs = (group: PartGroup) => missing(group) && (group === 'ledger'
+    ? tab === 'expenses' || tab === 'bank-transactions' || (tab === 'overview' && !state!.summary.cashflow)
+    : route.tab === 'history' || (route.tab === 'accounts' && route.page === 'detail') || (tab === 'overview' && !archive))
+  const needed = (['ledger', 'history'] as const).filter(needs)
+  useEffect(() => {
+    for (const group of needed) if (!groupLoad[group]) void loadGroup(group)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [needed.join()])
+  const waiting = (group: PartGroup) => {
+    const failed = groupLoad[group] && groupLoad[group] !== 'loading' ? groupLoad[group] : ''
+    return <section className="panel" aria-busy={!failed}>{failed
+      ? <div className="banner error" role="alert"><p>{failed}</p><button onClick={() => void loadGroup(group)}>重試</button></div>
+      : <p className="muted">正在載入{GROUP_NAMES[group]}…</p>}</section>
+  }
 
   const go = (r: Route, replace = false) => navigate(routePath(r), { replace })
   const goAccounts = (view: AccountsView, replace = false) => go({ tab: 'accounts', ...view }, replace)
@@ -574,7 +645,7 @@ export default function App() {
         {status.kind === 'busy' && !data && <p className="muted">{status.text}</p>}
         {status.kind === 'error' && <div className="banner error" role="alert">
           <p>{status.text}</p>
-          {data && <button onClick={() => downloadDataFile(data, 'we-wealth-local-backup.json')}>下載本機資料備份</button>}
+          {data && <button onClick={() => void completeData(data).then((full) => full && downloadDataFile(full, 'we-wealth-local-backup.json'))}>下載本機資料備份</button>}
         </div>}
         {(tab === 'overview' || tab === 'expenses' || tab === 'bank-transactions') && <StorageNotice bytes={storedBytes} browser={local ? browserStorage : undefined} />}
 
@@ -589,15 +660,21 @@ export default function App() {
             onNewAccount={() => goAccounts({ page: 'new' })}
             onImport={() => goAccounts({ page: 'list', importing: true })}
             onOpenAccount={(id) => goAccounts({ page: 'detail', id })}
+            cashflowMonths={state && missing('ledger') ? state.summary.cashflow : undefined}
+            archive={archive ?? undefined}
+            onLoadHistory={() => void loadGroup('history')}
+            loadingHistory={groupLoad.history === 'loading'}
           />
         )}
-        {data && route.tab === 'history' && <HistoryView key={route.date ?? 'history'} initialDate={route.date} data={data} dirty={dirty} busy={busy || dirty} onSave={requestSave}
+        {data && route.tab === 'history' && missing('history') && waiting('history')}
+        {data && route.tab === 'history' && !missing('history') && <HistoryView key={route.date ?? 'history'} initialDate={route.date} data={data} dirty={dirty} busy={busy || dirty} onSave={requestSave}
           onChange={(next) => {
             if (savingRef.current) throw new Error('背景儲存中，請稍後再儲存歷史修改。')
             if (dirtyRef.current) throw new Error('請先儲存或捨棄其他未儲存修改，再儲存歷史。')
             update(next); void persist(next)
           }} onOpenAccount={(id) => goAccounts({ page: 'detail', id })} />}
-        {data && route.tab === 'accounts' && (
+        {data && route.tab === 'accounts' && route.page === 'detail' && missing('history') && waiting('history')}
+        {data && route.tab === 'accounts' && !(route.page === 'detail' && missing('history')) && (
           <Accounts
             data={data}
             onChange={update}
@@ -609,8 +686,9 @@ export default function App() {
           />
         )}
         {data && tab === 'liabilities' && <Liabilities data={data} onChange={update} />}
-        {data && tab === 'expenses' && <Expenses key={local?'local':user?.sub} passwordScope={local?'local':user?`google:${user.sub}`:undefined} data={data} onChange={update} busy={busy} />}
-        {data && tab === 'bank-transactions' && <BankTransactions key={local?'local':user?.sub} passwordScope={local?'local':user?`google:${user.sub}`:undefined} data={data} onChange={update} busy={busy} />}
+        {data && (tab === 'expenses' || tab === 'bank-transactions') && missing('ledger') && waiting('ledger')}
+        {data && tab === 'expenses' && !missing('ledger') && <Expenses key={local?'local':user?.sub} passwordScope={local?'local':user?`google:${user.sub}`:undefined} data={data} onChange={update} busy={busy} />}
+        {data && tab === 'bank-transactions' && !missing('ledger') && <BankTransactions key={local?'local':user?.sub} passwordScope={local?'local':user?`google:${user.sub}`:undefined} data={data} onChange={update} busy={busy} />}
         {data && tab === 'rates' && <Rates data={data} onChange={update} onRefresh={async () => void (await refreshRates(data))} error={ratesError} />}
       </main>
       <SiteFooter />

@@ -136,18 +136,28 @@ export async function loadData<T>(token: AccessToken, parse: (raw: unknown) => T
 }
 
 // The ids of every part file of data set `datasetId` (see dataParts.ts).
-export async function listParts(token: AccessToken, datasetId: string): Promise<string[]> {
+// A part file as listed: its id, part name and size in bytes (null when Drive does not say).
+export interface ListedPart {
+  id: string
+  name: string
+  size: number | null
+}
+
+export async function listParts(token: AccessToken, datasetId: string): Promise<ListedPart[]> {
   if (!/^[A-Za-z0-9-]{1,64}$/.test(datasetId)) throw new Error('資料集識別碼無效，已停止載入。')
   const q = `appProperties has { key='${APP_PROP.key}' and value='${APP_PROP.part}' } and appProperties has { key='dataset' and value='${datasetId}' } and trashed = false`
-  const ids: string[] = []
+  const parts: ListedPart[] = []
   let page = ''
   do {
-    const url = `${API}?q=${encodeURIComponent(q)}&spaces=drive&fields=files(id),nextPageToken&orderBy=createdTime&pageSize=1000${page && `&pageToken=${encodeURIComponent(page)}`}`
-    const { files, nextPageToken } = (await (await driveFetch(token, url, { cache: 'no-store' })).json()) as { files: { id: string }[]; nextPageToken?: string }
-    ids.push(...files.map((f) => f.id))
+    const url = `${API}?q=${encodeURIComponent(q)}&spaces=drive&fields=files(id,appProperties,size),nextPageToken&orderBy=createdTime&pageSize=1000${page && `&pageToken=${encodeURIComponent(page)}`}`
+    const { files, nextPageToken } = (await (await driveFetch(token, url, { cache: 'no-store' })).json()) as { files: { id: string; appProperties?: Record<string, string>; size?: string }[]; nextPageToken?: string }
+    for (const f of files) {
+      const size = Number(f.size)
+      parts.push({ id: f.id, name: f.appProperties?.part ?? '', size: f.size !== undefined && Number.isFinite(size) ? size : null })
+    }
     page = nextPageToken ?? ''
   } while (page)
-  return ids
+  return parts
 }
 
 // Creates part file `name` (e.g. ledger-2026-Q4) in its subfolder. Refuses oversized content.
