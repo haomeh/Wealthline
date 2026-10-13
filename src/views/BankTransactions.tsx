@@ -107,7 +107,7 @@ export function BankTransactions({data,onChange,busy,passwordScope,historyReady=
  <div className="bank-records">{[...groups.entries()].map(([month,monthRows])=>{const totals=monthTotals.get(month);return <section key={month} className="bank-month" aria-label={`${monthLabel(month)} 銀行流水`}>
   <header className="bank-month-head"><h4>{monthLabel(month)}</h4><span className="muted small">{totals?.count ?? monthRows.length} 筆</span>{totals&&<span className="bank-month-totals">{[...totals.currencies].sort(([a],[b])=>a.localeCompare(b)).map(([currency,money])=><span key={currency}><small>{currency}</small>{money.credit>0&&<span className="bank-month-in">+{fmt(money.credit)}</span>}{money.debit>0&&<span>−{fmt(money.debit)}</span>}</span>)}</span>}</header>
   {monthRows.map(row=><BankRecord key={row.id} row={row} date={row.date} account={accountLabels.get(row.accountId)??'未辨識帳戶'} rules={rules} busy={busy} revealed={revealed===row.id} onReveal={open=>setRevealed(open?row.id:null)} onEdit={()=>setEditing(row)} onRule={()=>editRule(row)}/>)}
- </section>})}</div>{pager}</section>
+ </section>})}</div>{ledger&&hasEarlier(ledger)&&currentPage+1===pageCount&&<LoadEarlier ledger={ledger}/>}{pager}</section>
  <section className="panel bank-settings" aria-label="銀行流水設定">
  <BankCategoryRules rules={rules} busy={busy} onEdit={index=>setRuleEditor(index===undefined?{}:{index,rule:rules[index]})} onRemove={index=>change({rules:(latest.current.data.bankCategoryRules??[]).filter((_,i)=>i!==index)})}/>
  <details className="bank-setting bank-accounts" open={!accounts.length}><summary><span>流水帳戶</span><span className="muted small">{accounts.length} 個</span></summary><p className="muted small">每筆流水屬於一個帳戶，用來篩選和標示來源，與資產頁的帳戶分開。匯入帳單時會自動建立；只有手動記帳的銀行才需要在這裡新增。{ledger&&`筆數只算 ${monthLabel(ledger.from)}起已載入的流水；刪除帳戶前會先載入全部流水確認。`}</p><ul>{displayAccounts.map(a=><AccountLabel key={`${a.id}:${a.label}`} account={a} automatic={!!bankStatementIdentity(a.bank)} count={rowCounts.get(a.id)??0} partial={!!ledger} referenced={rowCounts.has(a.id)||!!data.bankStatementBalances?.some(b=>b.ledgerAccountId===a.id)} busy={busy||removing!==null} onRename={label=>{try{change({accounts:(latest.current.data.bankTransactionAccounts??[]).map(v=>v.id===a.id?{...v,label:protectBankText(label)}:v)})}catch{setMessage('標籤無效，未修改帳戶。')}}} onRemove={()=>{if(!ledger)return removeAccount(a.id);setRemoving(a.id);setMessage('正在載入全部流水，確認沒有流水使用這個帳戶後就會刪除…');ledger.onLoadAll()}}/>)}</ul>{accounts.length&&!adding?<button className="bank-account-add-open" disabled={busy} onClick={()=>setAdding(true)}>＋ 新增帳戶</button>:<form className="bank-account-add" onSubmit={e=>{e.preventDefault();if(busy)return;try{change({accounts:[...(latest.current.data.bankTransactionAccounts??[]),{id:crypto.randomUUID(),label:protectBankText(label),bank:protectBankText(bank)}]});setLabel('');setBank('');setAdding(false);setMessage('已新增流水帳戶；請儲存變更。')}catch{setMessage('請填寫有效的帳戶標籤及銀行名稱。')}}}><label className="field"><span>帳戶標籤（不用完整帳號）</span><input aria-label="帳戶標籤" maxLength={100} required disabled={busy} value={label} onChange={e=>setLabel(e.target.value)}/></label><label className="field"><span>銀行名稱</span><input aria-label="銀行名稱" maxLength={100} required disabled={busy} value={bank} onChange={e=>setBank(e.target.value)}/></label><button disabled={busy}>新增流水帳戶</button>{!!accounts.length&&<button type="button" onClick={()=>setAdding(false)}>取消</button>}</form>}{(!accounts.length||adding)&&<p className="muted small">{BANK_TEXT_NOTICE}</p>}</details>
@@ -123,15 +123,33 @@ const monthLabel=(month:string)=>`${month.slice(0,4)} 年 ${Number(month.slice(5
 // A quarter's part name (ledger-2026-Q2) as its months: 2026 年 4–6 月.
 const quarterLabel=(part:string)=>{const quarter=Number(part.slice(13));return `${part.slice(7,11)} 年 ${quarter*3-2}–${quarter*3} 月`}
 
-// What the list covers while earlier quarters are not loaded, and the buttons that load them.
+// What the list covers while earlier quarters are not loaded.
+const hasEarlier=(ledger:BankLedgerScope)=>!ledger.earlier||ledger.earlier.rows>0
 function LedgerScopeNotice({ledger}:{ledger:BankLedgerScope}) {
- const loading=ledger.status==='loading',failed=ledger.status&&!loading?ledger.status:'',earlier=ledger.earlier
- const rest=!earlier?'更早的流水還沒載入':earlier.rows?`更早還有 ${earlier.rows.toLocaleString()} 筆流水還沒載入${earlier.pending?`（其中 ${earlier.pending.toLocaleString()} 筆未分類）`:''}`:'更早的期間沒有銀行流水'
- return <div className="bank-scope" role="status" aria-busy={loading}>
-  <p>目前顯示 <strong>{monthLabel(ledger.from)}</strong>起的流水，{rest}。{(!earlier||earlier.rows>0)&&'以下筆數與篩選只涵蓋已載入的月份。'}</p>
-  {failed&&<p className="error" role="alert">{failed}</p>}
-  {(!earlier||earlier.rows>0)&&<div className="row"><button type="button" disabled={loading} onClick={ledger.onLoadEarlier}>{loading?'載入中…':`載入更早的流水（${quarterLabel(ledger.next)}）`}</button><button type="button" className="link" disabled={loading} onClick={ledger.onLoadAll}>全部載入</button></div>}
- </div>
+ const earlier=ledger.earlier
+ const rest=!earlier?'捲到底會載入更早的流水':earlier.rows?`捲到底會載入更早的 ${earlier.rows.toLocaleString()} 筆`:'更早的期間沒有銀行流水'
+ return <p className="bank-scope" role="status">已載入 <strong>{monthLabel(ledger.from)}</strong>起的流水，{rest}。{hasEarlier(ledger)&&'筆數與篩選只涵蓋已載入的月份。'}</p>
+}
+
+// The end of the list while earlier quarters are not loaded: reaching it loads the next one, and
+// a list that still ends on screen after that load (a narrow filter) loads the one after.
+function LoadEarlier({ledger}:{ledger:BankLedgerScope}) {
+ const ref=useRef<HTMLDivElement>(null)
+ const loading=ledger.status==='loading',failed=ledger.status&&!loading?ledger.status:''
+ const observe=typeof IntersectionObserver!=='undefined'
+ const load=useRef(ledger.onLoadEarlier)
+ useLayoutEffect(()=>{load.current=ledger.onLoadEarlier})
+ // A new observer for each quarter loaded reports at once whether the end is still on screen.
+ useEffect(()=>{
+  const end=ref.current
+  if(!end||loading||failed||!observe)return
+  const observer=new IntersectionObserver(entries=>{if(entries.some(e=>e.isIntersecting)){observer.disconnect();load.current()}},{rootMargin:'200px 0px'})
+  observer.observe(end)
+  return ()=>observer.disconnect()
+ },[ledger.next,loading,failed,observe])
+ if(loading)return <p className="bank-load-more muted" aria-busy>正在載入 {quarterLabel(ledger.next)}的流水…</p>
+ if(failed)return <div className="bank-load-more banner error" role="alert"><p>{failed}</p><button type="button" onClick={ledger.onLoadEarlier}>重試</button></div>
+ return <div ref={ref} className="bank-load-more" data-load-earlier="">{!observe&&<button type="button" onClick={ledger.onLoadEarlier}>載入更早的流水</button>}</div>
 }
 // The transactions loaded so far; earlier ones not loaded yet (`partial`) are not counted.
 const loadedCount=(count:number)=>count?`已載入 ${count} 筆流水`:'已載入的期間沒有流水'
