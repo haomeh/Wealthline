@@ -878,7 +878,7 @@ export default function App() {
         {data && tab === 'liabilities' && <Liabilities data={data} onChange={update} />}
         {data && (tab === 'expenses' || tab === 'bank-transactions') && missing('ledger') && waiting('ledger')}
         {data && tab === 'expenses' && !missing('ledger') && <Expenses key={local?'local':user?.sub} passwordScope={local?'local':user?`google:${user.sub}`:undefined} data={data} onChange={update} busy={busy} />}
-        {data && tab === 'bank-transactions' && !missing('ledger') && <BankTransactions key={local?'local':user?.sub} passwordScope={local?'local':user?`google:${user.sub}`:undefined} data={data} onChange={update} busy={busy} historyReady={!missing('history')} historyStatus={groupLoad.history} onLoadHistory={()=>void loadGroup('history')} />}
+        {data && tab === 'bank-transactions' && !missing('ledger') && <BankTransactions key={local?'local':user?.sub} passwordScope={local?'local':user?`google:${user.sub}`:undefined} data={data} onChange={update} busy={busy} historyReady={!missing('history')} historyPanel={waiting('history')} onLoadHistory={()=>void loadGroup('history')} />}
         {data && tab === 'rates' && <Rates data={data} onChange={update} onRefresh={async () => void (await refreshRates(data))} error={ratesError} />}
       </main>
       <SiteFooter />
