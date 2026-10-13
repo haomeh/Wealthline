@@ -47,7 +47,7 @@ test('a stored token is dropped when expired or when it belongs to another accou
   assert.equal(auth.loadSession()?.token, undefined)
   assert.equal(tabStorage.size, 0)
   auth.storeSession({ token, profile })
-  storage.set('we-wealth.session', JSON.stringify({ profile: { ...profile, sub: 'account-b' } }))
+  storage.set('wealthline.session', JSON.stringify({ profile: { ...profile, sub: 'account-b' } }))
   assert.equal(auth.loadSession()?.token, undefined)
 })
 
@@ -63,9 +63,12 @@ test('loading a legacy session removes its stored bearer token', () => {
   const session = auth.loadSession()
   assert.equal(session?.token, undefined)
   assert.ok(!JSON.stringify([...storage.values()]).includes('test-token'))
-  storage.set('we-wealth.session', '{"token":"test-token"')
-  assert.equal(auth.loadSession(), null)
-  assert.equal(storage.has('we-wealth.session'), false)
+  for (const key of ['wealthline.session', 'we-wealth.session']) {
+    storage.clear()
+    storage.set(key, '{"token":"test-token"')
+    assert.equal(auth.loadSession(), null)
+    assert.equal(storage.size, 0)
+  }
 })
 
 test('a renewed token from another Google account cannot be used to save existing data', async () => {

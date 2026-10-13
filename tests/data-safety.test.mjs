@@ -97,7 +97,7 @@ test('concurrent first creation retains both files and refuses to pick a winner'
   globalThis.fetch = async (url, init = {}) => {
     if (init.method === 'POST') {
       assert.match(init.body, /"visibility":"PRIVATE"/)
-      assert.match(init.body, /"title":"we-wealth-data.json"/)
+      assert.match(init.body, /"title":"wealthline-data.json"/)
       created = true
       return Response.json({ id: 'a', etag: '"v1"' })
     }

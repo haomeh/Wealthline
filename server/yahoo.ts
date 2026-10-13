@@ -14,7 +14,7 @@ export const SYMBOL = /^[A-Za-z0-9.\-=^]{1,24}$/
 export async function yahooQuote(symbol: string): Promise<Quote | null> {
   if (!SYMBOL.test(symbol)) return null
   const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?range=1d&interval=1d`
-  const res = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0 (we-wealth quote lookup)' } })
+  const res = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0 (wealthline quote lookup)' } })
   if (!res.ok) return null
   const body = (await res.json()) as {
     chart?: { result?: { meta?: { regularMarketPrice?: number; currency?: string; longName?: string; shortName?: string; symbol?: string } }[] }
@@ -51,7 +51,7 @@ export async function yahooHistory(symbol: string, from: string): Promise<PriceH
   const period1 = Math.floor(start / 1000) - 8 * 86400
   const period2 = Math.floor(Date.now() / 1000)
   const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?period1=${period1}&period2=${period2}&interval=1d&events=splits`
-  const res = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0 (we-wealth quote lookup)' } })
+  const res = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0 (wealthline quote lookup)' } })
   if (!res.ok) { if(res.status===404) return null; throw new Error('history_provider_error') }
   const body = (await res.json()) as {
     chart?: {

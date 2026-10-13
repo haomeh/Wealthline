@@ -4,7 +4,7 @@
 
 ## 1. 建立專案並啟用 API
 
-1. 開啟 [Google Cloud Console](https://console.cloud.google.com/)，建立新專案（例如 `we-wealth`）。
+1. 開啟 [Google Cloud Console](https://console.cloud.google.com/)，建立新專案（例如 `wealthline`）。
 2. 前往「API 和服務 → 程式庫」，搜尋並啟用 **Google Drive API**。
 
 ## 2. 設定 OAuth 同意畫面（Google Auth Platform）

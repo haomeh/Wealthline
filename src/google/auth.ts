@@ -191,8 +191,12 @@ export async function renewAccessToken(profile: UserProfile): Promise<AccessToke
 // The profile (a login hint) lives in localStorage. The access token lives in sessionStorage
 // so a reload keeps the user signed in, but it is gone when the tab or browser is closed and
 // is never shared with other tabs. Neither is readable by other sites.
-const SESSION_KEY = 'we-wealth.session'
-const TOKEN_KEY = 'we-wealth.token'
+const SESSION_KEY = 'wealthline.session'
+const TOKEN_KEY = 'wealthline.token'
+// Keys from before the rename to Wealthline: read once as a fallback, then removed, so a
+// signed-in user stays signed in across the update.
+const LEGACY_SESSION_KEY = 'we-wealth.session'
+const LEGACY_TOKEN_KEY = 'we-wealth.token'
 
 export interface StoredSession {
   profile: UserProfile
@@ -212,9 +216,10 @@ function readProfile(value: unknown): UserProfile | null {
 
 export function loadSession(): StoredSession | null {
   try {
-    const raw = JSON.parse(localStorage.getItem(SESSION_KEY) ?? 'null')
+    const raw = JSON.parse(localStorage.getItem(SESSION_KEY) ?? localStorage.getItem(LEGACY_SESSION_KEY) ?? 'null')
     // Remove a bearer token left in localStorage by an older version, even if the profile is malformed.
     localStorage.removeItem(SESSION_KEY)
+    localStorage.removeItem(LEGACY_SESSION_KEY)
     const profile = readProfile(raw)
     if (!profile) return null
     storeSession({ profile })
@@ -228,15 +233,22 @@ export function loadSession(): StoredSession | null {
 // Only a token that was stored for this very account and has not expired is returned.
 function loadToken(profile: UserProfile): AccessToken | undefined {
   try {
-    const t = JSON.parse(sessionStorage.getItem(TOKEN_KEY) ?? 'null') as { token?: AccessToken; sub?: string } | null
+    const current = sessionStorage.getItem(TOKEN_KEY)
+    const t = JSON.parse(current ?? sessionStorage.getItem(LEGACY_TOKEN_KEY) ?? 'null') as { token?: AccessToken; sub?: string } | null
     if (typeof t?.token?.value === 'string' && typeof t.token.expiresAt === 'number' && profile.sub && t.sub === profile.sub && isFresh(t.token)) {
-      return { value: t.token.value, expiresAt: t.token.expiresAt }
+      const token = { value: t.token.value, expiresAt: t.token.expiresAt }
+      if (current === null) {
+        sessionStorage.setItem(TOKEN_KEY, JSON.stringify({ sub: profile.sub, token }))
+        sessionStorage.removeItem(LEGACY_TOKEN_KEY)
+      }
+      return token
     }
   } catch {
     // Unreadable: fall through and drop it.
   }
   try {
     sessionStorage.removeItem(TOKEN_KEY)
+    sessionStorage.removeItem(LEGACY_TOKEN_KEY)
   } catch {
     // Nothing stored.
   }
@@ -260,11 +272,13 @@ export function storeSession(session: StoredSession): void {
 export function clearSession(): void {
   try {
     localStorage.removeItem(SESSION_KEY)
+    localStorage.removeItem(LEGACY_SESSION_KEY)
   } catch {
     // Nothing stored.
   }
   try {
     sessionStorage.removeItem(TOKEN_KEY)
+    sessionStorage.removeItem(LEGACY_TOKEN_KEY)
   } catch {
     // Nothing stored.
   }
