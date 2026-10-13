@@ -762,6 +762,7 @@ export default function App() {
             onBack={(fallback) => goBack(routePath({ tab: 'accounts', ...fallback }))}
             onRefreshPrices={async () => void (await refreshMarket(data))}
             priceError={priceError}
+            saved={saved.current}
           />
         )}
         {data && tab === 'liabilities' && <Liabilities data={data} onChange={update} />}

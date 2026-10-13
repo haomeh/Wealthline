@@ -18,25 +18,30 @@ export function CashflowPeriodControls({ state }: { state: CashflowPeriodState }
   }
   const first = selection.range === 'year' ? selection.year <= 1 : selection.year <= 1 && selection.month <= 1
   const last = selection.year >= 9999 && (selection.range === 'year' || selection.month >= 12)
+  const toggle = () => { if (open) { close(); return } setBrowseYear(selection.year); setOpen(true) }
+  const ranges = [['month', '月份'], ['year', '年度'], ['all', '全部期間']] as const
   const recordedYears = [...new Set([...monthList.map((m) => Number(m.slice(0, 4))), date.getFullYear(), selection.year])].sort((a, b) => b - a)
   return <>
     <div className="cashflow-period">
-      <div className="segmented cashflow-range" role="group" aria-label="時間範圍">{([['month', '月份'], ['year', '年度'], ['all', '全部期間']] as const).map(([range, text]) => <button key={range} aria-pressed={selection.range === range} className={selection.range === range ? 'on' : ''} onClick={() => { setSelection({ ...selection, range }); setOpen(false) }}>{text}</button>)}</div>
+      <div className="segmented cashflow-range desktop-only" role="group" aria-label="時間範圍">{ranges.map(([range, text]) => <button key={range} aria-pressed={selection.range === range} className={selection.range === range ? 'on' : ''} onClick={() => { setSelection({ ...selection, range }); setOpen(false) }}>{text}</button>)}</div>
       {selection.range !== 'all' && <div className="cashflow-stepper">
         <button className="cashflow-step" aria-label={selection.range === 'month' ? '上個月' : '前一年'} disabled={first} onClick={() => step(-1)}>‹</button>
-        <button ref={trigger} className="cashflow-period-trigger" aria-label={`選擇收支期間：${label}`} aria-expanded={open} aria-controls={pickerId} onClick={() => { if (open) { close(); return } setBrowseYear(selection.year); setOpen(true) }}>{label}<span aria-hidden="true">▾</span></button>
+        <button ref={trigger} className="cashflow-period-trigger" aria-label={`選擇收支期間：${label}`} aria-expanded={open} aria-controls={pickerId} onClick={toggle}>{label}<span aria-hidden="true">▾</span></button>
         <button className="cashflow-step" aria-label={selection.range === 'month' ? '下個月' : '後一年'} disabled={last} onClick={() => step(1)}>›</button>
       </div>}
+      {/* Phones hide the range buttons; with 全部期間 this pill opens the picker to change it. */}
+      {selection.range === 'all' && <button ref={trigger} className="cashflow-all-trigger mobile-only" aria-label={`選擇時間範圍：${label}`} aria-expanded={open} aria-controls={pickerId} onClick={toggle}>{label}<span aria-hidden="true">▾</span></button>}
     </div>
-    {open && selection.range !== 'all' && <section id={pickerId} className="cashflow-picker" aria-label="時間選擇" onKeyDown={(e) => { if (e.key === 'Escape') { e.preventDefault(); close() } }}>
-      <div className="cashflow-picker-head"><strong>{selection.range === 'month' ? '選擇月份' : '選擇年度'}</strong><button autoFocus onClick={close}>關閉</button></div>
+    {open && <section id={pickerId} className="cashflow-picker" aria-label="時間選擇" onKeyDown={(e) => { if (e.key === 'Escape') { e.preventDefault(); close() } }}>
+      <div className="cashflow-picker-head"><strong>{selection.range === 'month' ? '選擇月份' : selection.range === 'year' ? '選擇年度' : '選擇期間'}</strong><button autoFocus onClick={close}>關閉</button></div>
+      <div className="segmented cashflow-picker-range mobile-only" role="group" aria-label="期間類型">{ranges.map(([range, text]) => <button key={range} aria-pressed={selection.range === range} className={selection.range === range ? 'on' : ''} onClick={() => range === 'all' ? choose({ ...selection, range }) : setSelection({ ...selection, range })}>{text}</button>)}</div>
       {selection.range === 'month' ? <>
         <div className="cashflow-picker-year"><button aria-label="前一年" disabled={browseYear <= 1} onClick={() => setBrowseYear(browseYear - 1)}>‹</button><strong>{browseYear} 年</strong><button aria-label="後一年" disabled={browseYear >= 9999} onClick={() => setBrowseYear(browseYear + 1)}>›</button></div>
         <div className="cashflow-month-grid">{Array.from({ length: 12 }, (_, i) => {
           const month = i + 1, hasData = recordedMonths.has(monthKey(browseYear, month))
           return <button key={month} aria-label={`${month} 月${hasData ? '，有紀錄' : ''}`} aria-pressed={selection.year === browseYear && selection.month === month} className={hasData ? 'has-records' : ''} onClick={() => choose({ range: 'month', year: browseYear, month })}>{month} 月</button>
         })}</div><p className="muted small">圓點表示有紀錄</p>
-      </> : <div className="cashflow-month-grid">{recordedYears.map((year) => <button key={year} aria-pressed={selection.year === year} className={monthList.some((m) => m.startsWith(`${String(year).padStart(4, '0')}-`)) ? 'has-records' : ''} onClick={() => choose({ ...selection, year })}>{year} 年</button>)}</div>}
+      </> : selection.range === 'year' && <div className="cashflow-month-grid">{recordedYears.map((year) => <button key={year} aria-pressed={selection.year === year} className={monthList.some((m) => m.startsWith(`${String(year).padStart(4, '0')}-`)) ? 'has-records' : ''} onClick={() => choose({ ...selection, year })}>{year} 年</button>)}</div>}
     </section>}
   </>
 }

@@ -29,10 +29,12 @@ interface Props {
   onBack: () => void
   onRefreshPrices: () => Promise<void>
   priceError: string
+  // The account as last saved: holdings whose quantity differs are marked as unsaved.
+  saved?: Account
 }
 
 // Where the numbers go: balances per currency, and holdings for investment accounts.
-export function AccountDetail({ data, account: a, onChange, onEdit, onBack, onRefreshPrices, priceError }: Props) {
+export function AccountDetail({ data, account: a, onChange, onEdit, onBack, onRefreshPrices, priceError, saved }: Props) {
   const [refreshing, setRefreshing] = useState(false)
   // The holding whose daily values are shown under its row.
   const [open, setOpen] = useState<string | null>(null)
@@ -47,6 +49,12 @@ export function AccountDetail({ data, account: a, onChange, onEdit, onBack, onRe
   const series = accountSeries(data, a, now)
   const change = accountChange(data, a, now)
   const changes = data.history.changes.filter((c) => c.accountId === a.id)
+  // Quantity added since the last save; null when unchanged. A holding added since then counts in full.
+  const unsaved = (p: Position) => {
+    if (!saved) return null
+    const before = saved.positions.find((x) => x.id === p.id)?.quantity ?? 0
+    return before === p.quantity ? null : p.quantity - before
+  }
   const quoted = holdings.map((p) => p.priceUpdatedAt).filter((t): t is string => !!t).sort().at(-1)
 
   const balances = (
@@ -136,8 +144,8 @@ export function AccountDetail({ data, account: a, onChange, onEdit, onBack, onRe
                       </tr>
                     </thead>
                     <tbody>
-                      {holdings.map((p) => (
-                        <tr key={p.id} className={open === p.id ? 'open' : ''}>
+                      {holdings.map((p) => { const diff = unsaved(p); return (
+                        <tr key={p.id} className={[open === p.id ? 'open' : '', diff !== null ? 'unsaved' : ''].filter(Boolean).join(' ') || undefined}>
                           <td>
                             <button
                               className="link symbol"
@@ -152,6 +160,7 @@ export function AccountDetail({ data, account: a, onChange, onEdit, onBack, onRe
                             </button>
                             {p.name && p.name !== p.symbol && <div className="muted small ellipsis">{p.name}</div>}
                             {p.addedAt && <div className="muted small">{shortDay(p.addedAt)} 加入</div>}
+                            {diff !== null && <div className="unsaved-mark small">● 數量 {diff > 0 ? '+' : '−'}{fmt(Math.abs(diff))}（未儲存）</div>}
                           </td>
                           <td className="num">
                             <NumberInput className="cell-input" value={p.quantity} onCommit={(v) => setPosition({ ...p, quantity: v })} size={10} />
@@ -173,7 +182,7 @@ export function AccountDetail({ data, account: a, onChange, onEdit, onBack, onRe
                             </button>
                           </td>
                         </tr>
-                      ))}
+                      )})}
                     </tbody>
                   </table>
                 </div>

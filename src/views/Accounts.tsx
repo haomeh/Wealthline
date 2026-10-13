@@ -26,9 +26,11 @@ interface AccountsProps extends Props {
   onBack: (fallback: AccountsView) => void
   onRefreshPrices: () => Promise<void>
   priceError: string
+  // The last saved data, to mark unsaved edits.
+  saved?: WealthData | null
 }
 
-export function Accounts({ data, onChange, view, setView, onBack, onRefreshPrices, priceError }: AccountsProps) {
+export function Accounts({ data, onChange, view, setView, onBack, onRefreshPrices, priceError, saved }: AccountsProps) {
   const now = useCalendarNow()
   const showImport = view.page === 'list' && !!view.importing
   // Phone only: which kind of account the list shows. Wide screens show both tables.
@@ -75,6 +77,7 @@ export function Accounts({ data, onChange, view, setView, onBack, onRefreshPrice
         onBack={() => onBack({ page: 'list' })}
         onRefreshPrices={onRefreshPrices}
         priceError={priceError}
+        saved={saved?.accounts.find((x) => x.id === current.id)}
       />
     )
   }
