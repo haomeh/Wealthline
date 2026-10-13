@@ -22,6 +22,7 @@ class LocalBinaryData {
     }
 }
 export type StatementDocumentMode = 'bank' | 'credit-card';
+export type BankPageProgress = { completed: number; total: number };
 /** Shared loading/resource boundary. Consumers own page processing and always destroy in finally. */
 export function openStatementDocument(mode: StatementDocumentMode, bytes: Uint8Array, password: string | readonly string[]) {
     if (mode !== 'bank' && mode !== 'credit-card')
@@ -33,7 +34,7 @@ export function openStatementDocument(mode: StatementDocumentMode, bytes: Uint8A
     return task;
 }
 /** Raw pages are memory-only: do not persist/log them or PDF metadata. Bank mode has no OCR/card filter. */
-export async function readBankDocument(bytes: Uint8Array, password: string | readonly string[], signal: AbortSignal): Promise<{
+export async function readBankDocument(bytes: Uint8Array, password: string | readonly string[], signal: AbortSignal, onPageProgress?: (progress: BankPageProgress) => void): Promise<{
     pages: BankPage[];
     mode: 'bank';
 }> {
@@ -49,6 +50,9 @@ export async function readBankDocument(bytes: Uint8Array, password: string | rea
         const pdf = await task.promise;
         if (pdf.numPages > 100)
             throw new Error(BANK_PDF_ERRORS.pages);
+        if (signal.aborted)
+            throw new Error('已取消解析');
+        onPageProgress?.({ completed: 0, total: pdf.numPages });
         let chars = 0;
         for (let n = 1; n <= pdf.numPages; n++) {
             if (signal.aborted)
@@ -69,6 +73,7 @@ export async function readBankDocument(bytes: Uint8Array, password: string | rea
                 if (chars > 500000)
                     throw new Error(BANK_PDF_ERRORS.textLimit);
                 pages.push({ page: n, width: viewport.width, height: viewport.height, items });
+                onPageProgress?.({ completed: n, total: pdf.numPages });
             }
             finally {
                 page.cleanup();

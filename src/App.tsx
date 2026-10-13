@@ -616,8 +616,7 @@ export default function App() {
   const archive = state && missing('history') ? archiveSummary(state) : null
   const needs = (group: PartGroup) => missing(group) && (group === 'ledger'
     ? tab === 'expenses' || tab === 'bank-transactions' || tab === 'cashflow' || (tab === 'overview' && !summaryCashflow(state!))
-    // The bank page uses the history when it imports statement balances (bankStatementAssets.ts).
-    : route.tab === 'history' || tab === 'bank-transactions' || (route.tab === 'accounts' && route.page === 'detail') || (tab === 'overview' && !archive))
+    : route.tab === 'history' || (route.tab === 'accounts' && route.page === 'detail') || (tab === 'overview' && !archive))
   const needed = (['ledger', 'history'] as const).filter(needs)
   useEffect(() => {
     for (const group of needed) if (!groupLoad[group]) void loadGroup(group)
@@ -880,9 +879,8 @@ export default function App() {
         )}
         {data && tab === 'liabilities' && <Liabilities data={data} onChange={update} />}
         {data && (tab === 'expenses' || tab === 'bank-transactions') && missing('ledger') && waiting('ledger')}
-        {data && tab === 'bank-transactions' && !missing('ledger') && missing('history') && waiting('history')}
         {data && tab === 'expenses' && !missing('ledger') && <Expenses key={local?'local':user?.sub} passwordScope={local?'local':user?`google:${user.sub}`:undefined} data={data} onChange={update} busy={busy} />}
-        {data && tab === 'bank-transactions' && !missing('ledger') && !missing('history') && <BankTransactions key={local?'local':user?.sub} passwordScope={local?'local':user?`google:${user.sub}`:undefined} data={data} onChange={update} busy={busy} />}
+        {data && tab === 'bank-transactions' && !missing('ledger') && <BankTransactions key={local?'local':user?.sub} passwordScope={local?'local':user?`google:${user.sub}`:undefined} data={data} onChange={update} busy={busy} historyReady={!missing('history')} historyStatus={groupLoad.history} onLoadHistory={()=>void loadGroup('history')} />}
         {data && tab === 'rates' && <Rates data={data} onChange={update} onRefresh={async () => void (await refreshRates(data))} error={ratesError} />}
       </main>
       <SiteFooter />

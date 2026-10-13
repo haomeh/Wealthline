@@ -572,9 +572,9 @@ export function parseBankStatement(pages: readonly BankPage[], metadata: BankSta
     return { ...(balances.length&&{balances}), status: !supported ? 'unsupported' : layout.partial || rejectedCount ? 'partial' : 'recognized', bank: layout.bank, sections, warnings, recognizedCount, rejectedCount };
 }
 /** Lazy browser-local neutral reader; never enters the card OCR/scoping adapter. */
-export async function readBankStatementPdf(bytes: Uint8Array, password: string | readonly string[], signal: AbortSignal) {
+export async function readBankStatementPdf(bytes: Uint8Array, password: string | readonly string[], signal: AbortSignal, onPageProgress?: (progress: import('./statementDocument').BankPageProgress) => void) {
     let reader: typeof import('./statementDocument');
     try { reader = await import('./statementDocument'); }
     catch { throw new Error(BANK_PDF_ERRORS.module); }
-    return reader.readBankDocument(bytes, password, signal);
+    return reader.readBankDocument(bytes, password, signal, onPageProgress);
 }

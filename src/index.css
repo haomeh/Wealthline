@@ -3157,6 +3157,11 @@ dialog.expense-rule-dialog { max-width: 440px; }
 .bank-add-row { margin-top: 12px; }
 .bank-import-actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 10px; padding-top: 20px; }
 .bank-import-actions > span { margin-right: auto; }
+.bank-pagination { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; margin: 16px 0; }
+.bank-pagination span { min-width: 0; overflow-wrap: anywhere; font-size: 0.85rem; color: var(--muted); }
+.bank-preview-navigation { margin-top: 20px; }
+.bank-progress progress { width: 100%; accent-color: var(--accent); }
+.bank-progress p { overflow-wrap: anywhere; margin: 8px 0; }
 .bank-import-review { margin-top: 16px; }
 .bank-import-confirm-actions { margin-top: 12px; flex-wrap: wrap; }
 .bank-closing-balances, .bank-import-review { overflow-wrap: anywhere; }

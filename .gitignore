@@ -39,3 +39,4 @@ public/ocr/
 .agents/state/
 
 .codegraph
+.worktrees/

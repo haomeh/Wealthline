@@ -76,6 +76,11 @@ test('neutral PDF lifecycle bounds, local resources, retries, abort and cleanup 
 };return {getViewport:()=>({width:612,height:864,convertToViewportPoint:(x,y)=>[x,864-y]}),isPureXfa:!!s.xfa,streamTextContent,getTextContent:async()=>{if(s.xfa)return {items:s.items,styles:{},lang:null};const text={items:[],styles:{},lang:null};for await(const chunk of streamTextContent()){text.items.push(...chunk.items);Object.assign(text.styles,chunk.styles);text.lang??=chunk.lang}return text},cleanup:()=>s.cleaned++}}});}catch(e){fail(e)}})});return task;}`}}]})
  const reset=extra=>globalThis.__bankPdfLifecycle={opened:0,destroyed:0,cleaned:0,tried:[],...extra}
  try {const doc=await mockServer.ssrLoadModule('/src/statementDocument.ts');
+  const progress=[],extracted=[];reset({numPages:3,onText:()=>extracted.push(true)});
+  const reader=await mockServer.ssrLoadModule('/src/bankStatements.ts');await reader.readBankStatementPdf(new Uint8Array([1]),'',new AbortController().signal,value=>{progress.push(value);assert.equal(value.completed,extracted.length,'only extracted pages count as completed')});
+  assert.deepEqual(progress,[{completed:0,total:3},{completed:1,total:3},{completed:2,total:3},{completed:3,total:3}]);
+  const failedProgress=[];reset({failure:true});await assert.rejects(doc.readBankDocument(new Uint8Array([1]),'',new AbortController().signal,value=>failedProgress.push(value)),/BANK-TEXT/);assert.deepEqual(failedProgress,[{completed:0,total:1}]);
+  const abortedProgress=[],pageAbort=new AbortController();reset({numPages:3,onText:()=>pageAbort.abort()});await assert.rejects(doc.readBankDocument(new Uint8Array([1]),'',pageAbort.signal,value=>abortedProgress.push(value)),/取消/);assert.deepEqual(abortedProgress,[{completed:0,total:3}]);
   const chunks=[{items:[{str:'09/01 STORE',transform:[1,0,0,1,30,820],width:60,height:9}],styles:{Synthetic:{fontFamily:'sans-serif'}},lang:null},{items:[{str:'100',transform:[1,0,0,1,30,800],width:20,height:9}],styles:{},lang:'en'}];
   for(const noIterator of [true,false]){
    reset({noIterator,chunks});const result=await doc.readBankDocument(new Uint8Array([1]),'',new AbortController().signal);
