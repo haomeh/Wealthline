@@ -1,6 +1,6 @@
 import { bankStatementIdentity, statementAccountLabel, statementBalanceConfirmation, statementLedgerAccount, importStatementBalances, statementBalanceRevision, type StatementBalanceCandidate } from '../bankStatementAssets'
 import type { WealthData } from '../model'
-import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { BANK_PDF_ERRORS, bankStatementErrorMessage, pdfFormatError, type BankImportStage } from '../bankStatementErrors'
 import { sha256 } from '../expenses'
 import { bankCategoryRuleIndex, mergeBankTransactions, prepareBankTransactions, validateBankLedger, type BankTransaction, type BankTransactionAccount, type BankTransactionRow, type BankCategoryRule, type BankRowProvenance } from '../bankTransactions'
@@ -83,11 +83,9 @@ export function BankStatementImport({data,accounts,existing,rules,passwords,pass
  try{
  const additions:BankTransactionAccount[]=[],rows:BankTransaction[]=[],context:BankTransaction[]=[]
  // Selection accepts the current summary; optional narration stays preview-only.
- // Paginated preview: jump to the offending row/section so the error is visible.
- const reveal=(section:number,row=0)=>{setSectionIndex(section);setRowPage(Math.floor(row/50));return `（區段 ${section+1} 第 ${Math.floor(row/50)+1} 頁）`}
- for(const [i,s] of sections.entries()){const row=s.rows.findIndex(r=>r.selected&&!protectBankText(r.draft.description));if(row>=0)throw new Error('summary'+reveal(i,row))}
- for(const [i,s] of sections.entries()){if(!s.rows.some(r=>r.selected)&&!balances.some(b=>b.sectionId===s.id))continue
- if(!s.accountId)throw new Error('mapping'+reveal(i))
+ if(sections.some(s=>s.rows.some(r=>r.selected&&!protectBankText(r.draft.description))))throw new Error('summary')
+ for(const s of sections){if(!s.rows.some(r=>r.selected)&&!balances.some(b=>b.sectionId===s.id))continue
+ if(!s.accountId)throw new Error('mapping')
  const accountId=s.accountId==='new'?s.newId:s.accountId
  const owner=s.accountId==='new'?s:sections.find(p=>p.newId===accountId)
  if(owner&&!latest.current.accounts.some(a=>a.id===accountId)&&!additions.some(a=>a.id===accountId))additions.push({id:accountId,label:protectBankText(owner.label),bank:protectBankText(owner.bank)})
@@ -109,14 +107,16 @@ export function BankStatementImport({data,accounts,existing,rules,passwords,pass
  const balanceConfirmations=new Map<string,NonNullable<ReturnType<typeof statementBalanceConfirmation>>>()
  for(const b of balanceResult.data.bankStatementBalances?.slice(current.data.bankStatementBalances?.length??0)??[]){const confirmation=statementBalanceConfirmation(b.bank,current.data.accounts);if(confirmation)balanceConfirmations.set(confirmation.accountId,confirmation)}
  if(!abort.signal.aborted)setReview({accounts:validated.accounts,rows,context,balances:cashBalances,balanceCount:balanceResult.added,balanceRevision:statementBalanceRevision(current.data),balanceConfirmations:[...balanceConfirmations.values()]})
- }catch(e){if(!abort.signal.aborted)setError(e instanceof Error&&['帳單銀行名稱與資產帳戶不同，請先確認對應帳戶。','同日同銀行幣別的帳單餘額不一致，請分批匯入並核對。','同銀行與國家有多個資產帳戶，請先整併帳戶後再匯入餘額。','既有帳單的歷史帳戶與資產帳戶不同，請先核對歷史帳戶後再匯入餘額。','不可補登未來日期'].includes(e.message)?e.message+' 未修改任何資料。':e instanceof Error&&e.message.startsWith('summary')?`請填寫已選交易的摘要，或取消勾選該筆${e.message.slice(7)}。未修改任何資料。`:e instanceof Error&&e.message.startsWith('mapping')?`請明確選擇此區段的獨立帳戶${e.message.slice(7)}。未修改任何資料。`:'請明確選擇每個已選區段的獨立帳戶，並檢查標籤及所有交易欄位。未修改任何資料。')}finally{if(!abort.signal.aborted)setPreparing(false)}
+ }catch(e){if(!abort.signal.aborted)setError(e instanceof Error&&['帳單銀行名稱與資產帳戶不同，請先確認對應帳戶。','同日同銀行幣別的帳單餘額不一致，請分批匯入並核對。','同銀行與國家有多個資產帳戶，請先整併帳戶後再匯入餘額。','既有帳單的歷史帳戶與資產帳戶不同，請先核對歷史帳戶後再匯入餘額。','不可補登未來日期'].includes(e.message)?e.message+' 未修改任何資料。':e instanceof Error&&e.message==='summary'?'請填寫已選交易的摘要，或取消勾選該筆。未修改任何資料。':'請明確選擇每個已選區段的獨立帳戶，並檢查標籤及所有交易欄位。未修改任何資料。')}finally{if(!abort.signal.aborted)setPreparing(false)}
  }
- const {result,reviewError}=useMemo(()=>{if(!review)return {result:undefined,reviewError:''};try{return {result:mergeBankTransactions(existing,review.rows,review.accounts,review.context,{keepSuspectedDuplicates:keep}),reviewError:''}}catch{return {result:undefined,reviewError:'無法核對重複，請檢查已選交易與帳戶，或重新檢查匯入。未修改任何資料。'}}},[existing,review,keep])
+ let result:ReturnType<typeof mergeBankTransactions>|undefined
+ let reviewError=''
+ if(review)try{result=mergeBankTransactions(existing,review.rows,review.accounts,review.context,{keepSuspectedDuplicates:keep})}catch{reviewError='無法核對重複，請檢查已選交易與帳戶，或重新檢查匯入。未修改任何資料。'}
  function finishImport(transactionsOnly=false){if(!review||latest.current.busy)return;try{onImport(transactionsOnly?{...review,balances:[],balanceCount:0,balanceConfirmations:[]}:review,keep)}catch{setError('確認失敗，資料可能已變更；請重新核對。未新增孤兒帳戶。')}}
  const previewCount=sections.reduce((n,s)=>n+s.rows.length,0)
  const selectedCount=sections.reduce((n,s)=>n+s.rows.filter(r=>r.selected).length,0)
  const narrationCount=sections.reduce((n,s)=>n+s.rows.filter(r=>r.selected&&r.narration).length,0)
- const activeIndex=Math.min(sectionIndex,Math.max(0,sections.length-1)),activeSection=sections[activeIndex],previewPages=Math.max(1,Math.ceil((activeSection?.rows.length??0)/50)),currentRowPage=Math.min(rowPage,previewPages-1)
+ const activeSection=sections[Math.min(sectionIndex,Math.max(0,sections.length-1))],previewPages=Math.max(1,Math.ceil((activeSection?.rows.length??0)/50)),currentRowPage=Math.min(rowPage,previewPages-1)
  return <section className="panel bank-import">
   <div className="panel-head"><h2>匯入銀行帳單</h2><ImportSteps step={sections.length ? 2 : 1} /><button onClick={()=>{controller.current?.abort();onCancel()}}>取消匯入</button></div>
   <p className="bank-import-intro muted">PDF 在本機解析，不上傳原始文件。核對並匯入後，請按「儲存變更」。</p>
@@ -131,7 +131,7 @@ export function BankStatementImport({data,accounts,existing,rules,passwords,pass
    </fieldset>
    <div className="row bank-upload-actions"><button disabled={locked||!files.length} className="primary">{parsing?'正在本機處理…':'解析銀行帳單'}</button>{passwordScope && <button type="button" disabled={locked} onClick={onManagePasswords}>管理帳單密碼</button>}</div>
   </form>
-  {progress && <div className="notice bank-progress" role="group" aria-label="銀行解析進度"><progress value={progress.processed} max={progress.total} aria-label="銀行檔案處理進度"/><p role="status">{progress.complete?'處理完成':'正在本機處理'} · {progress.processed}／{progress.total} 份 · {Math.floor(progress.processed/progress.total*100)}% · 成功 {progress.successes} 份 · 失敗 {progress.failures} 份（含未辨識）</p>{progress.currentFile && <p>目前檔案：{progress.currentFile}{progress.page && ` · ${progress.page.completed}／${progress.page.total} 頁完成文字擷取`}</p>}{progress.complete && <p>{previewCount} 筆預覽 · {previewCount||balances.length?'待核對匯入。':'沒有可匯入的預覽，請核對報告或手動補登。'}100% 表示檔案處理結束，尚未匯入或儲存；請檢查解析報告。</p>}</div>}
+  {progress && <div className="notice bank-progress" role="status" aria-label="銀行解析進度" aria-live="polite"><progress value={progress.processed} max={progress.total} aria-label="銀行檔案處理進度"/><p>{progress.complete?'處理完成':'正在本機處理'} · {progress.processed}／{progress.total} 份 · {Math.floor(progress.processed/progress.total*100)}% · 成功 {progress.successes} 份 · 失敗 {progress.failures} 份（含未辨識）</p>{progress.currentFile && <p>目前檔案：{progress.currentFile}{progress.page && ` · ${progress.page.completed}／${progress.page.total} 頁完成文字擷取`}</p>}{progress.complete && <p>{previewCount} 筆預覽 · {previewCount||balances.length?'待核對匯入。':'沒有可匯入的預覽，請核對報告或手動補登。'}100% 表示檔案處理結束，尚未匯入或儲存；請檢查解析報告。</p>}</div>}
   {preparing && <p role="status" className="muted">正在準備重複交易與餘額核對…</p>}
   {reports.length>0 && <details className="bank-import-report" open={reports.some(r=>/無法解析|不支援／未辨識|無法自動讀取|無法在此瀏覽器解鎖/.test(r))||undefined}>
    <summary><span>解析報告</span><span className="muted">{previewCount} 筆 · {sections.length} 個區段</span></summary>
@@ -139,7 +139,7 @@ export function BankStatementImport({data,accounts,existing,rules,passwords,pass
   </details>}
   {balances.length>0 && <section className="notice bank-closing-balances" aria-label="帳單期末餘額"><h3>補入資產歷史</h3><p className="muted small">只補入帳單日期的現金餘額；目前持倉不變，其他資產不推算。</p>{balances.map((b,i)=>{const confirmation=statementBalanceConfirmation(b.bank,data.accounts);return <div key={i}><p><strong>{statementAccountLabel(b.bank)}</strong> · {b.date} · {b.currency==='TWD'?'NT$':b.currency} {fmt(b.quantity,2)}</p>{confirmation && <p className="muted small">既有資產帳戶為 {confirmation.assetLabel}，補登前會請你確認對應。</p>}</div>})}</section>}
   {!!sections.length && <div className="bank-preview-navigation"><p className="muted" aria-label="銀行預覽總計">已選 {selectedCount}／{previewCount} 筆 · 共 {sections.length} 個區段，請逐一核對。</p><label className="field"><span>帳戶區段</span><select aria-label="銀行預覽區段" disabled={locked} value={sectionIndex} onChange={e=>{setSectionIndex(Number(e.target.value));setRowPage(0)}}>{sections.map((s,i)=><option value={i} key={s.id}>區段 {i+1} · {statementAccountLabel(s.bank)} · {s.currency} · {s.rows.filter(r=>r.selected).length}／{s.rows.length} 筆已選{s.warnings.length?' · 有解析警告':''}</option>)}</select></label><nav className="bank-pagination" aria-label="銀行預覽分頁"><button type="button" aria-label="銀行預覽上一頁" disabled={locked||currentRowPage===0} onClick={()=>setRowPage(currentRowPage-1)}>上一頁</button><span>第 {currentRowPage+1}／{previewPages} 頁 · 每頁最多 50 筆</span><button type="button" aria-label="銀行預覽下一頁" disabled={locked||currentRowPage+1===previewPages} onClick={()=>setRowPage(currentRowPage+1)}>下一頁</button></nav></div>}
-  {sections.map((s,index)=>index===activeIndex&&<section key={s.id} className="bank-section" aria-label={`帳戶區段 ${index+1}`}>
+  {sections.map((s,index)=>index===sectionIndex&&<section key={s.id} className="bank-section" aria-label={`帳戶區段 ${index+1}`}>
    <div className="bank-section-head"><h3>{statementAccountLabel(s.bank)}</h3><span className="muted small">{s.currency} · 區段 {index+1} · {s.rows.length} 筆</span></div>
    {s.partial && <p role="status" className="bank-section-note">僅局部紀錄／轉出明細；不是完整月流水。</p>}
    {s.noTransactions && <p>此區段已有無交易證據；不捏造零金額交易。</p>}
