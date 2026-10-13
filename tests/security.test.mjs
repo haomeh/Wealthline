@@ -86,6 +86,26 @@ test('a renewed token from the same account is accepted', async () => {
   assert.equal((await auth.renewAccessToken(profile)).value, 'same-token')
 })
 
+test('with Google Identity Services loaded, the sign-in popup opens within the click itself', async () => {
+  let opened = false
+  globalThis.window = { google: { accounts: { oauth2: {
+    initTokenClient: ({ callback }) => ({ requestAccessToken: () => { opened = true; queueMicrotask(() => callback({ access_token: 't', expires_in: 3600 })) } }),
+    hasGrantedAllScopes: () => true,
+  } } } }
+  const pending = auth.requestAccessToken('select_account')
+  // Safari blocks popups opened after the click handler has returned.
+  assert.equal(opened, true)
+  assert.equal((await pending).value, 't')
+})
+
+test('a popup the browser blocked asks the user to click again', async () => {
+  globalThis.window = { google: { accounts: { oauth2: {
+    initTokenClient: ({ error_callback }) => ({ requestAccessToken: () => error_callback({ type: 'popup_failed_to_open', message: 'Failed to open popup window' }) }),
+    hasGrantedAllScopes: () => true,
+  } } } }
+  await assert.rejects(() => auth.requestAccessToken('select_account'), /再按一次登入/)
+})
+
 test('userinfo without a stable account identifier is rejected', async () => {
   globalThis.fetch = async () => Response.json({ email: 'a@example.com', name: 'Alice' })
   await assert.rejects(() => auth.fetchProfile(token))

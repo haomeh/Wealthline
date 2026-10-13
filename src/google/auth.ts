@@ -47,14 +47,27 @@ function clientId(): string {
   return id
 }
 
+// Starts loading GIS before the user clicks: Safari only lets the click open Google's popup if
+// the popup opens in that click, not after the script finishes downloading.
+export function preloadGis(): void {
+  loadGis().catch(() => {
+    // The click retries the load and shows the error.
+  })
+}
+
 // prompt '' reuses an existing grant without showing the consent screen again;
 // 'consent' forces the account chooser and consent screen.
 // loginHint (an email) lets Google skip the account chooser for a returning user.
-export async function requestAccessToken(
+export function requestAccessToken(
   prompt: '' | 'consent' | 'select_account' = '',
   loginHint?: string,
 ): Promise<AccessToken> {
-  await loadGis()
+  // When GIS is already loaded, open the popup synchronously so it stays inside the user's click.
+  if (window.google?.accounts?.oauth2) return openTokenPopup(prompt, loginHint)
+  return loadGis().then(() => openTokenPopup(prompt, loginHint))
+}
+
+function openTokenPopup(prompt: '' | 'consent' | 'select_account', loginHint?: string): Promise<AccessToken> {
   return new Promise((resolve, reject) => {
     const client = window.google!.accounts.oauth2.initTokenClient({
       client_id: clientId(),
@@ -72,7 +85,9 @@ export async function requestAccessToken(
         }
         resolve({ value: res.access_token, expiresAt: Date.now() + Number(res.expires_in) * 1000 })
       },
-      error_callback: (err) => reject(new Error(err.message || err.type)),
+      error_callback: (err) => reject(new Error(err.type === 'popup_failed_to_open'
+        ? 'Google 登入視窗被瀏覽器擋下，請再按一次登入，或允許此網站開啟彈出式視窗。'
+        : err.message || err.type)),
     })
     client.requestAccessToken()
   })

@@ -6,6 +6,7 @@ import {
   isFresh,
   loadSession,
   requestAccessToken,
+  preloadGis,
   renewAccessToken,
   revokeAccessToken,
   storeSession,
@@ -337,6 +338,12 @@ export default function App() {
       }
     }
   }
+
+  // Google sign-in (and a later token renewal) must open its popup inside the click, so GIS
+  // is fetched ahead of time whenever this tab may sign in with Google.
+  useEffect(() => {
+    if (!page && !local) preloadGis()
+  }, [page, local])
 
   // Restore the session after a reload while this tab's token is still valid,
   // or local mode when the user was using it.
