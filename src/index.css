@@ -3321,7 +3321,7 @@ dialog.expense-rule-dialog { max-width: 440px; }
 .cashflow-year-records { display: flex; flex-direction: column; gap: 10px; }
 .cashflow-year-records + .cashflow-year-records { padding-top: 10px; border-top: 1px solid var(--hairline); }
 .cashflow-year-toggle strong { font-size: 17px; }
-.cashflow-year-records > .cashflow-year-toggle + .cashflow-month-records, .cashflow-year-records > .cashflow-month-records + .cashflow-month-records { margin-left: 18px; }
+.cashflow-year-records > .cashflow-year-toggle ~ .cashflow-month-records { margin-left: 18px; }
 .cashflow-year-records > .cashflow-year-toggle + .cashflow-month-records { border-top: 0; padding-top: 0; }
 .cashflow-records > summary { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; cursor: pointer; }
 .cashflow-records > summary strong { font-size: 15px; }
