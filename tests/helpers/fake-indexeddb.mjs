@@ -66,6 +66,7 @@ export function createFakeIndexedDB() {
   }
 
   const indexedDB = {
+    databases: async () => [...databases.entries()].map(([name, db]) => ({ name, version: db.version })),
     open(name, version = 1) {
       const r = { result: undefined, error: null, onsuccess: null, onerror: null, onupgradeneeded: null }
       later(() => {

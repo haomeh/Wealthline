@@ -47,6 +47,12 @@ export interface LocalFile {
   raw: string
 }
 
+export interface LocalPreview {
+  data: WealthData | null
+  invalid: boolean
+  version: { raw: string | null; legacy: string | null }
+}
+
 function read(key: string): string | null {
   try {
     return localStorage.getItem(key)
@@ -236,6 +242,39 @@ export async function loadLocal(): Promise<LocalFile | null> {
   return { data: parseWealthData(json, 'browser'), raw }
 }
 
+// Read the destination without running migration, cleanup, or mode changes.
+export async function readLocalPreview(): Promise<LocalPreview> {
+  const hinted = read(STORED_KEY) === '1'
+  // Opening IndexedDB can create an empty database, so preview opens it only when this page
+  // already did or the browser confirms it exists. The stored-data hint is best-effort and can be
+  // missing while IndexedDB holds data, so it does not decide this on its own.
+  const exists = !!chosen || (typeof indexedDB !== 'undefined' && !!indexedDB.databases
+    && (await indexedDB.databases()).some((entry) => entry.name === DB_NAME))
+  if (!exists && hinted) throw new Error('無法只讀確認此瀏覽器的本機資料，請重新開啟本機模式後再預覽。')
+  const store = exists ? await backend() : storageBackend
+  if (store === storageBackend) {
+    if (hinted) throw new Error(UNAVAILABLE)
+    const legacy = read(DATA_KEY)
+    if (legacy === null) return { data: null, invalid: false, version: { raw: null, legacy: null } }
+    try {
+      return { data: parseWealthData(JSON.parse(legacy), 'browser'), invalid: false, version: { raw: null, legacy } }
+    } catch {
+      return { data: null, invalid: true, version: { raw: null, legacy } }
+    }
+  }
+  return locked(async () => {
+    const raw = await store.get()
+    const legacy = read(DATA_KEY)
+    const effective = raw ?? legacy
+    if (effective === null) return { data: null, invalid: false, version: { raw, legacy } }
+    try {
+      return { data: parseWealthData(JSON.parse(effective), 'browser'), invalid: false, version: { raw, legacy } }
+    } catch {
+      return { data: null, invalid: true, version: { raw, legacy } }
+    }
+  })
+}
+
 // Every write (save, upload, delete) runs under one lock shared by all tabs of this site, so
 // checking the stored version and writing cannot interleave with another tab's write.
 // localStorage itself has no cross-tab locking, so without Web Locks local mode does not write at all.
@@ -273,11 +312,13 @@ export async function saveLocal(data: WealthData, expected: string | null): Prom
   })
 }
 
-// Replaces the stored data with an uploaded file, whatever was there, unless `wanted` says the
-// user has since left local mode or deleted the data. Resolves to the new stored text, or null.
-export async function replaceLocal(data: WealthData, wanted: () => boolean): Promise<string | null> {
+// Replaces the destination only if neither storage version changed since preview.
+export async function replaceLocal(data: WealthData, expected: LocalPreview['version'], wanted: () => boolean): Promise<string | null> {
   const store = await backend()
   return locked(async () => {
+    if (!wanted()) return null
+    if (store === storageBackend && read(STORED_KEY) === '1') throw new LocalConflictError()
+    if ((await store.get()) !== (store === storageBackend ? expected.legacy : expected.raw) || read(DATA_KEY) !== expected.legacy) throw new LocalConflictError()
     if (!wanted()) return null
     const raw = await write(store, data)
     // The upload replaces any data an earlier version left in localStorage too.
@@ -311,7 +352,7 @@ export async function storageEstimate(): Promise<{ usage: number; quota: number 
 // in the Drive mode. A version 14 or older Drive data file holds everything too. Since version
 // 15 the Drive main file does not (the transactions and earlier years are in its part files),
 // so it is refused rather than restored without them.
-export async function readDataFile(file: File): Promise<WealthData> {
+export async function readDataFile(file: File): Promise<{ data: WealthData; sourceUpdatedAt: string | null }> {
   if (file.size > MAX_UPLOAD_BYTES) throw new Error('檔案太大，不像是 Wealthline 的資料檔。')
   let json: unknown
   try {
@@ -323,7 +364,9 @@ export async function readDataFile(file: File): Promise<WealthData> {
   if (obj?.version === 15 && typeof obj.datasetId === 'string' && obj.datasetId && obj.summary !== undefined) {
     throw new Error('這是 Google Drive 中的主檔，不含消費明細、銀行流水與往年歷史，不能當作完整備份還原。請用 Google 登入後，在帳號選單中按「下載完整備份」，再上傳那個檔案。')
   }
-  return parseWealthData(json, 'file')
+  const data = parseWealthData(json, 'file')
+  const sourceUpdatedAt = typeof obj?.updatedAt === 'string' && !Number.isNaN(Date.parse(obj.updatedAt)) ? obj.updatedAt : null
+  return { data, sourceUpdatedAt }
 }
 
 // Saves `data` as a JSON file, formatted like the Drive data file.

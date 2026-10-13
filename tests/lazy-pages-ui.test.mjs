@@ -186,7 +186,7 @@ test('the account menu downloads a full backup with every part, which local mode
   await settle()
   assert.equal(downloads.length, 1)
   const text = await downloads[0].text()
-  const restored = await local.readDataFile(new File([text], downloads[0].name))
+  const { data: restored } = await local.readDataFile(new File([text], downloads[0].name))
   assert.deepEqual(restored.expenses.map((e) => e.id), ['e1'])
   assert.deepEqual(restored.bankTransactions.map((t) => t.id), ['t1'])
   // Opening may also have recorded today's snapshot.
