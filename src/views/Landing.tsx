@@ -48,10 +48,10 @@ export function Landing({ returning, hasLocal, busy, message, onSignIn, onResume
               <br />
               存在你自己的
               <br />
-              <span className="accent-text">Google Drive</span>
+              <span className="accent-text">Drive 或瀏覽器</span>
             </h1>
             <p className="lead">
-              用帳戶整理銀行存款、股票、基金與加密貨幣，自動換算報價與匯率，一眼看清資產配置與每日走勢。財務資料由瀏覽器處理，儲存到你自己的 Google Drive。
+              用帳戶整理銀行存款、股票、基金與加密貨幣，自動換算報價與匯率，一眼看清資產配置與每日走勢。財務資料由瀏覽器處理，依使用模式儲存到你自己的 Google Drive 或此瀏覽器；下載備份會另產生一份由你保管的檔案。
             </p>
             <div className="signin-box">
               {returning ? (
@@ -83,7 +83,7 @@ export function Landing({ returning, hasLocal, busy, message, onSignIn, onResume
               </button>
               {message && <p className={message.kind === 'error' ? 'error small signin-message' : 'muted small signin-message'}>{message.text}</p>}
               <p className="muted small">
-                不登入時，資料只存在這個瀏覽器，不會上傳到任何伺服器。可以隨時下載成資料檔，之後再
+                不登入時，財務資料保存在這個瀏覽器；查價代號仍會送至行情服務。可以隨時下載成資料檔，之後再
                 <UploadButton className="link inline" onFile={onUpload} disabled={busy}>
                   上傳資料檔
                 </UploadButton>
@@ -100,7 +100,7 @@ export function Landing({ returning, hasLocal, busy, message, onSignIn, onResume
             <div>
               <p>
                 Wealthline 是免費、開放原始碼的<strong>個人資產統計網頁工具</strong>。你可以建立自己的銀行與投資帳戶，記錄各幣別存款、股票、基金與加密貨幣持倉；Wealthline
-                會自動查詢價格與匯率，換算成新臺幣，呈現總資產、資產配置、幣別曝險與每日走勢。也能記錄負債與還款，回看每日淨資產快照。不想登入也可以直接在瀏覽器使用，資料只存在這台裝置。
+                會自動查詢價格與匯率，換算成新臺幣，呈現總資產、資產配置、幣別曝險與每日走勢。也能記錄負債與還款，回看每日淨資產快照。不想登入也可以直接在瀏覽器使用，財務資料保存在此瀏覽器。
               </p>
               <p>
                 使用 Google 登入，是為了把你的資料存進<strong>你自己的 Google Drive</strong>：本服務要求 <code>openid</code>、<code>email</code>、<code>profile</code> 來確認與顯示登入身分，並使用 <code>drive.file</code> 建立和更新自己的資料夾與資料檔，不要求讀取整個雲端硬碟。詳見
@@ -111,10 +111,10 @@ export function Landing({ returning, hasLocal, busy, message, onSignIn, onResume
               <p>
                 <strong>Wealthline</strong> is a free, open-source web app for tracking your personal assets. Create your bank and brokerage accounts, record cash
                 balances, stocks, funds and crypto holdings, and Wealthline fetches prices and exchange rates to show your total net worth, asset allocation, currency
-                exposure and daily trend. Financial records are processed in your browser and saved in your own Google Drive. Track debts, repayment estimates and daily net-worth snapshots too. You can also use it without signing in, keeping the data only in this browser.
+                exposure and daily trend. Financial records are processed in your browser and saved in your own Google Drive or this browser, depending on mode. Downloaded backups are separate copies that you manage. Track debts, repayment estimates and daily net-worth snapshots too. You can also use it without signing in, keeping the data only in this browser.
               </p>
               <p>
-                Google sign-in is used to save your data in <strong>your own Google Drive</strong>. Wealthline requests <code>openid</code>, <code>email</code> and <code>profile</code> to identify the signed-in account, plus <code>drive.file</code> to create and update its own folders and data files. It does not request access to your entire Drive. See the{' '}
+                Google sign-in is used to save your data in <strong>your own Google Drive</strong>. Wealthline requests <code>openid</code>, <code>email</code> and <code>profile</code> to identify the signed-in account, plus <code>drive.file</code> to create and update its own folders and data files. That scope can also cover files you open with or share with an app, but Wealthline currently has no such file-selection flow. It does not request access to your entire Drive. See the{' '}
                 <Link to={PAGES.privacy.path}>privacy policy</Link>.
               </p>
             </div>
@@ -143,9 +143,9 @@ export function Landing({ returning, hasLocal, busy, message, onSignIn, onResume
           <div>
             <h2 id="data-title">資料只放在你看得到的地方</h2>
             <ul className="checks">
-              <li>只要求 Google Drive 的 drive.file 權限，看不到雲端硬碟中的其他檔案。</li>
-              <li>資料是普通的 JSON 檔：一個主資料檔，消費明細與往年歷史另存在子資料夾，可以隨時下載完整備份或刪除。</li>
-              <li>不想登入也可以：資料只存在這個瀏覽器的儲存空間，下載成檔案後可以再上傳還原。</li>
+              <li>Google Drive 僅要求 drive.file 權限；目前只建立及讀寫 Wealthline 的資料檔，不要求讀取整個雲端硬碟。</li>
+              <li>財務資料是普通的 JSON：Google 模式分存主資料檔與子資料夾，本機模式存在此瀏覽器；下載備份會另產生一份由你保管的檔案。</li>
+              <li>不想登入也可以：財務資料存在這個瀏覽器的儲存空間，下載成檔案後可以再上傳還原。</li>
               <li>不使用分析工具、廣告或追蹤 Cookie。</li>
               <li>隨時可以在 Google 帳戶設定中撤銷授權。</li>
             </ul>

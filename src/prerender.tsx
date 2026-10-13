@@ -17,7 +17,7 @@ export const routes: Route[] = [
     path: '/',
     url: `${SITE_URL}/`,
     title: 'Wealthline｜個人資產統計 Personal Asset Tracker',
-    description: '開源的個人資產統計工具：以 Google 帳號登入，所有資料只存在你自己的 Google Drive，自動換算匯率與報價，清楚呈現資產配置。Wealthline is a free, open-source personal asset tracker that stores your data only in your own Google Drive.',
+    description: '開源個人資產統計工具：財務資料在瀏覽器處理，儲存到你的 Google Drive 或此瀏覽器，可下載備份。Wealthline processes financial records in your browser and saves them to your Drive or this browser.',
     html: () => renderToStaticMarkup(<Landing returning={null} hasLocal={false} busy={false} message={null} onSignIn={noop} onResume={noop} onLocal={noop} onUpload={noop} />),
   },
   ...(Object.keys(PAGES) as PageKey[]).map((k) => ({
