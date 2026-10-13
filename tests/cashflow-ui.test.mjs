@@ -215,3 +215,57 @@ test('the current month stays the default when it has records',async()=>{
  assert.match(document.querySelector('.cashflow-period-trigger').textContent,/2026 年 1 月/)
  assert.equal(document.querySelector('[data-cashflow-pending]'),null)
 })
+
+test('cashflow page keeps the year chart while picking a month and lists that month below',async()=>{
+ const {Cashflow}=await server.ssrLoadModule('/src/views/Cashflow.tsx')
+ const today=new Date(),year=today.getFullYear(),cur=today.getMonth()+1,other=cur===1?2:1
+ const key=m=>`${year}-${String(m).padStart(2,'0')}`
+ const data=model.emptyData()
+ const expenses=[{...card,id:'now',date:`${key(cur)}-05`,description:'CurrentCard',amount:300},{...card,id:'other',date:`${key(other)}-05`,description:'OtherCard',amount:120}]
+ const bankTransactions=[{...bank('pay','credit',900,{kind:'income',category:'薪資'}),date:`${key(other)}-10`,description:'OtherBank'},{...bank('old','credit',10,{kind:'income',category:'薪資'}),date:`${year-1}-07-10`,description:'OldBank'}]
+ await render(Cashflow,{data:{...data,expenses,bankTransactions,bankTransactionAccounts:[{id:'ledger',label:'Main',bank:'Bank'}]},onGoExpenses(){},onGoBankTransactions(){}})
+ assert.equal(document.querySelectorAll('.cashflow-bar').length,12)
+ assert.match(document.body.textContent,new RegExp(`${year} 年每月`))
+ assert.match(document.body.textContent,/CurrentCard/); assert.doesNotMatch(document.body.textContent,/OtherCard/)
+ await click([...document.querySelectorAll('.cashflow-bar')].find(b=>b.querySelector('.cashflow-bar-label').textContent===`${other} 月`))
+ assert.equal(document.querySelectorAll('.cashflow-bar').length,12)
+ assert.match(document.body.textContent,new RegExp(`${year} 年 ${other} 月`))
+ assert.match(document.body.textContent,/OtherCard/); assert.doesNotMatch(document.body.textContent,/CurrentCard/)
+ assert.match(document.body.textContent,/OtherBank/)
+ assert.match(document.querySelector('.cashflow-bar.on .cashflow-bar-tip').textContent,/收入 900.*消費 120/)
+ // 年度: one toggle per recorded month; opening one closes the other.
+ await click(button('年度'))
+ const toggles=()=>[...document.querySelectorAll('.cashflow-month-toggle')]
+ assert.equal(toggles().length,2)
+ assert.doesNotMatch(document.body.textContent,/CurrentCard|OtherCard/)
+ await click(toggles().find(b=>b.textContent.includes(`${other} 月`)))
+ assert.match(document.body.textContent,/OtherCard/); assert.doesNotMatch(document.body.textContent,/CurrentCard/)
+ await click(toggles().find(b=>b.textContent.includes(`${cur} 月`)))
+ assert.match(document.body.textContent,/CurrentCard/); assert.doesNotMatch(document.body.textContent,/OtherCard/)
+ assert.equal(document.querySelectorAll('.cashflow-month-toggle[aria-expanded="true"]').length,1)
+ // 全部期間: months grouped by year, the latest year open, another year opens on its own.
+ await click(button('全部期間'))
+ const years=()=>[...document.querySelectorAll('.cashflow-year-toggle')]
+ assert.deepEqual(years().map(b=>b.querySelector('strong').textContent),[`${year} 年`,`${year-1} 年`])
+ assert.equal(years()[0].getAttribute('aria-expanded'),'true')
+ assert.equal(document.querySelectorAll('.cashflow-month-toggle:not(.cashflow-year-toggle)').length,2)
+ await click(years()[0])
+ assert.equal(years()[0].getAttribute('aria-expanded'),'false')
+ await click(years()[1])
+ assert.equal(years()[1].getAttribute('aria-expanded'),'true')
+ assert.match([...document.querySelectorAll('.cashflow-month-toggle:not(.cashflow-year-toggle)')].map(b=>b.textContent).join(),/^7 月/)
+})
+
+test('cashflow page shows stored totals and a loading note until the records arrive',async()=>{
+ const {Cashflow}=await server.ssrLoadModule('/src/views/Cashflow.tsx')
+ const {cashflowMonths}=await server.ssrLoadModule('/src/cashflow.ts')
+ const today=new Date(),year=today.getFullYear(),month=`${year}-${String(today.getMonth()+1).padStart(2,'0')}`
+ const expenses=[{...card,id:'now',date:`${month}-05`,description:'HiddenCard',amount:300}]
+ const months=cashflowMonths({expenses})
+ await render(Cashflow,{data:{...model.emptyData()},months,onGoExpenses(){},onGoBankTransactions(){}})
+ assert.equal(document.querySelectorAll('.cashflow-bar').length,12)
+ assert.match(document.body.textContent,/實際消費300/)
+ assert.match(document.body.textContent,/正在載入明細…/); assert.doesNotMatch(document.body.textContent,/HiddenCard/)
+ await click(button('年度'))
+ assert.match(document.querySelector('.cashflow-month-toggle').textContent,/月$/)
+})

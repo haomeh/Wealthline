@@ -73,11 +73,11 @@ function AccountLabel({account,automatic,referenced,busy,onRename,onRemove}:{acc
  return <li className="bank-account">{automatic?<div className="field"><span>{account.bank}</span><strong>{account.label}</strong><span className="muted small">銀行與國家依帳單辨識</span></div>:<><label className="field"><span>{account.bank}</span><input aria-label={`帳戶標籤 ${account.id}`} maxLength={100} value={label} disabled={busy} onChange={e=>setLabel(e.target.value)}/></label><button disabled={busy} onClick={()=>onRename(label)}>改名</button></>}<button disabled={busy||referenced} title={referenced?'先清除所有引用流水才可刪除帳戶':undefined} onClick={onRemove}>刪除帳戶</button>{referenced && <span className="muted small">有流水引用，不能刪除</span>}</li>
 }
 
-function BankRecord({row,account,rules,busy,onEdit,onRule}:{row:BankTransaction;account:string;rules:BankCategoryRule[];busy:boolean;onEdit:()=>void;onRule:()=>void}) {
+export function BankRecord({row,account,rules,busy=false,onEdit,onRule}:{row:BankTransaction;account:string;rules:BankCategoryRule[];busy?:boolean;onEdit?:()=>void;onRule?:()=>void}) {
  const category=classificationLabel(row,rules),direction=row.direction==='debit'?'支出':'入帳'
  return <DetailRecord className="bank-record" title={row.description} label={`查看流水 ${row.id}`}
   value={<span className="record-money" data-direction={row.direction} aria-label={`${direction} ${row.currency} ${fmt(row.amount)}`}><small>{row.currency}</small><strong>{row.direction==='credit'?'+':'−'}{fmt(row.amount)}</strong></span>}
-  actions={<>
+  actions={onEdit && onRule && <>
    <button type="button" className="bank-record-rule" data-pending={classifyBankTransaction(row,rules).kind==='pending'||undefined} disabled={busy} aria-label={`分類規則：${category}`} title="編輯匹配規則／新增規則" onClick={onRule}><ActionIcon name="tag"/></button>
    <button type="button" disabled={busy} aria-label={`編輯流水 ${row.id}`} title="編輯流水" onClick={onEdit}><ActionIcon name="edit"/></button>
   </>}>
