@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import type { CashflowCurrencySummary, CashflowMonthTotals, CashflowPeriod } from '../cashflow'
+import { useMemo, useState } from 'react'
+import { cashflowSummary, type CashflowCurrencySummary, type CashflowMonthTotals, type CashflowPeriod } from '../cashflow'
 import { fmt } from '../format'
 import type { WealthData } from '../model'
 import type { BankTransaction, BankTransactionAccount } from '../bankTransactions'
@@ -29,7 +29,20 @@ export function Cashflow({ data, months, onGoExpenses, onGoBankTransactions }: P
   const { rawGroups, groups, needsFx, loading, error, retry } = useTwdCashflow(input, period.endMonth, period.period, period.today)
   const trend = trendWindow(period)
   const bars = useTwdCashflow(input, trend.end, trend.period, period.today)
-  const group = groups[0]
+  // The chosen month is one of the twelve already converted for the bars, so picking a bar swaps the numbers
+  // in place instead of waiting for another exchange-rate round trip.
+  const barsNow = bars.groups[0]
+  const monthGroup = useMemo(() => period.selection.range === 'month' ? monthOf(barsNow, period.endMonth) : undefined, [barsNow, period.selection.range, period.endMonth])
+  const group = monthGroup ?? groups[0]
+  // While a new period converts, the last numbers stay up (dimmed) instead of the page emptying and refilling.
+  // Not kept when the period simply has no records: that must show as empty.
+  const [kept, setKept] = useState<{ group?: CashflowCurrencySummary; bars?: CashflowCurrencySummary }>({})
+  if ((group && group !== kept.group) || (barsNow && barsNow !== kept.bars)) setKept({ group: group ?? kept.group, bars: barsNow ?? kept.bars })
+  const shown = group ?? (loading || bars.loading ? kept.group : undefined)
+  const shownBars = barsNow ?? (bars.loading ? kept.bars : undefined)
+  const stale = (!!shown && shown !== group) || (!!shownBars && shownBars !== barsNow)
+  const converting = (!shown && loading) || (!shownBars && bars.loading)
+  const failed = (!shown && needsFx && error) || (!shownBars && bars.needsFx && bars.error)
   const empty = !period.monthList.length
 
   return <>
@@ -41,61 +54,66 @@ export function Cashflow({ data, months, onGoExpenses, onGoBankTransactions }: P
       <p className="muted">還沒有收支紀錄。匯入信用卡帳單或銀行流水後，這裡會合併成同一套收支。</p>
       <div className="row center"><button className="primary" onClick={onGoExpenses}>匯入信用卡帳單</button><button onClick={onGoBankTransactions}>匯入銀行流水</button></div>
     </section> : <>
-      {loading && <p role="status" className="notice">正在換算每月匯率…</p>}
-      {needsFx && error && <div role="alert" className="notice"><p>無法完成 TWD 換算：{error}。未顯示部分合計。</p><button onClick={retry}>重試匯率</button></div>}
-      {!rawGroups.length && <section className="panel cashflow-no-record"><p className="muted">{period.label}無紀錄，不代表收支為零。</p>
+      {converting && <p role="status" className="notice">正在換算每月匯率…</p>}
+      {failed && <div role="alert" className="notice"><p>無法完成 TWD 換算：{(!shown && needsFx && error) || bars.error}。未顯示部分合計。</p><button onClick={() => { retry(); bars.retry() }}>重試匯率</button></div>}
+      {!rawGroups.length && <section className="panel cashflow-no-record"><p className="muted">{period.label}無紀錄，不代表收支為零。{shownBars ? '其他月份仍照常顯示。' : ''}</p>
         {period.latestMonth && <button onClick={() => period.showMonth(period.latestMonth!)}>查看 {Number(period.latestMonth.slice(0, 4))} 年 {Number(period.latestMonth.slice(5, 7))} 月</button>}
       </section>}
-      {group && <div className="tiles cashflow-tiles">
-        <section className="panel span-2 cashflow-phone-summary mobile-only" aria-label="收支摘要">
-          <span className="muted">收支差額 · TWD</span>
-          <strong className={`num-serif ${group.difference >= 0 ? 'up' : 'down'}`}>{signed(group.difference)}</strong>
-          {([['收入', group.income, 'var(--s2)'], ['消費', group.consumption, 'var(--s1)']] as const).map(([label, value, color]) => <div className="cashflow-hbar" key={label}>
-            <span>{label}</span>
-            <span className="cashflow-hbar-track"><i style={{ width: `${Math.max(2, Math.max(0, value) / Math.max(group.income, group.consumption, 1) * 100)}%`, background: color }} /></span>
-            <span className="num-serif">{fmt(value, 0)}</span>
-          </div>)}
-          {group.income > 0 && <small className="muted">儲蓄率 {Math.round(group.difference / group.income * 100)}%</small>}
-        </section>
-        <section className="panel deep tile-stat desktop-only" aria-label="收支差額">
-          <span>收支差額 · TWD</span>
-          <strong>{signed(group.difference)}</strong>
-          <small>收入 − 實際消費；不是帳戶餘額或淨資產</small>
-        </section>
-        <section className="panel tile-stat desktop-only" aria-label="收入">
-          <span>收入</span>
-          <strong>{fmt(group.income, 0)}</strong>
-          <small>銀行流水 {count(group.incomeCategories)} 筆</small>
-        </section>
-        <section className="panel tile-stat desktop-only" aria-label="實際消費">
-          <span>實際消費</span>
-          <strong>{fmt(group.consumption, 0)}</strong>
-          <small>信用卡 {group.coverage.cardCount} 筆 · 銀行 {Math.max(0, count(group.consumptionCategories) - group.coverage.cardCount)} 筆</small>
-        </section>
-        {group.pending.count > 0 ? <section className="panel warn tile-stat cashflow-pending-tile" aria-label="未分類">
-          <span><strong>{group.pending.count} 筆銀行流水未分類</strong></span>
-          <small>已暫依入帳／支出計入；轉帳或繳卡費請設為不計收支。</small>
-          <button className="link" onClick={onGoBankTransactions}>前往分類 →</button>
-        </section> : <section className="panel tile-stat desktop-only" aria-label="儲蓄率">
-          <span>儲蓄率</span>
-          <strong>{group.income > 0 ? `${Math.round(group.difference / group.income * 100)}%` : '—'}</strong>
-          <small>收支差額 ÷ 收入</small>
-        </section>}
+      {(shown || shownBars) && <div className="tiles cashflow-tiles" aria-busy={stale} data-stale={stale || undefined}>
+        {shown && <>
+          <section className="panel span-2 cashflow-phone-summary mobile-only" aria-label="收支摘要">
+            <span className="muted">收支差額 · TWD</span>
+            <strong className={`num-serif ${shown.difference >= 0 ? 'up' : 'down'}`}>{signed(shown.difference)}</strong>
+            {([['收入', shown.income, 'var(--s2)'], ['消費', shown.consumption, 'var(--s1)']] as const).map(([label, value, color]) => <div className="cashflow-hbar" key={label}>
+              <span>{label}</span>
+              <span className="cashflow-hbar-track"><i style={{ width: `${Math.max(2, Math.max(0, value) / Math.max(shown.income, shown.consumption, 1) * 100)}%`, background: color }} /></span>
+              <span className="num-serif">{fmt(value, 0)}</span>
+            </div>)}
+            {shown.income > 0 && <small className="muted">儲蓄率 {Math.round(shown.difference / shown.income * 100)}%</small>}
+          </section>
+          <section className="panel deep tile-stat desktop-only" aria-label="收支差額">
+            <span>收支差額 · TWD</span>
+            <strong>{signed(shown.difference)}</strong>
+            <small>收入 − 實際消費；不是帳戶餘額或淨資產</small>
+          </section>
+          <section className="panel tile-stat desktop-only" aria-label="收入">
+            <span>收入</span>
+            <strong>{fmt(shown.income, 0)}</strong>
+            <small>銀行流水 {count(shown.incomeCategories)} 筆</small>
+          </section>
+          <section className="panel tile-stat desktop-only" aria-label="實際消費">
+            <span>實際消費</span>
+            <strong>{fmt(shown.consumption, 0)}</strong>
+            <small>信用卡 {shown.coverage.cardCount} 筆 · 銀行 {Math.max(0, count(shown.consumptionCategories) - shown.coverage.cardCount)} 筆</small>
+          </section>
+          {shown.pending.count > 0 ? <section className="panel warn tile-stat cashflow-pending-tile" aria-label="未分類">
+            <span><strong>{shown.pending.count} 筆銀行流水未分類</strong></span>
+            <small>已暫依入帳／支出計入；轉帳或繳卡費請設為不計收支。</small>
+            <button className="link" onClick={onGoBankTransactions}>前往分類 →</button>
+          </section> : <section className="panel tile-stat desktop-only" aria-label="儲蓄率">
+            <span>儲蓄率</span>
+            <strong>{shown.income > 0 ? `${Math.round(shown.difference / shown.income * 100)}%` : '—'}</strong>
+            <small>收支差額 ÷ 收入</small>
+          </section>}
+        </>}
 
-        <section className="panel span-3 cashflow-bars-tile" aria-label={trend.title}>
+        {/* Stays up when the chosen month has no records, so the other months remain visible. */}
+        <section className={`panel ${shown ? 'span-3' : 'span-4'} cashflow-bars-tile`} aria-label={trend.title}>
           <div className="panel-head"><h3>{trend.title}</h3><div className="cashflow-bars-legend"><span><i style={{ background: 'var(--s2)' }} />收入</span><span><i style={{ background: 'var(--s1)' }} />消費</span></div></div>
-          {bars.groups[0] ? <MonthBars group={bars.groups[0]} selected={period.selection.range === 'month' ? period.endMonth : ''} onSelect={period.showMonth} /> : <p className="muted small">{bars.loading ? '正在換算每月匯率…' : '無法顯示月份對照。'}</p>}
+          {shownBars ? <MonthBars group={shownBars} selected={period.selection.range === 'month' ? period.endMonth : ''} onSelect={period.showMonth} /> : <p className="muted small">{bars.loading ? '正在換算每月匯率…' : '無法顯示月份對照。'}</p>}
         </section>
-        <section className="panel cashflow-categories-tile" aria-label="消費分類">
-          <h3>{period.label}消費分類</h3>
-          <CategoryList categories={group.consumptionCategories} />
-          {group.incomeCategories.length > 0 && <details className="cashflow-income-details"><summary>收入分類</summary><CategoryList categories={group.incomeCategories} income /></details>}
-        </section>
+        {shown && <>
+          <section className="panel cashflow-categories-tile" aria-label="消費分類">
+            <h3>{period.label}消費分類</h3>
+            <CategoryList categories={shown.consumptionCategories} />
+            {shown.incomeCategories.length > 0 && <details className="cashflow-income-details"><summary>收入分類</summary><CategoryList categories={shown.incomeCategories} income /></details>}
+          </section>
 
-        {/* Keyed by the selection so the open year and month reset when it changes. */}
-        <RecordsTile key={period.label} period={period} data={data} loading={!!months} onGoExpenses={onGoExpenses} onGoBankTransactions={onGoBankTransactions} />
+          {/* Keyed by the selection so the open year and month reset when it changes. */}
+          <RecordsTile key={period.label} period={period} data={data} loading={!!months} onGoExpenses={onGoExpenses} onGoBankTransactions={onGoBankTransactions} />
+        </>}
       </div>}
-      {group?.investmentRecovery.hasRecords && <p className="notice small" role="note">投資回收款：可能包含投入本金，不代表投資收益</p>}
+      {shown?.investmentRecovery.hasRecords && <p className="notice small" role="note">投資回收款：可能包含投入本金，不代表投資收益</p>}
       <p className="cashflow-footnote muted small">依已匯入紀錄，不代表完整月份。{period.isCurrentMonth ? '本月尚未結束。' : ''}金額統一換算 TWD，依各月月底已完成匯率；本月採最新已完成匯率（最多回溯 7 日）。</p>
     </>}
   </>
@@ -106,6 +124,14 @@ export function Cashflow({ data, months, onGoExpenses, onGoBankTransactions }: P
 function trendWindow(period: CashflowPeriodState): { end: string; period: CashflowPeriod; title: string } {
   const year = period.selection.range === 'all' ? Number((period.latestMonth ?? period.endMonth).slice(0, 4)) : period.selection.year
   return { end: monthKey(year, 12), period: 12, title: `${year} 年每月` }
+}
+
+// One month of an already converted year as a group of its own; undefined when the month has no records.
+function monthOf(year: CashflowCurrencySummary | undefined, month: string): CashflowCurrencySummary | undefined {
+  const point = year?.months.find((m) => m.month === month)
+  if (!year || !point || point.income === null || point.consumption === null || point.difference === null) return undefined
+  const { income, consumption, difference, incomeCategories, consumptionCategories, excluded, exclusions, pending, investmentRecovery, coverage } = point
+  return cashflowSummary({ months: [{ currency: year.currency, month, coverage, totals: { income, consumption, difference, incomeCategories, consumptionCategories, excluded, exclusions, pending, investmentRecovery } }] }, month, 1)[0]
 }
 
 function bankRecordGroups(rows: readonly BankTransaction[], accounts: readonly BankTransactionAccount[]) {

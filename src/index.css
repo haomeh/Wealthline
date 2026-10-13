@@ -3295,6 +3295,8 @@ dialog.expense-rule-dialog { max-width: 440px; }
 .cashflow-pending-tile strong { font-family: inherit; font-size: 13px; font-weight: 700; }
 .cashflow-pending-tile small { line-height: 1.6; }
 .cashflow-pending-tile button.link { align-self: flex-start; padding: 0; font-size: 13px; font-weight: 700; }
+/* Numbers of the previous period stay up, dimmed, while the new one converts. */
+.cashflow-tiles[data-stale] > .panel { opacity: .55; transition: opacity .15s; }
 .cashflow-bars-tile .panel-head { margin-bottom: 8px; }
 .cashflow-bars-tile h3 { margin: 0; }
 .cashflow-bars-legend { display: flex; gap: 14px; font-size: 12px; color: var(--ink-2); }
@@ -3328,6 +3330,11 @@ dialog.expense-rule-dialog { max-width: 440px; }
 .cashflow-records[open] > summary::before { content: '▾' / ''; }
 .cashflow-records > summary + * { margin-top: 12px; }
 .cashflow-records > button.link { margin-top: 10px; font-size: 14px; }
+/* Amounts of the records read from a common left edge (phones already stack them left); only inside this page, the record rows are shared. */
+@media (min-width: 641px) {
+  .cashflow-records-tile .detail-record-details > summary { grid-template-columns: minmax(0, 1fr) 152px; }
+  .cashflow-records-tile .detail-record-value { text-align: left; }
+}
 .cashflow-category-rows { list-style: none; margin: 0; padding: 0; font-size: 14px; }
 .cashflow-category-rows li { display: grid; grid-template-columns: 10px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 8px 0; border-top: 1px solid var(--hairline); }
 .cashflow-category-rows i { width: 10px; height: 10px; border-radius: 4px; }
