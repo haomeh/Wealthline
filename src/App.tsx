@@ -440,7 +440,7 @@ export default function App() {
     })
 
   const signOut = () =>
-    run('登出中…', async () => {
+    dirtyRef.current && !confirm('有尚未儲存的修改，登出後會遺失。要繼續嗎？') ? undefined : run('登出中…', async () => {
       const previous = token.current
       sessionVersion.current++
       setDataPrivacyOpen(false)

@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import { DATA_FILE_NAME, FOLDER_NAME, HISTORY_FOLDER_NAME, LEDGER_FOLDER_NAME } from '../google/drive'
+import { DATA_FILE_NAME, FOLDER_NAME, HISTORY_FOLDER_NAME, LEDGER_FOLDER_NAME, LEGACY_FOLDER_NAME } from '../google/drive'
 import { PAGES } from '../site'
 import { Link } from './Site'
 import { UploadButton } from './LocalData'
@@ -39,7 +39,7 @@ export function DataPrivacy({ mode, email, busy, saving, dirty, hasSaved, error,
         <h3>資料位置</h3>
         {mode === 'google' ? <>
           <p>目前登入：<strong>{email}</strong></p>
-          <p>財務資料存放在這個帳號的 Google Drive：「我的雲端硬碟 / {FOLDER_NAME}」。主檔 {DATA_FILE_NAME}；消費明細、銀行流水與往年歷史分別存於「{LEDGER_FOLDER_NAME}」「{HISTORY_FOLDER_NAME}」子資料夾。</p>
+          <p>財務資料存放在這個帳號的 Google Drive：「我的雲端硬碟 / {FOLDER_NAME}」。主檔 {DATA_FILE_NAME}；消費明細、銀行流水與往年歷史分別存於「{LEDGER_FOLDER_NAME}」「{HISTORY_FOLDER_NAME}」子資料夾。較早建立的資料夾在下一次儲存前仍叫「{LEGACY_FOLDER_NAME}」；你自己改過的名稱或位置會保留。</p>
         </> : <p>財務資料只存在此瀏覽器的網站儲存空間。清除網站資料、更換瀏覽器或裝置後可能無法取回，請定期下載備份。</p>}
       </section>
       <section className="panel">
@@ -56,7 +56,7 @@ export function DataPrivacy({ mode, email, busy, saving, dirty, hasSaved, error,
         <h3>隱私與資料控制</h3>
         <Link to={PAGES.privacy.path} onClick={onClose}>隱私權政策 Privacy Policy</Link>
         {mode === 'google' ? <>
-          <p>刪除 Google Drive 中的財務資料：請先登出並關閉其他已開啟的 Wealthline 分頁，再到 Google Drive 刪除「{FOLDER_NAME}」資料夾及其子資料夾，並清空垃圾桶。下載的備份需另外刪除。</p>
+          <p>刪除 Google Drive 中的財務資料：請先登出並關閉其他已開啟的 Wealthline 分頁，再到 Google Drive 刪除「{FOLDER_NAME}」資料夾（較早建立的可能仍叫「{LEGACY_FOLDER_NAME}」，或是你自己改過的名稱）及其子資料夾，並清空垃圾桶。下載的備份需另外刪除。</p>
           <p>撤銷 Wealthline 授權不會刪除 Drive 檔案；登出也不會刪除 Drive 檔案。</p>
           <p className="muted small">目前 Wealthline 帳號：{email}。開啟下列 Google 頁面後，請自行核對 Google 頁面選取的帳號。</p>
           <div className="row">

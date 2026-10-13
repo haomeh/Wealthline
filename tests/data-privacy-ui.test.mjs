@@ -105,6 +105,7 @@ test('Google management names the active account and opens only manual external 
   const { dialog } = await openManagement('google')
   assert.ok(dialog?.open)
   assert.match(dialog.textContent, /a@example.com/)
+  assert.match(dialog.textContent, /We Wealth/, 'older Drive folders keep the legacy name until the next save')
   const external = [...dialog.querySelectorAll('a[target="_blank"]')]
   assert.deepEqual(external.map((a) => new URL(a.href).host).sort(), ['drive.google.com', 'myaccount.google.com'])
   assert.ok(external.every((a) => a.rel.includes('noopener')))
