@@ -4,8 +4,9 @@ import { ActionIcon } from './ActionIcon'
 import { CategoryRuleButton } from './ExpenseCategoryRules'
 import { DetailRecord } from './DetailRecord'
 
-export function ExpenseRecords({ expenses, rules, busy = false, onEdit, onRule }: {
-  expenses: Expense[]; rules: ExpenseCategoryRule[]; busy?: boolean;
+// `showCategory`: the category under each description (the overview lists rows without it otherwise).
+export function ExpenseRecords({ expenses, rules, busy = false, showCategory = false, onEdit, onRule }: {
+  expenses: Expense[]; rules: ExpenseCategoryRule[]; busy?: boolean; showCategory?: boolean;
   onEdit?: (expense: Expense) => void; onRule?: (expense: Expense, index?: number) => void
 }) {
   const groups = new Map<string, { date: string; card: string; rows: Expense[] }>()
@@ -18,6 +19,7 @@ export function ExpenseRecords({ expenses, rules, busy = false, onEdit, onRule }
   return <div className="expense-records record-groups">{[...groups].map(([key, group]) => <section key={key}>
     <header className="record-group-head"><time dateTime={group.date}>{group.date}</time><span title={group.card}>{group.card || '未命名卡片'}</span></header>
     {group.rows.map(expense => <DetailRecord key={expense.id} className="expense-record" title={expense.description}
+      subtitle={showCategory && <span className={`tag${expenseCategory(expense, rules) === '未分類' ? ' warn' : ''}`}>{expenseCategory(expense, rules)}</span>}
       label={`查看消費 ${expense.date} ${expense.description}`}
       value={<span className="record-money" data-refund={expense.amount < 0 || undefined} aria-label={`${expense.amount < 0 ? '退款' : '消費'} ${expense.currency} ${fmt(Math.abs(expense.amount))}`}><small>{expense.currency}</small><strong>{expense.amount < 0 ? '+' : ''}{fmt(Math.abs(expense.amount))}</strong></span>}
       actions={onEdit && <>
