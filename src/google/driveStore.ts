@@ -23,8 +23,8 @@
 
 import type { AccessToken } from './auth'
 import { DriveConflictError, PARTLY_SAVED, RELOAD_NEEDED, assertCurrent, createPart, findDataFile, listParts, parseJson, readFile, saveDataText, updatePart, type DriveVersion, type ListedPart } from './drive'
-import { canonicalHash, isPartName, joinData, keptLedger, mergeCopies, parsePart, partFileName, recordsHash, rowKey, serializePart, splitData, type Part, type PartContent } from '../dataParts'
-import type { CashflowMonthTotals } from '../cashflow'
+import { canonicalHash, isPartName, joinData, keptLedger, ledgerPart, mergeCopies, parsePart, partFileName, recordsHash, rowKey, serializePart, splitData, type Part, type PartContent } from '../dataParts'
+import { cashflowMonths, type CashflowMonthTotals } from '../cashflow'
 import { emptySummary, parseSummary, partSummary, rulesOf, type DataSummary, type PartSummary, type Rules } from '../dataSummary'
 import type { Change, Snapshot } from '../history'
 import { newId, type WealthData } from '../model'
@@ -81,6 +81,65 @@ const holds = (held: Held, name: string) => held === 'all' || held.has(name)
 export const missingParts = (state: DriveState, data: WealthData, group: PartGroup) =>
   [...state.parts.keys()].filter((name) => partGroup(name) === group && !holds(partsOf(data), name))
 
+// `data` marked as holding the parts that either `data` or `from` holds. After a save, edits made
+// while it ran keep the parts the save created or read (saveState.ts finishSave keeps the edits).
+export function withHeldParts(data: WealthData, from: WealthData): WealthData {
+  const a = partsOf(data), b = partsOf(from)
+  return withParts(data, a === 'all' || b === 'all' ? 'all' : new Set([...a, ...b]))
+}
+
+// Transaction part names stored in Drive, oldest first.
+const ledgerNames = (state: DriveState) => [...state.parts.keys()].filter((name) => partGroup(name) === 'ledger').sort()
+
+// The oldest transaction part the bank page reads first: the quarter of the month two months
+// before `today` (YYYY-MM-DD), so this month and the two before it are shown. When no stored
+// part is that recent, the newest stored part.
+export function recentLedgerFrom(state: DriveState, today: string): string {
+  const year = Number(today.slice(0, 4)), month = Number(today.slice(5, 7)) - 2
+  const first = ledgerPart(month > 0 ? `${year}-${String(month).padStart(2, '0')}-01` : `${year - 1}-${String(month + 12).padStart(2, '0')}-01`)
+  const names = ledgerNames(state)
+  return !names.length || names.some((name) => name >= first) ? first : names.at(-1)!
+}
+
+// Which transactions `data` holds when some transaction parts are not loaded; null when all are.
+// - next: the newest part not loaded, the one 載入更早的 reads;
+// - from: the first month (YYYY-MM) from which every part is loaded;
+// - earlier: bank records and unclassified bank records in the parts not loaded, counted from
+//   the summary; undefined when a part not loaded has no summary entry.
+// - months: the months (YYYY-MM) with bank records in the parts not loaded, from the summary.
+export interface LedgerScope {
+  next: string
+  from: string
+  earlier?: { rows: number; pending: number }
+  months: string[]
+}
+export function ledgerScope(state: DriveState, data: WealthData): LedgerScope | null {
+  const unheld = ledgerNames(state).filter((name) => !holds(partsOf(data), name))
+  if (!unheld.length) return null
+  const next = unheld.at(-1)!
+  const year = Number(next.slice(7, 11)), quarter = Number(next.slice(13))
+  const from = quarter === 4 ? `${year + 1}-01` : `${year}-${String(quarter * 3 + 1).padStart(2, '0')}`
+  const months = unheld.map((name) => state.summary.parts[name]?.cashflow)
+  const all = months.flatMap((m) => m ?? [])
+  const withRows = [...new Set(all.filter((m) => m.coverage.bankCount > 0).map((m) => m.month))].sort()
+  if (months.some((m) => !m)) return { next, from, months: withRows }
+  return { next, from, earlier: { rows: all.reduce((n, m) => n + m.coverage.bankCount, 0), pending: all.reduce((n, m) => n + m.totals.pending.count, 0) }, months: withRows }
+}
+
+// The monthly cashflow while some transaction parts are not loaded: counted from the records
+// `data` holds, edits not saved yet included, and from the summary for the parts not loaded.
+// A month belongs to one quarter, so each month comes from one of the two. Undefined when a part
+// not loaded has no summary entry.
+export function ledgerCashflow(state: DriveState, data: WealthData): CashflowMonthTotals[] | undefined {
+  const unheld = ledgerNames(state).filter((name) => !holds(partsOf(data), name))
+  if (unheld.some((name) => !state.summary.parts[name]?.cashflow)) return undefined
+  // A record dated in a part not loaded is counted in that part's summary once it is saved.
+  const skip = new Set(unheld)
+  const loaded = <T extends { date: string }>(rows: T[] | undefined) => rows?.filter((row) => !skip.has(ledgerPart(row.date)))
+  const live = cashflowMonths({ expenses: loaded(data.expenses), expenseRules: data.expenseCategoryRules, bankTransactions: loaded(data.bankTransactions), bankRules: data.bankCategoryRules })
+  return [...live, ...unheld.flatMap((name) => state.summary.parts[name].cashflow!)]
+}
+
 // Bytes of each stored file, for the size notices.
 export const storedSizes = (state: DriveState) => [
   ...(state.main ? [byteSize(state.main.text)] : []),
@@ -88,6 +147,7 @@ export const storedSizes = (state: DriveState) => [
 ]
 
 type Row = Record<string, unknown>
+const LEDGER = ['expenses', 'bankTransactions'] as const
 const rowKeys = (content: PartContent) => new Set((Object.entries(content) as [keyof PartContent, Row[]][]).flatMap(([key, rows]) => rows.map((row) => rowKey(key, row))))
 
 const POOL = 4
@@ -202,13 +262,15 @@ export async function loadDrive(token: AccessToken, parse: (raw: unknown) => Wea
 
 const rulesFrom = (raw: Record<string, unknown>): Rules => ({ expenseCategoryRules: raw.expenseCategoryRules as Rules['expenseCategoryRules'], bankCategoryRules: raw.bankCategoryRules as Rules['bankCategoryRules'] })
 
-// Reads every part of `group`; parts read before are not read again. Summary entries that do not
-// match what was read are made again. Parts read now can be newer than the main file this
-// session holds (another device saved since), with records that refer to accounts it lacks:
-// then this stops and asks for a reload.
-export async function readGroup(token: AccessToken, state: DriveState, group: PartGroup): Promise<Part[]> {
+// Reads every part of `group`, or only the parts named in `only`; parts read before are not read
+// again. Summary entries that do not match what was read are made again. Parts read now can be
+// newer than the main file this session holds (another device saved since), with records that
+// refer to accounts it lacks: then this stops and asks for a reload.
+// A transaction found in two parts (see keptLedger) is returned only in the part whose copy is
+// kept, judged from every part read so far: data that already holds the other part keeps its copy.
+export async function readGroup(token: AccessToken, state: DriveState, group: PartGroup, only?: readonly string[]): Promise<Part[]> {
   if (state.stale) throw new DriveConflictError(RELOAD_NEEDED)
-  const names = [...state.parts.keys()].filter((name) => partGroup(name) === group)
+  const names = [...state.parts.keys()].filter((name) => partGroup(name) === group && (!only || only.includes(name)))
   const unread = names.some((name) => !state.parts.get(name)!.part)
   const parts = await eachLimited(names, (name) => readPart(token, state, name))
   if (unread && state.main) {
@@ -220,7 +282,9 @@ export async function readGroup(token: AccessToken, state: DriveState, group: Pa
     }
   }
   await refreshSummary(token, state)
-  return parts
+  if (group !== 'ledger') return parts
+  const kept = keptLedger({}, ledgerNames(state).flatMap((name) => state.parts.get(name)!.part ?? []))
+  return parts.map((part) => ({ ...part, content: kept.get(part.name) ?? {} }))
 }
 
 // What the overview shows for the archived years while they are not loaded; null when a year
@@ -236,11 +300,17 @@ export function archiveSummary(state: DriveState): { points: Snapshot[]; carried
   }
 }
 
-// `data` with the records of `parts` added; parts it already holds are skipped.
-export function mergeParts(data: WealthData, parts: Part[], parse: (raw: unknown, source?: 'part') => WealthData): WealthData {
+// `data` with the records of `parts` added; parts it already holds are skipped. A transaction
+// `data` has that differs from the one in `base` (the data as last saved or read), an edit not
+// saved yet, is kept over the copy in a part.
+export function mergeParts(data: WealthData, parts: Part[], parse: (raw: unknown, source?: 'part') => WealthData, base?: WealthData): WealthData {
   const held = partsOf(data)
-  const added = parts.filter((p) => !holds(held, p.name))
+  let added = parts.filter((p) => !holds(held, p.name))
   if (!added.length) return data
+  if (base) {
+    const edited = editedRows(data, base, added)
+    if (edited.size) added = added.map((p) => ({ ...p, content: Object.fromEntries(Object.entries(p.content).map(([key, rows]) => [key, rows.filter((row) => !edited.has(rowKey(key as keyof PartContent, row)))])) }))
+  }
   // Parsed together with the rest of the data, so the records are checked like at load.
   const joined = parse(JSON.parse(JSON.stringify(joinData(data as unknown as Record<string, unknown>, added))), 'part')
   const next: WealthData = {
@@ -280,14 +350,17 @@ export async function saveDrive(token: AccessToken, data: WealthData, state: Dri
 
   // A stored part the data does not hold, but that gets new records (an edit dated in it, or a
   // year that ended this session), is read first and keeps the records this session did not read.
-  // Data read from a single file holds every record, so a part file found for it was left by a
-  // save that never replaced that file: it is read only to be overwritten.
+  // A stored transaction the data has in another part is not kept: the data's copy is the one
+  // read and kept from every part it holds, or an edit, and a part written now would make an older
+  // copy the newest. Data read from a single file holds every record, so a part file found for it
+  // was left by a save that never replaced that file: it is read only to be overwritten.
+  const ledgerKeys = held === 'all' ? new Set<string>() : new Set(LEDGER.flatMap((key) => (data[key] ?? []).map((row) => rowKey(key, row as unknown as Row))))
   for (const [name, content] of parts) {
     const found = state.parts.get(name)
     if (!found || (holds(held, name) && found.part)) continue
     const stored = await readPart(token, state, name)
     if (held === 'all') continue
-    const keys = rowKeys(content)
+    const keys = new Set([...rowKeys(content), ...ledgerKeys])
     for (const [key, rows] of Object.entries(stored.content) as [keyof PartContent, Row[]][]) {
       content[key] = [...(content[key] ?? []), ...rows.filter((row) => !keys.has(rowKey(key, row)))]
     }
@@ -398,5 +471,17 @@ export async function saveDrive(token: AccessToken, data: WealthData, state: Dri
 }
 
 const assertSized = (text: string) => (assertWritable(text), text)
+
+// Row keys of the transactions in `parts` that `data` has in a form other than `base`'s.
+function editedRows(data: WealthData, base: WealthData, parts: Part[]): Set<string> {
+  const edited = new Set<string>()
+  for (const key of LEDGER) {
+    const incoming = new Set(parts.flatMap((p) => (p.content[key] ?? []).map((row) => row.id)))
+    if (!incoming.size) continue
+    const before = new Map<unknown, string>((base[key] ?? []).flatMap((row) => (incoming.has(row.id) ? [[row.id, JSON.stringify(row)]] : [])))
+    for (const row of data[key] ?? []) if (incoming.has(row.id) && before.get(row.id) !== JSON.stringify(row)) edited.add(rowKey(key, row as unknown as Row))
+  }
+  return edited
+}
 
 export { DriveConflictError }

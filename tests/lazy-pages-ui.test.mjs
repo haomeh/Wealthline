@@ -278,3 +278,162 @@ test('the overview recounts an old summary and shows an unclassified August inco
   assert.equal(document.querySelector('[data-cashflow-metric="income"]').textContent, '3,000')
   assert.match(document.querySelector('[data-cashflow-pending]').textContent, /1 筆銀行流水未分類/)
 })
+
+// The bank page reads the last three months first (driveStore.ts recentLedgerFrom); dates are
+// relative to today, which the app reads from the clock.
+const monthsAgo = (n, day = 15) => { const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - n); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}` }
+const partOf = (date) => `ledger-${date.slice(0, 4)}-Q${Math.floor((Number(date.slice(5, 7)) - 1) / 3) + 1}`
+const bankRow = (id, date, accountId = 'acct') => ({ id, accountId, date, description: `Row ${id}`, currency: 'TWD', direction: 'debit', amount: 5 })
+const quarterly = () => {
+  const data = fixture()
+  data.expenses = []
+  data.bankTransactionAccounts = [{ id: 'acct', label: 'Main ledger', bank: 'Bank' }, { id: 'old', label: 'Old ledger', bank: 'Bank' }, { id: 'unused', label: 'Unused ledger', bank: 'Bank' }]
+  data.bankTransactions = [bankRow('now', monthsAgo(0)), bankRow('recent', monthsAgo(1)), bankRow('half', monthsAgo(6)), bankRow('older', monthsAgo(15), 'old')]
+  return data
+}
+const startsWith = (text) => [...document.querySelectorAll('button')].find((b) => b.textContent.startsWith(text))
+const ledgerReads = (drive) => [...new Set(drive.reads.filter((name) => name.startsWith('ledger-')))].sort()
+
+// IntersectionObserver for the end of the bank list: `reachEnd` scrolls to it; with `endVisible`
+// a new observer reports at once that the end is on screen (a short list), like a browser does.
+const observers = new Set()
+let endVisible = false
+class FakeIntersectionObserver {
+  constructor(callback) { this.callback = callback }
+  observe(target) { this.target = target; observers.add(this); if (endVisible) setTimeout(() => observers.has(this) && this.callback([{ isIntersecting: true, target }]), 0) }
+  unobserve() {}
+  disconnect() { observers.delete(this) }
+}
+const reachEnd = () => act(async () => { for (const o of [...observers]) o.callback([{ isIntersecting: true, target: o.target }]) })
+const withObserver = async (run) => {
+  globalThis.IntersectionObserver = FakeIntersectionObserver
+  endVisible = false
+  observers.clear()
+  try { await run() } finally { delete globalThis.IntersectionObserver; observers.clear() }
+}
+const partReads = (drive, name) => drive.reads.filter((n) => n === name).length
+
+test('the bank page shows the last three months first and loads an earlier quarter when the list end is reached', () => withObserver(async () => {
+  const drive = await splitDrive(quarterly())
+  await open('/bank-transactions')
+  const recent = [partOf(monthsAgo(0)), partOf(monthsAgo(1))]
+  assert.ok(ledgerReads(drive).every((name) => name >= partOf(monthsAgo(2))), ledgerReads(drive).join())
+  assert.ok(recent.every((name) => ledgerReads(drive).includes(name)))
+  assert.match(main(), /Row now/)
+  assert.match(main(), /Row recent/)
+  assert.doesNotMatch(main(), /Row half|Row older/)
+  const notice = () => document.querySelector('.bank-scope')?.textContent ?? ''
+  assert.match(notice(), /捲到底會載入更早的 2 筆/)
+  assert.match(notice(), /只涵蓋已載入的月份/)
+  assert.equal(startsWith('載入更早的流水'), undefined, 'no load button')
+  assert.equal(button('全部載入'), undefined)
+  // The sidebar badge counts the quarters not loaded from the summary.
+  assert.equal(document.querySelector('.nav-badge')?.textContent, '4')
+  // Reaching the end twice before the load ends reads the next quarter once, and no further.
+  const half = partOf(monthsAgo(6))
+  for (let i = 0; !main().includes('Row half'); i++) {
+    assert.ok(i < 5, 'the next quarter loads')
+    await act(async () => { for (const o of [...observers]) { o.callback([{ isIntersecting: true, target: o.target }]); o.callback([{ isIntersecting: true, target: o.target }]) } })
+    await settle()
+  }
+  assert.equal(partReads(drive, half), 1)
+  assert.ok(!ledgerReads(drive).includes(partOf(monthsAgo(15))))
+  assert.match(notice(), /捲到底會載入更早的 1 筆/)
+}))
+
+test('a filter that leaves the list end on screen keeps loading earlier quarters until it fills or none are left', () => withObserver(async () => {
+  const drive = await splitDrive(quarterly())
+  await open('/bank-transactions')
+  const filter = document.querySelector('[aria-label="流水帳戶篩選"]')
+  await act(() => {
+    Object.getOwnPropertyDescriptor(dom.window.HTMLSelectElement.prototype, 'value').set.call(filter, 'old')
+    filter.dispatchEvent(new Event('change', { bubbles: true }))
+  })
+  assert.match(main(), /沒有符合篩選的流水/)
+  endVisible = true
+  await reachEnd()
+  await settle()
+  assert.match(main(), /Row older/)
+  assert.equal(document.querySelector('.bank-scope'), null, 'every quarter is loaded')
+  assert.equal(document.querySelector('[data-load-earlier]'), null)
+  assert.equal(partReads(drive, partOf(monthsAgo(15))), 1)
+}))
+
+test('choosing a month not loaded yet reads only that month\'s quarter', () => withObserver(async () => {
+  const drive = await splitDrive(quarterly())
+  await open('/bank-transactions')
+  const older = monthsAgo(15).slice(0, 7)
+  const select = document.querySelector('[aria-label="流水月份篩選"]')
+  assert.ok([...select.options].some((o) => o.value === older), 'the month list includes months not loaded')
+  drive.hold('ledger')
+  await act(() => {
+    Object.getOwnPropertyDescriptor(dom.window.HTMLSelectElement.prototype, 'value').set.call(select, older)
+    select.dispatchEvent(new Event('change', { bubbles: true }))
+  })
+  await settle()
+  assert.match(main(), /正在載入 .* 月的流水/)
+  assert.doesNotMatch(main(), /沒有符合篩選的流水/)
+  await drive.release('ledger')
+  assert.match(main(), /Row older/)
+  assert.equal(document.querySelector('[data-load-earlier]'), null, 'a month filter does not load earlier quarters')
+  assert.equal(partReads(drive, partOf(monthsAgo(15))), 1)
+  assert.equal(partReads(drive, partOf(monthsAgo(6))), 0, 'quarters in between are not read')
+}))
+
+test('a failed load of an earlier quarter shows why and loads again only on 重試', () => withObserver(async () => {
+  const drive = await splitDrive(quarterly())
+  await open('/bank-transactions')
+  const half = partOf(monthsAgo(6))
+  const working = globalThis.fetch
+  let failing = true
+  globalThis.fetch = (url, init) => {
+    const id = String(url).match(/\/drive\/v2\/files\/([^/?]+)\?alt=media/)?.[1]
+    return failing && id && drive.drive.files.get(id)?.appProperties.part === half ? Promise.reject(new Error('offline')) : working(url, init)
+  }
+  for (let i = 0; !document.querySelector('.bank-load-more[role="alert"]'); i++) {
+    assert.ok(i < 5, 'the failure is shown')
+    assert.ok(observers.size, 'the list end is observed')
+    await reachEnd()
+    await settle()
+  }
+  assert.match(document.querySelector('.bank-load-more[role="alert"]').textContent, /offline/)
+  assert.equal(observers.size, 0, 'no automatic retry')
+  failing = false
+  await click(button('重試'))
+  await settle()
+  assert.match(main(), /Row half/)
+  assert.equal(document.querySelector('.bank-load-more[role="alert"]'), null)
+}))
+
+test('importing a bank statement first loads every quarter, to find duplicates among all records', async () => {
+  const drive = await splitDrive(quarterly())
+  await open('/bank-transactions')
+  drive.hold('ledger')
+  drive.hold('history')
+  await click(button('匯入銀行帳單'))
+  assert.match(main(), /正在載入全部銀行流水/)
+  assert.equal(document.querySelector('.bank-import form'), null)
+  await drive.release('history')
+  assert.equal(document.querySelector('.bank-import form'), null, 'history alone is not enough')
+  await drive.release('ledger')
+  assert.ok(document.querySelector('.bank-import form'))
+  assert.ok(ledgerReads(drive).includes(partOf(monthsAgo(15))))
+  await click(button('取消匯入'))
+  assert.match(main(), /Row older/)
+})
+
+test('deleting an account loads every quarter first, and keeps an account an earlier record uses', async () => {
+  const drive = await splitDrive(quarterly())
+  await open('/bank-transactions')
+  assert.match(main(), /已載入的期間沒有流水/)
+  drive.hold('ledger')
+  await click(button('刪除帳戶 Old ledger'))
+  assert.match(main(), /正在載入全部流水，確認沒有流水使用這個帳戶後就會刪除/)
+  await drive.release('ledger')
+  assert.match(main(), /帳戶仍被流水引用/)
+  assert.ok(button('刪除帳戶 Old ledger'))
+  assert.equal(button('刪除帳戶 Old ledger').disabled, true)
+  await click(button('刪除帳戶 Unused ledger'))
+  assert.equal(button('刪除帳戶 Unused ledger'), undefined)
+  assert.match(document.querySelector('.save-bar')?.textContent ?? '', /未儲存/)
+})

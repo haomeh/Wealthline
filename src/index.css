@@ -3710,6 +3710,11 @@ button.pin-chip:hover:not(:disabled) { background: var(--ink); opacity: 0.85; }
 .swipe-icon { display: contents; }
 .bank-filter-summary { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 16px; margin: 0 0 4px; color: var(--ink-2); font-size: 13px; }
 .bank-filter-summary button.link { font-size: 13px; }
+/* Earlier quarters not loaded yet: what the list covers, and the end of the list that loads more. */
+.bank-scope { margin: 0 0 12px; color: var(--ink-2); font-size: 13px; }
+.bank-scope strong { color: var(--ink); font-weight: 600; }
+.bank-load-more { min-height: 1px; margin: 12px 0 0; text-align: center; font-size: 13px; }
+.bank-load-more.banner { text-align: left; }
 .bank-records { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; min-width: 0; margin-top: 12px; }
 /* Each month is one tinted block, so its rows read as one group. */
 .bank-month { --row-bg: var(--surface-2); min-width: 0; overflow: hidden; padding: 0 16px 4px; border-radius: 14px; background: var(--row-bg); }
