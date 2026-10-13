@@ -31,6 +31,8 @@ interface AccountsProps extends Props {
 export function Accounts({ data, onChange, view, setView, onBack, onRefreshPrices, priceError }: AccountsProps) {
   const now = useCalendarNow()
   const showImport = view.page === 'list' && !!view.importing
+  // Phone only: which kind of account the list shows. Wide screens show both tables.
+  const [filter, setFilter] = useState<AccountKind | 'all'>('all')
   const setShowImport = (importing: boolean) => setView({ page: 'list', importing }, true)
 
   const saveAccount = (next: Account) => {
@@ -90,19 +92,23 @@ export function Accounts({ data, onChange, view, setView, onBack, onRefreshPrice
       <div className="page-head">
         <h2>帳戶</h2>
         <div className="row">
-          <button onClick={() => setShowImport(!showImport)}>從試算表匯入</button>
-          <button className="primary" onClick={() => setView({ page: 'new' })}>
-            ＋ 新增帳戶
+          <button className="desktop-only" onClick={() => setShowImport(!showImport)}>從試算表匯入</button>
+          <button className="primary add-account" aria-label="新增帳戶" onClick={() => setView({ page: 'new' })}>
+            ＋<span className="desktop-only"> 新增帳戶</span>
           </button>
         </div>
       </div>
+      {data.accounts.length > 0 && kinds.every(({ list }) => list.length) && <div className="segmented account-filter mobile-only" role="group" aria-label="帳戶類型">
+        {([['all', '全部', data.accounts.length], ...kinds.map(({ kind, list }) => [kind, ACCOUNT_KINDS[kind].replace('帳戶', ''), list.length])] as [AccountKind | 'all', string, number][]).map(([k, label, n]) =>
+          <button key={k} className={k === filter ? 'on' : ''} aria-pressed={k === filter} onClick={() => setFilter(k)}>{label} {n}</button>)}
+      </div>}
       {showImport && <ImportPanel data={data} onChange={onChange} onDone={() => setShowImport(false)} />}
       {data.accounts.length === 0 && !showImport && (
         <section className="panel empty">
           <p className="muted">還沒有帳戶。按「新增帳戶」定義你的第一個銀行或投資帳戶，再點進去填餘額或持倉。</p>
         </section>
       )}
-      {data.accounts.length > 0 && <div className="tiles">
+      {data.accounts.length > 0 && <div className="tiles desktop-only">
         <section className="panel deep tile-stat"><span>全部 {data.accounts.length} 個帳戶</span><strong>{fmt(total, 0)}</strong></section>
         {kinds.map(({ kind, list }) => (
           <section key={kind} className="panel tile-stat"><span>{ACCOUNT_KINDS[kind]} · {list.length}</span><strong>{fmt(list.reduce((n, x) => n + x.value, 0), 0)}</strong></section>
@@ -114,7 +120,8 @@ export function Accounts({ data, onChange, view, setView, onBack, onRefreshPrice
         </section>
       </div>}
       {kinds.map(({ kind, list }) => list.length > 0 && (
-        <section key={kind} className="panel account-table" aria-label={ACCOUNT_KINDS[kind]}>
+        <section key={kind} className={`panel account-table ${filter !== 'all' && filter !== kind ? 'filtered-out' : ''}`} data-kind={kind} aria-label={ACCOUNT_KINDS[kind]}>
+          <div className="account-group-head mobile-only"><span>{ACCOUNT_KINDS[kind]}</span><span className="num-serif">NT$ {fmt(list.reduce((n, x) => n + x.value, 0), 0)}</span></div>
           <div className="account-row head" aria-hidden>
             <span>{ACCOUNT_KINDS[kind]}</span><span>國家</span><span>類別</span><span>{kind === 'bank' ? '幣別' : '內容'}</span><span className="num">台幣價值</span><span className="num">占比</span><span className="num">30 天</span>
           </div>
@@ -126,6 +133,7 @@ export function Accounts({ data, onChange, view, setView, onBack, onRefreshPrice
                   <span className={a.country ? 'country' : 'country muted'}>{a.country || '未設定'}</span>
                   <span className="category muted">{a.category}</span>
                   <span className="holdings-summary muted">{contentOf(data, a)}</span>
+                  <span className="sub muted mobile-only">{subtitleOf(data, a)}</span>
                   <span className="num value num-serif">{fmt(value, 0)}</span>
                   <span className="num share muted">{total ? `${(value / total * 100).toFixed(1)}%` : ''}</span>
                   <span className={`num change ${change === null ? 'muted' : change > 0.0005 ? 'up' : change < -0.0005 ? 'down' : 'muted'}`} title="與 30 天前的每日紀錄比較">
@@ -137,8 +145,20 @@ export function Accounts({ data, onChange, view, setView, onBack, onRefreshPrice
           </ul>
         </section>
       ))}
+      {data.accounts.length > 0 && !showImport && <button className="link import-link mobile-only" onClick={() => setShowImport(true)}>從試算表匯入</button>}
     </>
   )
+}
+
+// The phone row's second line: where the account is and what it holds, in a few words.
+function subtitleOf(data: WealthData, a: Account) {
+  const symbols = a.positions.filter((p) => p.type === 'holding').map((p) => displaySymbol(p.symbol))
+  const cash = cashCurrencies(a)
+  const holdings = symbols.length > 2 ? `${symbols.length} 個標的` : symbols.join('、')
+  const money = cash.length > 2 ? `${cash.length} 種幣別` : cash.join('、')
+  const parts = symbols.length ? [a.country || a.category, holdings, money && `現金 ${money}`] : [a.country, money || a.category]
+  if (cash.some((c) => data.fxManual.includes(c))) parts.push('匯率手動')
+  return parts.filter(Boolean).join(' · ')
 }
 
 // What a row lists: holdings and the cash currencies, or a bank account's currencies.

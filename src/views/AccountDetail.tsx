@@ -81,7 +81,11 @@ export function AccountDetail({ data, account: a, onChange, onEdit, onBack, onRe
     <>
       <div className="page-head detail-head">
         <div>
-          <button className="back-link" onClick={onBack}>‹ 帳戶</button>
+          <div className="detail-nav">
+            <button className="back-link" onClick={onBack}>‹ 帳戶</button>
+            <button className="link mobile-only" onClick={onEdit}>編輯帳戶</button>
+          </div>
+          <p className="detail-meta muted mobile-only">{[ACCOUNT_KINDS[a.kind], a.country, a.category].filter(Boolean).join(' · ')}</p>
           <h2>{a.name}</h2>
         </div>
       </div>
@@ -94,6 +98,7 @@ export function AccountDetail({ data, account: a, onChange, onEdit, onBack, onRe
               {change !== null && <small className={change > 0.0005 ? 'change up' : change < -0.0005 ? 'change down' : 'muted'}>
                 {change > 0.0005 ? '↑' : change < -0.0005 ? '↓' : ''} {Math.abs(change * 100).toFixed(1)}% · 30 天
               </small>}
+              {quoted && <small className="muted mobile-only">報價 {quoteTime(quoted)}</small>}
             </div>
             <Sparkline values={series.map((p) => p.value)} label={`${a.name} 每日價值，${series[0].date} 到今天`} />
           </section>
@@ -198,7 +203,7 @@ export function AccountDetail({ data, account: a, onChange, onEdit, onBack, onRe
               <dt>類型</dt><dd>{ACCOUNT_KINDS[a.kind]}</dd>
               <dt>國家</dt><dd>{a.country ? countryLabel(a.country) : '未設定'}</dd>
               <dt>類別</dt><dd>{a.category}</dd>
-              {quoted && <><dt>報價</dt><dd>{new Date(quoted).toLocaleString('zh-TW', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false })}</dd></>}
+              {quoted && <><dt>報價</dt><dd>{quoteTime(quoted)}</dd></>}
             </dl>
             <button className="link" onClick={onEdit}>編輯帳戶</button>
           </section>
@@ -222,6 +227,7 @@ export function AccountDetail({ data, account: a, onChange, onEdit, onBack, onRe
   )
 }
 
+const quoteTime = (iso: string) => new Date(iso).toLocaleString('zh-TW', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false })
 const shortDate = (iso: string) => new Date(iso).toLocaleDateString('zh-TW', { month: 'numeric', day: 'numeric' })
 const shortDay = (iso: string) => new Date(iso).toLocaleDateString('zh-TW', { year: 'numeric', month: 'numeric', day: 'numeric' })
 

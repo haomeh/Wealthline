@@ -1,6 +1,7 @@
 // Site-wide components shared by the signed-out pages and the app: links, the logo and the footer.
 
-import { useId, useState, type AnchorHTMLAttributes, type MouseEvent } from 'react'
+import { useState, type AnchorHTMLAttributes, type MouseEvent } from 'react'
+import './landing.css'
 import { AUTHOR, AUTHOR_URL, LICENSE_ZH_URL, OPERATOR, OPERATOR_URL, PAGES, PRIVACY_UPDATED, REPO_URL, SUPPORT_URL, navigate, type PageKey } from '../site'
 
 // An in-app link: a real <a href> (so it can be opened in a new tab) that navigates without a reload.
@@ -15,24 +16,37 @@ export function Link({ to, replace, onClick, ...rest }: { to: string; replace?: 
   return <a href={to} onClick={click} {...rest} />
 }
 
-export function Logo({ size = 28 }: { size?: number }) {
-  const id = useId()
+// The mark (Claude Design "Wealthline Brand" 5a): a terracotta tile with a cream W-shaped line that
+// ends in a gold dot. Large sizes add a faint area under the line; at 24px and below only the line
+// stays, drawn thicker, so the mark stays clear. `animated` draws the line in a loop (the opening screen).
+const W_LINE = 'M13 22 22.5 43 32 29 41.5 43 49.5 19.5'
+const W_AREA = `${W_LINE}V50H13Z`
+const CREAM = '#fff8ef'
+const GOLD = '#f2c46d'
+
+export function Logo({ size = 28, animated = false, className }: { size?: number; animated?: boolean; className?: string }) {
+  const large = animated || size >= 64
+  const tiny = !large && size <= 24
   return (
-    <svg className="logo" width={size} height={size} viewBox="0 0 64 64" aria-hidden>
-      <defs>
-        <linearGradient id={`${id}bg`} x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0" stopColor="#3a8ef0" />
-          <stop offset="1" stopColor="#4a3aa7" />
-        </linearGradient>
-        <linearGradient id={`${id}area`} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stopColor="#fff" stopOpacity=".28" />
-          <stop offset="1" stopColor="#fff" stopOpacity="0" />
-        </linearGradient>
-      </defs>
-      <rect width="64" height="64" rx="15" fill={`url(#${id}bg)`} />
-      <path d="M13 22 22.5 43 32 29 41.5 43 49.5 19.5V50H13Z" fill={`url(#${id}area)`} />
-      <path d="M13 22 22.5 43 32 29 41.5 43 49.5 19.5" fill="none" stroke="#fff" strokeWidth="5.5" strokeLinecap="round" strokeLinejoin="round" />
-      <circle cx="49.5" cy="19.5" r="4.5" fill="#ffd166" stroke="#fff" strokeWidth="2" />
+    <svg className={className ? `logo ${className}` : 'logo'} width={size} height={size} viewBox="0 0 64 64" aria-hidden>
+      <rect width="64" height="64" rx="18" style={{ fill: 'var(--accent)' }} />
+      {large && <path className={animated ? 'wl-logo-area' : undefined} d={W_AREA} fill={CREAM} fillOpacity={animated ? 0.22 : 0.2} />}
+      <path
+        className={animated ? 'wl-logo-line' : undefined}
+        d={W_LINE}
+        pathLength={animated ? 100 : undefined}
+        fill="none"
+        stroke={CREAM}
+        strokeWidth={tiny ? 7 : large ? 5.5 : 6}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      {!tiny &&
+        (large ? (
+          <circle className={animated ? 'wl-logo-dot' : undefined} cx="49.5" cy="19.5" r="4.5" fill={GOLD} stroke={CREAM} strokeWidth="2" />
+        ) : (
+          <circle cx="49.5" cy="19.5" r="5" fill={GOLD} />
+        ))}
     </svg>
   )
 }

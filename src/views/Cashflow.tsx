@@ -42,18 +42,28 @@ export function Cashflow({ data, months, onGoExpenses, onGoBankTransactions }: P
       {!rawGroups.length && <section className="panel cashflow-no-record"><p className="muted">{period.label}無紀錄，不代表收支為零。</p>
         {period.latestMonth && <button onClick={() => period.showMonth(period.latestMonth!)}>查看 {Number(period.latestMonth.slice(0, 4))} 年 {Number(period.latestMonth.slice(5, 7))} 月</button>}
       </section>}
-      {group && <div className="tiles">
-        <section className="panel deep tile-stat" aria-label="收支差額">
+      {group && <div className="tiles cashflow-tiles">
+        <section className="panel span-2 cashflow-phone-summary mobile-only" aria-label="收支摘要">
+          <span className="muted">收支差額 · TWD</span>
+          <strong className={`num-serif ${group.difference >= 0 ? 'up' : 'down'}`}>{signed(group.difference)}</strong>
+          {([['收入', group.income, 'var(--s2)'], ['消費', group.consumption, 'var(--s1)']] as const).map(([label, value, color]) => <div className="cashflow-hbar" key={label}>
+            <span>{label}</span>
+            <span className="cashflow-hbar-track"><i style={{ width: `${Math.max(2, Math.max(0, value) / Math.max(group.income, group.consumption, 1) * 100)}%`, background: color }} /></span>
+            <span className="num-serif">{fmt(value, 0)}</span>
+          </div>)}
+          {group.income > 0 && <small className="muted">儲蓄率 {Math.round(group.difference / group.income * 100)}%</small>}
+        </section>
+        <section className="panel deep tile-stat desktop-only" aria-label="收支差額">
           <span>收支差額 · TWD</span>
           <strong>{signed(group.difference)}</strong>
           <small>收入 − 實際消費；不是帳戶餘額或淨資產</small>
         </section>
-        <section className="panel tile-stat" aria-label="收入">
+        <section className="panel tile-stat desktop-only" aria-label="收入">
           <span>收入</span>
           <strong>{fmt(group.income, 0)}</strong>
           <small>銀行流水 {count(group.incomeCategories)} 筆</small>
         </section>
-        <section className="panel tile-stat" aria-label="實際消費">
+        <section className="panel tile-stat desktop-only" aria-label="實際消費">
           <span>實際消費</span>
           <strong>{fmt(group.consumption, 0)}</strong>
           <small>信用卡 {group.coverage.cardCount} 筆 · 銀行 {Math.max(0, count(group.consumptionCategories) - group.coverage.cardCount)} 筆</small>
@@ -62,7 +72,7 @@ export function Cashflow({ data, months, onGoExpenses, onGoBankTransactions }: P
           <span><strong>{group.pending.count} 筆銀行流水未分類</strong></span>
           <small>已暫依入帳／支出計入；轉帳或繳卡費請設為不計收支。</small>
           <button className="link" onClick={onGoBankTransactions}>前往分類 →</button>
-        </section> : <section className="panel tile-stat" aria-label="儲蓄率">
+        </section> : <section className="panel tile-stat desktop-only" aria-label="儲蓄率">
           <span>儲蓄率</span>
           <strong>{group.income > 0 ? `${Math.round(group.difference / group.income * 100)}%` : '—'}</strong>
           <small>收支差額 ÷ 收入</small>
@@ -78,11 +88,11 @@ export function Cashflow({ data, months, onGoExpenses, onGoBankTransactions }: P
           {group.incomeCategories.length > 0 && <details className="cashflow-income-details"><summary>收入分類</summary><CategoryList categories={group.incomeCategories} income /></details>}
         </section>
 
-        <section className="panel span-2 cashflow-source-tile">
+        <section className="panel span-2 cashflow-source-tile desktop-only">
           <div><strong>信用卡消費 · {group.coverage.cardCount} 筆</strong><span className="muted small">依原交易日期；退款扣除消費</span></div>
           <button className="link" onClick={onGoExpenses}>查看明細 →</button>
         </section>
-        <section className="panel span-2 cashflow-source-tile">
+        <section className="panel span-2 cashflow-source-tile desktop-only">
           <div><strong>銀行流水 · {group.coverage.bankCount} 筆</strong><span className="muted small">{group.excluded.count ? `不計收支 ${group.excluded.count} 筆僅列示（轉帳、繳卡費）` : '依銀行記帳日；收入沖回從收入扣除'}</span></div>
           <button className="link" onClick={onGoBankTransactions}>查看明細 →</button>
         </section>

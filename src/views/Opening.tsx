@@ -2,6 +2,8 @@
 // is checked and the data file is read from Google Drive.
 
 import type { UserProfile } from '../google/auth'
+import './landing.css'
+import { Logo } from './Site'
 
 export type OpeningStep = 'auth' | 'drive'
 
@@ -18,43 +20,21 @@ interface Props {
 export function Opening({ step, profile }: Props) {
   const current = STEPS.findIndex((s) => s.key === step)
   return (
-    <div className="opening" role="status" aria-live="polite">
-      <div className="opening-card">
-        <svg className="opening-logo" width="72" height="72" viewBox="0 0 64 64" aria-hidden>
-          <defs>
-            <linearGradient id="opening-bg" x1="0" y1="0" x2="1" y2="1">
-              <stop offset="0" stopColor="#3a8ef0" />
-              <stop offset="1" stopColor="#4a3aa7" />
-            </linearGradient>
-            <linearGradient id="opening-area" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0" stopColor="#fff" stopOpacity=".28" />
-              <stop offset="1" stopColor="#fff" stopOpacity="0" />
-            </linearGradient>
-          </defs>
-          <rect width="64" height="64" rx="15" fill="url(#opening-bg)" />
-          <path className="opening-area" d="M13 22 22.5 43 32 29 41.5 43 49.5 19.5V50H13Z" fill="url(#opening-area)" />
-          <path
-            className="opening-line"
-            d="M13 22 22.5 43 32 29 41.5 43 49.5 19.5"
-            pathLength="100"
-            fill="none"
-            stroke="#fff"
-            strokeWidth="5.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-          <circle className="opening-dot" cx="49.5" cy="19.5" r="4.5" fill="#ffd166" stroke="#fff" strokeWidth="2" />
-        </svg>
-        <p className="opening-title">{profile ? `歡迎回來，${profile.name || profile.email}` : 'Wealthline'}</p>
-        <ol className="opening-steps">
+    <div className="opening wl-opening" role="status" aria-live="polite">
+      <div className="wl-opening-card">
+        <Logo size={84} animated className="wl-opening-logo" />
+        <p className="wl-opening-title">{profile ? `歡迎回來，${profile.name || profile.email}` : 'Wealthline'}</p>
+        <ol className="wl-opening-steps">
           {STEPS.map((s, i) => (
             <li key={s.key} className={i < current ? 'done' : i === current ? 'active' : ''}>
-              <span className="opening-mark" aria-hidden />
+              <span className="wl-opening-mark" aria-hidden>
+                {i < current ? '✓' : null}
+              </span>
               {s.text}
             </li>
           ))}
         </ol>
-        <div className="opening-bar" aria-hidden>
+        <div className="wl-opening-bar" aria-hidden>
           <span />
         </div>
       </div>

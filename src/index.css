@@ -434,32 +434,6 @@ a.button.ghost {
   font-weight: 600;
 }
 
-.hero-name {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 10px 14px;
-  font-size: 1.35rem;
-  letter-spacing: -0.01em;
-}
-
-.hero-name .pill {
-  font-size: 0.8rem;
-}
-
-.lead-en {
-  margin-top: 8px;
-  font-size: 0.95rem;
-}
-
-.hero-tagline {
-  margin-top: 16px;
-  font-weight: 700;
-  font-size: clamp(1.9rem, 4.2vw, 2.9rem);
-  line-height: 1.2;
-  letter-spacing: -0.02em;
-}
-
 .accent-text {
   background: linear-gradient(90deg, var(--s1), var(--s7));
   -webkit-background-clip: text;
@@ -523,18 +497,6 @@ button.link.inline {
   align-items: center;
 }
 
-.preview-card {
-  width: 100%;
-  padding: 22px;
-  border-radius: 18px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  box-shadow: 0 18px 50px -20px rgba(42, 120, 214, 0.35), var(--shadow);
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-
 .preview-head {
   display: flex;
   justify-content: space-between;
@@ -552,35 +514,6 @@ button.link.inline {
   width: 100%;
   height: 70px;
   display: block;
-}
-
-.preview-bar {
-  display: flex;
-  height: 12px;
-  border-radius: 999px;
-  overflow: hidden;
-  gap: 2px;
-}
-
-.preview-legend {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 6px 16px;
-  font-size: 0.86rem;
-}
-
-.preview-legend li {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.preview-legend .muted {
-  margin-left: auto;
-  font-variant-numeric: tabular-nums;
 }
 
 .dot {
@@ -621,17 +554,6 @@ button.link.inline {
 .feature p {
   font-size: 0.9rem;
   line-height: 1.65;
-}
-
-.feature-icon {
-  display: grid;
-  place-items: center;
-  width: 38px;
-  height: 38px;
-  margin-bottom: 4px;
-  border-radius: 10px;
-  background: var(--accent-wash);
-  color: var(--accent);
 }
 
 .landing-section.split {
@@ -706,7 +628,6 @@ button.link.inline {
   word-break: break-all;
 }
 
-.drive-icon,
 .folder,
 .file-icon {
   color: var(--accent);
@@ -716,19 +637,6 @@ button.link.inline {
 
 .file-icon {
   font-size: 0.75rem;
-}
-
-.open-source {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 24px;
-}
-
-.open-source p {
-  margin-top: 8px;
-  max-width: 40em;
-  line-height: 1.7;
 }
 
 .about-grid {
@@ -1002,11 +910,6 @@ button.link.inline {
   .feature-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
-
-  .open-source {
-    flex-direction: column;
-    align-items: flex-start;
-  }
 }
 
 @media (max-width: 560px) {
@@ -1036,20 +939,6 @@ button.link.inline {
 .logo {
   flex: none;
   display: block;
-}
-
-.brand-mark {
-  flex: none;
-  width: 32px;
-  height: 32px;
-  border-radius: 11px;
-  display: grid;
-  place-items: center;
-  background: var(--accent);
-  color: var(--accent-ink);
-  font-family: var(--num);
-  font-size: 20px;
-  font-weight: 600;
 }
 
 .sidebar .brand-name {
@@ -1337,6 +1226,16 @@ button.link.inline {
   padding: 24px 28px 64px;
 }
 
+/* Phone (Claude Design "Wealthline Mobile"): no sidebar; a bottom tab bar, a floating save bar
+   and the account menu on the 更多 page. Both bars are hidden on wide screens. */
+@media (min-width: 900px) {
+  .tab-bar,
+  .save-bar,
+  .mobile-only {
+    display: none !important;
+  }
+}
+
 @media (max-width: 899px) {
   .shell,
   .app-enter.shell {
@@ -1344,100 +1243,152 @@ button.link.inline {
     background: none;
   }
 
-  .sidebar {
-    height: auto;
-    overflow: visible;
-    flex-direction: row;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 10px 12px;
-    padding: 10px 16px 0;
-    border-right: none;
-    border-bottom: 1px solid var(--hairline);
-    background: color-mix(in srgb, var(--surface-2) 92%, transparent);
-    backdrop-filter: blur(10px);
-  }
-
-  .sidebar .brand {
-    padding: 0;
-  }
-
-  .sidebar .brand-name {
-    display: none;
-  }
-
-  .side-foot {
-    margin: 0 0 0 auto;
-    flex-direction: row;
-    align-items: center;
-    gap: 8px;
-  }
-
-  .sync-card {
-    padding: 0;
-    border: none;
-    background: none;
-    flex-direction: row;
-    align-items: center;
-  }
-
-  .sync-card.dirty {
-    background: none;
-  }
-
-  .sync-card > span,
-  .sync-card.dirty strong {
-    display: none;
-  }
-
-  .sync-card button.save {
-    margin: 0;
-  }
-
-  .account-menu summary {
-    padding: 0;
-  }
-
-  .account-menu summary .who {
-    display: none;
-  }
-
-  .menu {
-    left: auto;
-    right: 0;
-    bottom: auto;
-    top: 42px;
-  }
-
-  .side-nav {
-    order: 3;
-    flex-direction: row;
-    width: calc(100% + 32px);
-    margin: 0 -16px;
-    padding: 2px 16px 10px;
-    overflow-x: auto;
-    scrollbar-width: none;
-  }
-
-  .side-nav .nav-group {
-    display: none;
-  }
-
-  .side-nav button,
-  .side-nav button.active {
-    flex: none;
-    width: auto;
-    padding: 6px 12px;
-    border-radius: 999px;
-  }
-
-  .side-nav button.active::before {
-    display: none;
+  .sidebar,
+  .desktop-only {
+    display: none !important;
   }
 
   .content {
-    padding: 18px 16px 48px;
+    padding: 8px 16px calc(96px + env(safe-area-inset-bottom));
   }
+
+  .shell-main .site-footer {
+    padding-bottom: calc(72px + env(safe-area-inset-bottom));
+  }
+
+  .page-head h2 {
+    font-size: 22px;
+  }
+
+  .tab-bar {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 20;
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    padding: 4px 0 calc(4px + env(safe-area-inset-bottom));
+    background: var(--surface);
+    border-top: 1px solid var(--hairline);
+  }
+
+  .tab-bar button {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    min-height: 50px;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: none;
+    font-size: 11px;
+    color: var(--muted);
+  }
+
+  .tab-bar button.active {
+    color: var(--accent);
+    font-weight: 700;
+  }
+
+  .tab-bar .nav-badge {
+    position: absolute;
+    top: 2px;
+    left: calc(50% + 6px);
+    font-size: 10px;
+    padding: 0 5px;
+  }
+
+  .tab-icon {
+    width: 18px;
+    height: 18px;
+    border: 2px solid currentColor;
+    border-radius: 6px;
+  }
+
+  .tab-icon.cashflow {
+    border-radius: 50%;
+  }
+
+  .tab-icon.more {
+    border: 0;
+    border-radius: 0;
+    font-size: 16px;
+    line-height: 18px;
+    letter-spacing: 1px;
+    width: auto;
+  }
+
+  .tab-icon.more::before {
+    content: '•••';
+  }
+
+  .tab-bar button.active .tab-icon:not(.more) {
+    background: var(--accent);
+    border-color: var(--accent);
+  }
+
+  .save-bar {
+    position: fixed;
+    left: 12px;
+    right: 12px;
+    bottom: calc(66px + env(safe-area-inset-bottom));
+    z-index: 21;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 10px 10px 10px 16px;
+    border-radius: 18px;
+    background: var(--ink);
+    color: var(--page);
+    font-size: 14px;
+    box-shadow: 0 12px 30px -10px rgba(0, 0, 0, 0.4);
+  }
+
+  .save-bar button.primary {
+    flex: none;
+    padding: 10px 16px;
+    border-radius: 12px;
+    min-height: 44px;
+  }
+
+  .content:has(~ .save-bar),
+  .shell:has(.save-bar) .content {
+    padding-bottom: calc(160px + env(safe-area-inset-bottom));
+  }
+}
+
+/* The save state as a pill in phone page headers. */
+.sync-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+  background: var(--good-wash);
+  color: var(--good);
+}
+
+.sync-pill.dirty {
+  background: var(--accent-wash);
+  color: var(--accent);
+}
+
+.sync-pill.busy {
+  background: var(--surface-2);
+  color: var(--ink-2);
+}
+
+.sync-pill.error {
+  background: var(--critical-wash);
+  color: var(--critical);
 }
 
 /* Panels: rounded tiles on the warm page. */
@@ -2695,118 +2646,6 @@ details.daily .hint {
   animation: fade-in 0.3s ease-out backwards;
 }
 
-.opening-card {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 18px;
-  width: min(320px, 100%);
-  text-align: center;
-}
-
-.opening-logo {
-  border-radius: 17px;
-  box-shadow: 0 10px 30px -10px rgba(74, 58, 167, 0.55);
-  animation: logo-breathe 2.4s ease-in-out infinite;
-}
-
-.opening-line {
-  stroke-dasharray: 100;
-  animation: line-draw 1.8s cubic-bezier(0.65, 0, 0.35, 1) infinite;
-}
-
-.opening-area {
-  animation: area-fill 1.8s ease-in-out infinite;
-}
-
-.opening-dot {
-  transform-origin: 49.5px 19.5px;
-  animation: dot-pop 1.8s ease-in-out infinite;
-}
-
-.opening-title {
-  margin: 0;
-  font-size: 1.15rem;
-  font-weight: 600;
-  overflow-wrap: anywhere;
-}
-
-.opening-steps {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: grid;
-  gap: 8px;
-  font-size: 0.9rem;
-  color: var(--muted);
-  text-align: left;
-}
-
-.opening-steps li {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  transition: color 0.3s;
-}
-
-.opening-steps li.active {
-  color: var(--ink);
-}
-
-.opening-steps li.done {
-  color: var(--good);
-}
-
-.opening-mark {
-  flex: none;
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  border: 2px solid var(--hairline);
-  position: relative;
-  transition: border-color 0.3s, background 0.3s;
-}
-
-.opening-steps li.active .opening-mark {
-  border-color: var(--hairline);
-  border-top-color: var(--accent);
-  animation: spin 0.8s linear infinite;
-}
-
-.opening-steps li.done .opening-mark {
-  border-color: var(--good);
-  background: var(--good);
-}
-
-.opening-steps li.done .opening-mark::after {
-  content: '';
-  position: absolute;
-  left: 4px;
-  top: 1px;
-  width: 4px;
-  height: 7px;
-  border: solid var(--surface);
-  border-width: 0 2px 2px 0;
-  transform: rotate(45deg);
-}
-
-.opening-bar {
-  width: 100%;
-  height: 3px;
-  border-radius: 3px;
-  background: var(--hairline);
-  overflow: hidden;
-}
-
-.opening-bar span {
-  display: block;
-  width: 40%;
-  height: 100%;
-  border-radius: inherit;
-  background: var(--accent);
-  animation: bar-slide 1.3s ease-in-out infinite;
-}
-
 /* The app arrives: the frame fades in and the page content rises into place.
    Only opacity on the frame and no lasting transform, so sticky and fixed elements still work. */
 .app-enter {
@@ -2869,79 +2708,14 @@ details.daily .hint {
   }
 }
 
-@keyframes line-draw {
-  0% {
-    stroke-dashoffset: 100;
-  }
-  55%,
-  80% {
-    stroke-dashoffset: 0;
-  }
-  100% {
-    stroke-dashoffset: -100;
-  }
-}
-
-@keyframes area-fill {
-  0%,
-  20% {
-    opacity: 0;
-  }
-  55%,
-  80% {
-    opacity: 1;
-  }
-  100% {
-    opacity: 0;
-  }
-}
-
-@keyframes dot-pop {
-  0%,
-  45% {
-    transform: scale(0);
-  }
-  58% {
-    transform: scale(1.25);
-  }
-  66%,
-  85% {
-    transform: scale(1);
-  }
-  100% {
-    transform: scale(0);
-  }
-}
-
-@keyframes logo-breathe {
-  50% {
-    transform: translateY(-3px);
-  }
-}
-
-@keyframes bar-slide {
-  from {
-    transform: translateX(-100%);
-  }
-  to {
-    transform: translateX(250%);
-  }
-}
-
 @media (prefers-reduced-motion: reduce) {
   .opening,
-  .opening-logo,
-  .opening-line,
-  .opening-area,
-  .opening-dot,
   .app-enter,
   .view-enter > * {
     animation: none;
   }
 
-  .opening-steps li.active .opening-mark,
-  .spinner,
-  .opening-bar span {
+  .spinner {
     animation-duration: 2.4s;
   }
 }
@@ -3059,7 +2833,6 @@ section.daily .scroll { max-width: 100%; overflow-x: auto; }
 @media (max-width: 640px) {
   section.daily button.icon { min-width: 44px; }
 }
-
 
 /* History: distinct overview, source notes and quantity workspace. */
 .history-page { display: grid; grid-template-columns: minmax(0, 1fr); gap: 24px; min-width: 0; }
@@ -3319,7 +3092,6 @@ dialog.expense-rule-dialog { max-width: 440px; }
 .bank-rule-dialog { width:min(calc(100% - 32px),640px); max-height:90dvh; overflow:auto; }
 .bank-rule-dialog::backdrop { background:rgb(0 0 0 / .45); }
 @media(max-width:480px) { .bank-page .page-head,.bank-import .panel-head { flex-wrap:wrap; gap:12px; } .bank-page button { white-space:normal; } }
-
 
 /* Bank import: skim transactions first, expand only the row being reviewed. */
 .bank-fields .field { margin: 0; min-width: 0; }
@@ -3719,3 +3491,156 @@ button.pin-chip:hover:not(:disabled) { background: var(--ink); opacity: 0.85; }
 .overview-tiles .overview-net strong { font-size: clamp(1.45rem, 5.6vw, 2.25rem); }
 @media (max-width: 899px) and (min-width: 561px) { .overview-tiles .overview-net strong { font-size: clamp(1.45rem, 3.4vw, 2.25rem); } }
 .overview-snapshot .hero-figure, .overview-snapshot .stat strong { font-family: var(--num); font-weight: 500; font-variant-numeric: lining-nums tabular-nums; }
+
+/* Phone layout (Claude Design "Wealthline Mobile", screens 2a–2h). Wide screens keep the layouts above. */
+.overview-title { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.overview-title p { flex-basis: 100%; }
+.overview-accounts-head { display: flex; justify-content: space-between; align-items: center; padding: 2px 4px; margin-bottom: 8px; font-size: 13px; }
+.overview-accounts-head strong { font-size: 14px; }
+.overview-accounts-head button.link { padding: 6px 0; min-height: 0; }
+.overview-month { text-align: left; align-items: stretch; gap: 8px; color: var(--ink); font-weight: 400; cursor: pointer; }
+.overview-month:hover:not(:disabled) { background: var(--surface); border-color: var(--accent); }
+.overview-month strong.up { color: var(--good); }
+.overview-month strong.down { color: var(--critical); }
+.month-bars { display: flex; align-items: flex-end; gap: 8px; height: 40px; }
+.month-bars i { flex: 1; border-radius: 6px 6px 2px 2px; }
+.month-labels { display: flex; justify-content: space-between; font-size: 11px; color: var(--ink-2); }
+.account-group-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding: 0 4px 8px; font-size: 12px; color: var(--ink-2); }
+.account-group-head .num-serif { font-size: 14px; color: var(--ink); }
+.detail-nav { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.detail-meta { margin: 6px 0 0; font-size: 12px; }
+.cashflow-phone-summary { display: flex; flex-direction: column; gap: 10px; }
+.cashflow-phone-summary > span { font-size: 13px; }
+.cashflow-phone-summary > strong { font-size: 36px; line-height: 1.1; }
+.cashflow-phone-summary > strong.up { color: var(--good); }
+.cashflow-phone-summary > strong.down { color: var(--critical); }
+.cashflow-hbar { display: grid; grid-template-columns: 32px minmax(0, 1fr) auto; gap: 10px; align-items: center; font-size: 13px; color: var(--ink-2); }
+.cashflow-hbar .num-serif { font-size: 15px; color: var(--ink); }
+.cashflow-hbar-track { height: 10px; border-radius: 5px; background: var(--surface-2); overflow: hidden; }
+.cashflow-hbar-track i { display: block; height: 100%; border-radius: 5px; }
+.cashflow-tabs { display: grid; grid-template-columns: repeat(3, 1fr); margin-bottom: 14px; }
+.cashflow-tabs button { position: relative; padding: 9px 0; min-height: 40px; }
+.cashflow-tabs .nav-badge { margin-left: 4px; }
+
+/* 更多: the pages the bottom bar leaves out, and the account and data menu. */
+.more-page { display: flex; flex-direction: column; gap: 12px; max-width: 560px; }
+.more-page .page-head { margin: 0; }
+.more-page .panel { margin: 0; border-radius: 18px; }
+.more-who { display: flex; align-items: center; gap: 12px; }
+.more-who > div { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+.more-who > div span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.more-who img, .more-who .avatar { flex: none; width: 44px; height: 44px; border-radius: 50%; font-size: 18px; }
+.more-links { list-style: none; padding: 4px 0; }
+.more-links li + li { border-top: 1px solid var(--hairline); }
+.more-links button { display: flex; justify-content: space-between; align-items: center; width: 100%; min-height: 52px; padding: 0 16px; border: 0; border-radius: 0; background: none; font-size: 15px; text-align: left; }
+.more-links button:hover:not(:disabled) { background: none; color: var(--accent); }
+.more-label { padding: 6px 4px 0; font-size: 12px; color: var(--ink-2); }
+.more-data { display: flex; flex-direction: column; gap: 10px; }
+.more-data > button { border-radius: 12px; padding: 11px; }
+.more-foot { padding: 4px 16px; }
+.more-foot .menu-foot { border-top: 0; padding: 12px 0; }
+
+@media (max-width: 899px) {
+  /* 2a 總覽 */
+  .overview-head { flex-wrap: nowrap; min-height: 44px; margin-bottom: 0; }
+  .overview-title .logo { flex: none; }
+  .overview .snapshot-timeline { display: flex; flex-direction: column; gap: 8px; padding: 18px 16px 12px; border-radius: 22px; }
+  .snapshot-timeline > * { order: 3; }
+  .snapshot-timeline .trend-head, .snapshot-timeline .trend-controls { display: contents; }
+  .snapshot-timeline .trend-head > div:first-child { order: 0; }
+  .snapshot-timeline > .trend { order: 1; }
+  .snapshot-timeline .trend-mode { display: none; }
+  .snapshot-timeline .trend-range { order: 2; display: grid; grid-template-columns: repeat(4, 1fr); }
+  .snapshot-timeline .trend-range button { padding: 8px 0; }
+  .overview .hero-change.up strong, .overview .hero-change.down strong { display: inline-block; padding: 3px 9px; border-radius: 999px; font-size: 12px; font-weight: 700; }
+  .overview .hero-change.up strong { background: var(--good-wash); color: var(--good); }
+  .overview .hero-change.down strong { background: var(--critical-wash); color: var(--critical); }
+  .overview .hero-change strong small { font-size: inherit; }
+  .overview-tiles { gap: 10px; }
+  .overview-tiles > .panel:not(.snapshot-timeline) { padding: 14px; border-radius: 20px; }
+  .overview-tiles .tile-stat > span:first-child { font-size: 12px; }
+  .overview-tiles .tile-stat small { font-size: 11px; }
+  .overview-tiles .overview-share { grid-column: auto; }
+  .overview-share .donut { width: 58px; height: 58px; }
+  .overview-share .donut::after { inset: 11px; }
+  .overview-donut-row { flex-direction: column; align-items: flex-start; gap: 10px; }
+  .overview-donut-row .share-legend { flex: none; width: 100%; }
+  .overview-share .share-legend { font-size: 11px; gap: 2px; }
+  .overview-share .share-legend li { grid-template-columns: 8px minmax(0, 1fr) auto; gap: 5px; }
+  .overview-share .share-legend i { width: 8px; height: 8px; }
+  .overview-tiles .overview-accounts { padding: 0; border: 0; background: none; }
+  .overview-accounts .account-strip { display: block; border: 1px solid var(--border); border-radius: 18px; background: var(--surface); }
+  .account-strip > li { padding: 0; border-right: 0; border-top: 1px solid var(--hairline); }
+  .account-strip > li:first-child { border-top: 0; }
+  .account-strip button, .account-strip > li.account-strip-rest { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 12px; align-items: center; padding: 12px 16px; min-height: 52px; }
+  .account-strip .label { grid-row: 1 / 3; font-size: 15px; font-weight: 500; color: var(--ink); }
+  .account-strip strong { font-size: 17px; text-align: right; }
+  .account-strip strong + span { text-align: right; font-size: 12px; }
+
+  /* 2b 帳戶 */
+  .add-account { width: 44px; height: 44px; padding: 0; font-size: 20px; }
+  .account-filter { display: grid; grid-template-columns: repeat(3, 1fr); margin-bottom: 14px; }
+  .account-filter button { padding: 9px 0; }
+  .account-table.filtered-out { display: none; }
+  .account-table { padding: 0; background: none; border: 0; }
+  .account-table .account-row.head { display: none; }
+  .account-table .account-list { border: 1px solid var(--border); border-radius: 18px; background: var(--surface); }
+  .account-table button.account-row { padding: 14px 16px; min-height: 52px; }
+  .account-table .account-row .name { font-size: 15px; }
+  .account-table .account-row .holdings-summary { display: none; }
+  .account-table .account-row .sub { grid-area: meta; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .account-table[data-kind='bank'] .account-row .change { display: none; }
+  .import-link { display: block; margin: 4px auto 0; padding: 12px; }
+
+  /* 2c 帳戶明細 */
+  .detail-head h2 { font-size: 24px; }
+  .account-facts { display: none; }
+  .detail-head > div { flex: 1; min-width: 0; }
+  table.data.holdings thead { display: none; }
+  table.data.holdings, table.data.holdings tbody { display: block; }
+  table.data.holdings tr { display: grid; grid-template-columns: auto minmax(0, 1fr) auto 32px; grid-template-areas: 'sym sym base del' 'qty price price del'; gap: 4px 8px; align-items: center; padding: 12px 0; border-top: 1px solid var(--hairline); }
+  table.data.holdings tr:first-child { border-top: 0; }
+  table.data.holdings td { display: block; padding: 0; border: 0; min-width: 0; }
+  table.data.holdings td:nth-child(1) { grid-area: sym; }
+  table.data.holdings td:nth-child(2) { grid-area: qty; display: flex; align-items: center; gap: 4px; }
+  table.data.holdings td:nth-child(3) { grid-area: price; text-align: left; }
+  table.data.holdings td:nth-child(4) { display: none; }
+  table.data.holdings td:nth-child(5) { grid-area: base; font-size: 17px; white-space: nowrap; }
+  table.data.holdings td:nth-child(6) { grid-area: del; }
+  table.data.holdings td:nth-child(2) .cell-input { width: 8em; padding-left: 0; text-align: left; }
+  table.data.holdings td:nth-child(2)::after { content: '×'; color: var(--muted); }
+  table.data.holdings td:nth-child(1) > div { display: inline; margin-left: 6px; }
+  .add-holding .row { flex-wrap: wrap; }
+  .add-holding .row > input { flex: 1 1 140px; min-width: 0; }
+
+  /* 2d 收支 */
+  .cashflow-page-head h2 { font-size: 22px; }
+  .cashflow-tiles .cashflow-phone-summary { order: 0; }
+  .cashflow-tiles .cashflow-pending-tile { order: 1; grid-column: 1 / -1; flex-direction: row; flex-wrap: wrap; align-items: center; gap: 4px 12px; padding: 12px 16px; border-radius: 16px; }
+  .cashflow-tiles .cashflow-pending-tile small { flex-basis: 100%; order: 2; }
+  .cashflow-tiles .cashflow-pending-tile .link { margin-left: auto; }
+  .cashflow-tiles .cashflow-categories-tile { order: 2; }
+  .cashflow-tiles .cashflow-bars-tile { order: 3; }
+
+  /* 2e 儲存審查: a bottom sheet. */
+  dialog.review { width: 100%; max-width: 100%; margin: auto 0 0; padding: 12px 20px max(20px, env(safe-area-inset-bottom)); border-radius: 26px 26px 0 0; max-height: 88dvh; }
+  dialog.review::before { content: ''; display: block; width: 40px; height: 5px; margin: 0 auto 14px; border-radius: 3px; background: var(--hairline); }
+  dialog.review h3 { font-size: 21px; }
+  dialog.review .review-actions { flex-direction: column-reverse; align-items: stretch; gap: 6px; }
+  dialog.review .review-actions button { width: 100%; }
+  dialog.review .review-actions button:not(.primary) { border: 0; background: none; color: var(--ink-2); }
+  dialog.review .review-actions button.primary { padding: 14px; }
+
+  /* 2f 匯入帳單: steps as a progress bar, the import button at the bottom. */
+  .import-steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; width: 100%; margin: 4px 0 0; font-size: 12px; }
+  .import-steps li { padding: 8px 0 0; border-radius: 0; background: none; border-top: 4px solid var(--hairline); text-align: center; }
+  .import-steps li.on, .import-steps li.done { background: none; border-top-color: var(--accent); color: var(--ink); }
+  .import-steps li.on { font-weight: 700; }
+  .statement-preview-layout { gap: 12px; }
+  .statement-preview-summary { display: contents; }
+  .statement-preview-summary > * { order: 2; }
+  .statement-preview-summary > .statement-files { order: 0; }
+  .statement-preview-layout > .statement-preview-main { order: 1; }
+  .statement-preview-summary button.primary { position: sticky; bottom: calc(68px + env(safe-area-inset-bottom)); z-index: 5; order: 3; box-shadow: 0 12px 30px -12px rgba(0, 0, 0, 0.35); }
+  .statement-preview-summary > p { order: 4; }
+}
