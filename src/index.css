@@ -3303,16 +3303,33 @@ dialog.expense-rule-dialog { max-width: 440px; }
 .cashflow-bar.on { outline: 2px solid var(--accent); outline-offset: 0; color: var(--ink); font-weight: 700; }
 .cashflow-bar-pair { display: flex; gap: 4px; align-items: flex-end; height: 200px; border-bottom: 1px solid var(--hairline); }
 .cashflow-bar-pair > span { flex: 1; min-height: 2px; border-radius: 8px 8px 2px 2px; }
+.cashflow-bar { position: relative; }
+.cashflow-bar-tip { position: absolute; left: 50%; top: 2px; transform: translateX(-50%); z-index: 1; padding: 6px 10px; border-radius: 8px; background: var(--ink); color: var(--surface); font-size: 12px; font-weight: 500; line-height: 1.4; white-space: nowrap; text-align: left; opacity: 0; pointer-events: none; transition: opacity 0.1s; }
+.cashflow-bar:hover .cashflow-bar-tip, .cashflow-bar:focus-visible .cashflow-bar-tip { opacity: 1; }
+.cashflow-records-tile { display: flex; flex-direction: column; gap: 10px; }
+.cashflow-month-records { display: flex; flex-direction: column; gap: 10px; }
+.cashflow-month-records + .cashflow-month-records { padding-top: 10px; border-top: 1px solid var(--hairline); }
+.cashflow-month-toggle { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; padding: 4px 0; border: 0; background: none; color: var(--ink); text-align: left; font-size: 15px; cursor: pointer; }
+.cashflow-month-toggle::before { content: '▸' / ''; color: var(--ink-2); }
+.cashflow-month-toggle[aria-expanded="true"]::before { content: '▾' / ''; }
+.cashflow-month-records > details { margin-left: 18px; }
+.cashflow-year-records { display: flex; flex-direction: column; gap: 10px; }
+.cashflow-year-records + .cashflow-year-records { padding-top: 10px; border-top: 1px solid var(--hairline); }
+.cashflow-year-toggle strong { font-size: 17px; }
+.cashflow-year-records > .cashflow-year-toggle + .cashflow-month-records, .cashflow-year-records > .cashflow-month-records + .cashflow-month-records { margin-left: 18px; }
+.cashflow-year-records > .cashflow-year-toggle + .cashflow-month-records { border-top: 0; padding-top: 0; }
+.cashflow-records > summary { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; cursor: pointer; }
+.cashflow-records > summary strong { font-size: 15px; }
+.cashflow-records > summary::before { content: '▸' / ''; color: var(--ink-2); }
+.cashflow-records[open] > summary::before { content: '▾' / ''; }
+.cashflow-records > summary + * { margin-top: 12px; }
+.cashflow-records > button.link { margin-top: 10px; font-size: 14px; }
 .cashflow-category-rows { list-style: none; margin: 0; padding: 0; font-size: 14px; }
 .cashflow-category-rows li { display: grid; grid-template-columns: 10px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 8px 0; border-top: 1px solid var(--hairline); }
 .cashflow-category-rows i { width: 10px; height: 10px; border-radius: 4px; }
 .cashflow-category-rows .num-serif { font-size: 16px; }
 .cashflow-income-details { margin-top: 10px; font-size: 13px; }
 .cashflow-income-details summary { cursor: pointer; color: var(--ink-2); }
-.cashflow-source-tile { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
-.cashflow-source-tile > div { display: flex; flex-direction: column; gap: 2px; }
-.cashflow-source-tile strong { font-size: 15px; }
-.cashflow-source-tile button.link { flex: none; font-size: 14px; }
 @media (max-width: 899px) {
   .cashflow-page-head { flex-direction: column; align-items: stretch; }
   .cashflow-page-controls { justify-content: flex-start; }
@@ -3635,6 +3652,7 @@ button.pin-chip:hover:not(:disabled) { background: var(--ink); opacity: 0.85; }
   .cashflow-tiles .cashflow-pending-tile .link { margin-left: auto; }
   .cashflow-tiles .cashflow-categories-tile { order: 2; }
   .cashflow-tiles .cashflow-bars-tile { order: 3; }
+  .cashflow-tiles .cashflow-records-tile { order: 4; }
 
   /* 2e 儲存審查: a bottom sheet. */
   dialog.review { width: 100%; max-width: 100%; margin: auto 0 0; padding: 12px 20px max(20px, env(safe-area-inset-bottom)); border-radius: 26px 26px 0 0; max-height: 88dvh; }
