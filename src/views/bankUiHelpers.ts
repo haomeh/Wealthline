@@ -5,6 +5,11 @@ export function classificationLabel(row:Pick<BankTransaction,'description'|'dire
  const c=classifyBankTransaction(row,rules)
  return c.kind==='income'?`${c.category}${row.direction==='debit'?' · 收入沖回':''}`:c.kind==='expense'?`${c.category}${row.direction==='credit'?' · 消費退款':''}`:c.kind==='excluded'?`不計收支 · ${c.reason}`:`未分類 · ${row.direction==='credit'?'計入收入':'計入消費'}`
 }
+/** Short category for a ledger row's second line; the full wording stays in classificationLabel. */
+export function classificationTag(row:Pick<BankTransaction,'description'|'direction'|'classification'>,rules:readonly BankCategoryRule[]):{text:string;tone?:'good'|'warn'} {
+ const c=classifyBankTransaction(row,rules)
+ return c.kind==='income'?{text:c.category,tone:'good'}:c.kind==='expense'?{text:c.category}:c.kind==='excluded'?{text:'不計收支'}:{text:'未分類',tone:'warn'}
+}
 /**
  * Identity placeholder for a parsed row whose every narration line is unowned (empty parser
  * summary). It only feeds the original-content import key; changing it changes that key. The
