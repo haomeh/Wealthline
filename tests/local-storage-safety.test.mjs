@@ -50,7 +50,7 @@ test('data already moved to IndexedDB: when IndexedDB fails to open, nothing sho
   assert.equal(local.hasLocalData(), true)
   await assert.rejects(local.loadLocal(), /無法開啟.*重新載入/)
   await assert.rejects(local.saveLocal(model.emptyData(), null), /無法開啟/)
-  await assert.rejects(local.replaceLocal(model.emptyData(), () => true), /無法開啟/)
+  await assert.rejects(local.replaceLocal(model.emptyData(), { raw: null, legacy: null }, () => true), /無法開啟/)
   await assert.rejects(local.clearLocal(), /無法開啟/)
   assert.equal(localStorage.getItem(DATA_KEY), null, 'nothing saved to localStorage')
   assert.equal(localStorage.getItem(STORED_KEY), '1')
@@ -69,6 +69,31 @@ test('without data in IndexedDB, a browser where it fails to open still uses loc
   assert.equal((await local.loadLocal()).raw, raw)
   const next = await local.saveLocal(model.emptyData(), raw)
   assert.equal(localStorage.getItem(DATA_KEY), next)
+})
+
+test('restore preview replaces unchanged legacy data when IndexedDB is unavailable', async () => {
+  const raw = saved()
+  localStorage.setItem(DATA_KEY, raw)
+  globalThis.indexedDB = failingIndexedDB
+  const local = await freshStore()
+  const preview = await local.readLocalPreview()
+  assert.equal(preview.data.accounts[0].name, 'Bank')
+  assert.equal(localStorage.getItem(DATA_KEY), raw, 'preview has no write')
+  const replacement = model.emptyData()
+  const written = await local.replaceLocal(replacement, preview.version, () => true)
+  assert.equal(localStorage.getItem(DATA_KEY), written)
+  assert.deepEqual(JSON.parse(written), replacement)
+})
+
+test('restore preview rejects changed legacy data when IndexedDB is unavailable', async () => {
+  localStorage.setItem(DATA_KEY, saved())
+  globalThis.indexedDB = failingIndexedDB
+  const local = await freshStore()
+  const preview = await local.readLocalPreview()
+  const other = JSON.stringify(model.emptyData())
+  localStorage.setItem(DATA_KEY, other)
+  await assert.rejects(local.replaceLocal(model.emptyData(), preview.version, () => true), local.LocalConflictError)
+  assert.equal(localStorage.getItem(DATA_KEY), other)
 })
 
 test('a copy to IndexedDB that does not read back keeps the data in localStorage', async () => {

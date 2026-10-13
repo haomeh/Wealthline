@@ -95,8 +95,8 @@ const editRate = async (currency, value) => {
     input.blur()
   })
 }
-const uploadFile = async (text) => {
-  const input = document.querySelector('input[type="file"]')
+const uploadFile = async (text, selector = 'input[type="file"]') => {
+  const input = document.querySelector(selector)
   assert.ok(input)
   Object.defineProperty(input, 'files', { configurable: true, value: [new File([text], 'wealthline-data.json', { type: 'application/json' })] })
   await act(async () => input.dispatchEvent(new Event('change', { bubbles: true })))
@@ -192,6 +192,10 @@ test('uploading a data file from the home page restores it into local mode', asy
   const data = { ...fixture(), fxRates: { USD: 31, SGD: 23 } }
   await render()
   await uploadFile(JSON.stringify(data))
+  assert.ok(document.querySelector('dialog[aria-labelledby="backup-restore-title"]'))
+  assert.equal(idbRaw(), null, 'preview has no storage write')
+  await click(button('確認取代本機資料'))
+  await settle()
   assert.equal(window.location.pathname, '/app')
   assert.deepEqual(stored(), model.parseWealthData(data))
   assert.equal(localStorage.getItem(ACTIVE_KEY), '1')
@@ -220,14 +224,39 @@ test('the Drive main file of split data is refused as an upload, since it lacks 
   assert.equal(window.location.pathname, '/')
 })
 
-test('declining the replace prompt keeps the stored data', async () => {
+test('canceling the restore preview keeps the stored data', async () => {
   seed(JSON.stringify(fixture()))
   const before = idbRaw()
-  globalThis.confirm = () => false
   await render()
   await uploadFile(JSON.stringify({ ...fixture(), fxRates: { USD: 1 } }))
+  assert.ok(document.querySelector('dialog[aria-labelledby="backup-restore-title"]'))
+  await click(button('取消還原'))
   assert.equal(idbRaw(), before)
+  assert.equal(document.querySelector('dialog[aria-labelledby="backup-restore-title"]'), null)
   assert.equal(window.location.pathname, '/')
+})
+
+test('choosing another file replaces the preview and commits only the second file', async () => {
+  await render()
+  await uploadFile(JSON.stringify({ ...fixture(), fxRates: { USD: 11 } }))
+  await uploadFile(JSON.stringify({ ...fixture(), fxRates: { USD: 22 } }), 'dialog input[type="file"]')
+  assert.equal(idbRaw(), null)
+  await click(button('確認取代本機資料'))
+  await settle()
+  assert.equal(stored().fxRates.USD, 22)
+})
+
+test('a destination change after preview blocks restore and asks for a new preview', async () => {
+  seed(JSON.stringify(fixture()))
+  await render()
+  await uploadFile(JSON.stringify({ ...fixture(), fxRates: { USD: 11 } }))
+  const other = JSON.stringify({ ...fixture(), fxRates: { USD: 44 } })
+  seed(other)
+  await click(button('確認取代本機資料'))
+  await settle()
+  assert.equal(idbRaw(), other)
+  assert.equal(document.querySelector('dialog[aria-labelledby="backup-restore-title"]'), null)
+  assert.match(document.querySelector('.signin-box .error').textContent, /重新選擇資料檔並預覽/)
 })
 
 test('leaving local mode keeps the data for next time; deleting removes it', async () => {
@@ -378,7 +407,7 @@ test('without Web Locks local mode refuses to write instead of saving unlocked',
   assert.match(document.querySelector('[role="alert"]').textContent, /Web Locks/)
   assert.equal(idbRaw(), before)
   assert.ok(button('儲存變更'))
-  await assert.rejects(store.replaceLocal(fixture(), () => true), /Web Locks/)
+  await assert.rejects(store.replaceLocal(fixture(), { raw: null, legacy: null }, () => true), /Web Locks/)
   await assert.rejects(store.clearLocal(), /Web Locks/)
   assert.equal(idbRaw(), before)
 })

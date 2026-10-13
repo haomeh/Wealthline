@@ -20,7 +20,7 @@ import { archiveSummary, summaryCashflow, emptyDriveState, loadDrive, mergeParts
 import { applyFetchedRates, emptyData, missingRates, parseWealthData, ratesStale, usedCurrencies, type WealthData } from './model'
 import { finishSave } from './saveState'
 import { classifyBankTransaction } from './bankTransactions'
-import { clearLocal, downloadDataFile, hasLocalData, loadLocal, opensLocal, readDataFile, replaceLocal, saveLocal, setLocalActive, storageEstimate, type LocalFile } from './localStore'
+import { clearLocal, downloadDataFile, hasLocalData, loadLocal, opensLocal, readDataFile, readLocalPreview, replaceLocal, saveLocal, setLocalActive, storageEstimate, LocalConflictError, type LocalFile, type LocalPreview } from './localStore'
 import { localDate, pendingChanges, pendingLiabilityChanges, recordSave, revertChange, revertLiabilityChange } from './history'
 import { applyQuotes, fetchHoldingQuotes } from './quotes'
 import { fetchRates } from './rates'
@@ -43,6 +43,8 @@ import { Link, Logo, PrivacyNotice, SiteFooter } from './views/Site'
 import { DeviceIcon, UploadButton } from './views/LocalData'
 import { StorageMeter, StorageNotice } from './views/StorageMeter'
 import { DataPrivacy } from './views/DataPrivacy'
+import { summarizeBackup } from './backupPreview'
+import { BackupRestore } from './views/BackupRestore'
 import { byteSize, serializeData } from './storageLimits'
 
 // When the data was last saved, as the sidebar shows it: the time today, else the date.
@@ -100,8 +102,10 @@ export default function App() {
   const dirtyRef = useRef(false)
   dirtyRef.current = dirty
   const [status, setStatus] = useState<Status>({ kind: 'idle' })
-  const [dialogError, setDialogError] = useState<{ scope: 'privacy'; text: string } | null>(null)
+  const [dialogError, setDialogError] = useState<{ scope: 'privacy' | 'restore'; text: string } | null>(null)
   const [dataPrivacyOpen, setDataPrivacyOpen] = useState(false)
+  const [restorePreview, setRestorePreview] = useState<{ uploaded: WealthData; destination: LocalPreview; summary: ReturnType<typeof summarizeBackup>; session: number; selection: number } | null>(null)
+  const restoreSelection = useRef(0)
   const returnToDataControl = useRef<HTMLElement | null>(null)
   // Edits to balances or holdings are shown for review before they become history.
   const [reviewing, setReviewing] = useState(false)
@@ -443,6 +447,7 @@ export default function App() {
     dirtyRef.current && !confirm('有尚未儲存的修改，登出後會遺失。要繼續嗎？') ? undefined : run('登出中…', async () => {
       const previous = token.current
       sessionVersion.current++
+      setRestorePreview(null)
       setDataPrivacyOpen(false)
       returnToDataControl.current = null
       clearSession()
@@ -468,21 +473,52 @@ export default function App() {
     })
 
   // Restores a downloaded data file into this browser, replacing what is stored here.
-  const upload = (file: File) =>
-    run('讀取資料檔…', async () => {
-      setDialogError(null)
+  const upload = (file: File) => {
+    const selection = ++restoreSelection.current
+    const session = sessionVersion.current
+    const fromPrivacy = dataPrivacyOpen
+    setDialogError(null)
+    setRestorePreview(null)
+    void run('讀取資料檔…', async () => {
       // Leaving local mode, deleting its data or opening another session meanwhile cancels the upload.
-      const session = sessionVersion.current
-      const current = () => session === sessionVersion.current
-      const uploaded = await readDataFile(file)
+      const current = () => session === sessionVersion.current && selection === restoreSelection.current
+      const { data: uploaded, sourceUpdatedAt } = await readDataFile(file)
       if (!current()) return
-      const replacing = localMode.current ? !!saved.current || dirtyRef.current : hasLocalData()
-      if (replacing && !confirm('上傳的資料檔會取代此瀏覽器中目前的資料，包括未儲存的修改。建議先下載目前的資料備份。要繼續嗎？')) return
-      const raw = await replaceLocal(uploaded, current)
+      const destination = await readLocalPreview()
+      if (current()) setRestorePreview({ uploaded, destination, summary: summarizeBackup(uploaded, file, sourceUpdatedAt), session, selection })
+    }, (text) => {
+      if (fromPrivacy && session === sessionVersion.current && selection === restoreSelection.current) setDialogError({ scope: 'privacy', text })
+    })
+  }
+
+  const confirmRestore = () => {
+    const preview = restorePreview
+    if (!preview) return
+    setDialogError(null)
+    let conflict = false
+    void run('還原資料檔…', async () => {
+      const current = () => preview.session === sessionVersion.current && preview.selection === restoreSelection.current
+      if (!current()) return
+      let raw: string | null
+      try {
+        raw = await replaceLocal(preview.uploaded, preview.destination.version, current)
+      } catch (error) {
+        if (error instanceof LocalConflictError) {
+          conflict = true
+          setRestorePreview(null)
+          throw new Error('此瀏覽器中的資料已變更；請重新選擇資料檔並預覽後再確認。')
+        }
+        throw error
+      }
       if (raw === null || !current()) return
-      await openLocal({ data: uploaded, raw })
+      setRestorePreview(null)
+      await openLocal({ data: preview.uploaded, raw })
       navigate('/app')
-    }, (text) => { if (dataPrivacyOpen) setDialogError({ scope: 'privacy', text }) })
+    }, (text) => {
+      if (preview.session === sessionVersion.current && preview.selection === restoreSelection.current)
+        setDialogError({ scope: conflict && dataPrivacyOpen ? 'privacy' : 'restore', text })
+    })
+  }
 
   // Leaves local mode, keeping the stored data for next time unless `erase` is set.
   const leaveLocal = (erase = false) => {
@@ -492,6 +528,7 @@ export default function App() {
     if (question && !confirm(question)) return
     // First, so an upload still being read or waiting to write is dropped (see `upload`).
     sessionVersion.current++
+    setRestorePreview(null)
     setDataPrivacyOpen(false)
     returnToDataControl.current = null
     setLocalActive(false)
@@ -655,7 +692,7 @@ export default function App() {
 
   if (!user && !local) {
     if (opening) return <Opening step={opening.step} profile={opening.profile} />
-    return (
+    return (<>
       <Landing
         returning={returning}
         hasLocal={hasLocalData()}
@@ -666,7 +703,8 @@ export default function App() {
         onLocal={startLocal}
         onUpload={upload}
       />
-    )
+      {restorePreview && <BackupRestore source={restorePreview.summary} destination={restorePreview.destination.data} destinationInvalid={restorePreview.destination.invalid} dirty={dirty} busy={busy} error={dialogError?.scope === 'restore' ? dialogError.text : ''} onConfirm={confirmRestore} onCancel={() => { setDialogError(null); setRestorePreview(null) }} onUpload={upload} />}
+    </>)
   }
 
   return (
@@ -748,6 +786,8 @@ export default function App() {
         onDeleteLocal={() => leaveLocal(true)}
         onClose={closeDataPrivacy}
       />}
+
+      {restorePreview && <BackupRestore source={restorePreview.summary} destination={restorePreview.destination.data} destinationInvalid={restorePreview.destination.invalid} dirty={dirty} busy={busy} error={dialogError?.scope === 'restore' ? dialogError.text : ''} onConfirm={confirmRestore} onCancel={() => { setDialogError(null); setRestorePreview(null) }} onUpload={upload} />}
 
       {reviewing && data && (pending.length > 0 || pendingDebts.length > 0) && (
         <SaveReview
