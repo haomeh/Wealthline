@@ -135,13 +135,14 @@ test('an old-key token of another account or past its expiry is dropped, and sig
 
 test('the reload script shows the restoring screen for a token under the new or the old key', () => {
   const script = readFileSync(new URL('../index.html', import.meta.url), 'utf8').match(/<script>(.*?)<\/script>/s)[1]
-  const run = (tab) => {
+  const run = (tab, hash = '') => {
     const classes = new Set()
     const get = (map) => ({ getItem: (k) => map[k] ?? null })
-    runInNewContext(script, { sessionStorage: get(tab), localStorage: get({}), document: { documentElement: { classList: { add: (c) => classes.add(c) } } } })
+    runInNewContext(script, { location: { hash }, sessionStorage: get(tab), localStorage: get({}), document: { documentElement: { classList: { add: (c) => classes.add(c) } } } })
     return classes.has('restoring')
   }
   assert.equal(run({ 'wealthline.token': '{}' }), true)
   assert.equal(run({ 'we-wealth.token': '{}' }), true)
   assert.equal(run({}), false)
+  assert.equal(run({}, '#access_token=x'), true, 'the return from Google sign-in')
 })

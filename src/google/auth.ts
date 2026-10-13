@@ -1,14 +1,16 @@
-// Google sign-in via Google Identity Services (GIS) token model.
+// Google sign-in: a same-tab OAuth redirect from the sign-in page, and the Google Identity Services (GIS)
+// token popup to renew an expired token.
 // The access token lives only in memory; nothing is stored on any server.
 
 const GIS_SRC = 'https://accounts.google.com/gsi/client'
+const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.file'
 
 export const SCOPES = [
   'openid',
   'email',
   'profile',
   // Only files this app creates or the user opens with it; the files stay visible in the user's Drive.
-  'https://www.googleapis.com/auth/drive.file',
+  DRIVE_SCOPE,
 ].join(' ')
 
 export interface AccessToken {
@@ -47,14 +49,27 @@ function clientId(): string {
   return id
 }
 
+// Starts loading GIS before the user clicks: Safari only lets the click open Google's popup if
+// the popup opens in that click, not after the script finishes downloading.
+export function preloadGis(): void {
+  loadGis().catch(() => {
+    // The click retries the load and shows the error.
+  })
+}
+
 // prompt '' reuses an existing grant without showing the consent screen again;
 // 'consent' forces the account chooser and consent screen.
 // loginHint (an email) lets Google skip the account chooser for a returning user.
-export async function requestAccessToken(
+export function requestAccessToken(
   prompt: '' | 'consent' | 'select_account' = '',
   loginHint?: string,
 ): Promise<AccessToken> {
-  await loadGis()
+  // When GIS is already loaded, open the popup synchronously so it stays inside the user's click.
+  if (window.google?.accounts?.oauth2) return openTokenPopup(prompt, loginHint)
+  return loadGis().then(() => openTokenPopup(prompt, loginHint))
+}
+
+function openTokenPopup(prompt: '' | 'consent' | 'select_account', loginHint?: string): Promise<AccessToken> {
   return new Promise((resolve, reject) => {
     const client = window.google!.accounts.oauth2.initTokenClient({
       client_id: clientId(),
@@ -66,16 +81,83 @@ export async function requestAccessToken(
           reject(new Error(res.error_description || res.error || '登入失敗'))
           return
         }
-        if (!window.google!.accounts.oauth2.hasGrantedAllScopes(res, 'https://www.googleapis.com/auth/drive.file')) {
+        if (!window.google!.accounts.oauth2.hasGrantedAllScopes(res, DRIVE_SCOPE)) {
           reject(new Error('需要授權 Google Drive 存取權限才能儲存資料'))
           return
         }
         resolve({ value: res.access_token, expiresAt: Date.now() + Number(res.expires_in) * 1000 })
       },
-      error_callback: (err) => reject(new Error(err.message || err.type)),
+      error_callback: (err) => reject(new Error(err.type === 'popup_failed_to_open'
+        ? 'Google 登入視窗被瀏覽器擋下，請再按一次登入，或允許此網站開啟彈出式視窗。'
+        : err.message || err.type)),
     })
     client.requestAccessToken()
   })
+}
+
+// Same-tab sign-in: the page goes to Google and Google sends the token back in the URL fragment.
+// Safari can open the popup flow as a full tab that never returns to this page, so the sign-in
+// page uses this instead. The fragment never reaches a server, and `state` ties the answer to
+// the sign-in this tab started. Google must list `redirectUri()` as an authorized redirect URI.
+const REDIRECT_STATE_KEY = 'wealthline.oauth.state'
+export const redirectUri = (): string => `${window.location.origin}/`
+
+export function startRedirectSignIn(prompt: '' | 'select_account' = '', loginHint?: string): void {
+  const state = Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, '0')).join('')
+  try {
+    sessionStorage.setItem(REDIRECT_STATE_KEY, state)
+  } catch {
+    throw new Error('瀏覽器封鎖了網站儲存空間，無法登入。請關閉無痕模式或允許網站資料後再試。')
+  }
+  const params = new URLSearchParams({
+    client_id: clientId(),
+    redirect_uri: redirectUri(),
+    response_type: 'token',
+    scope: SCOPES,
+    include_granted_scopes: 'true',
+    state,
+  })
+  if (prompt) params.set('prompt', prompt)
+  if (loginHint) params.set('login_hint', loginHint)
+  window.location.assign(`https://accounts.google.com/o/oauth2/v2/auth?${params}`)
+}
+
+export type RedirectResult = { token: AccessToken } | { error: string } | null
+
+// The answer Google sent back to this page load, or null when this load is not one. Reading it
+// changes nothing; takeRedirectResult also removes it.
+export function peekRedirectResult(): RedirectResult {
+  if (typeof window === 'undefined') return null
+  const params = new URLSearchParams(window.location.hash.slice(1))
+  if (!params.has('state') || !(params.has('access_token') || params.has('error'))) return null
+  let expected: string | null = null
+  try {
+    expected = sessionStorage.getItem(REDIRECT_STATE_KEY)
+  } catch {
+    // Storage blocked: the answer cannot be verified.
+  }
+  if (!expected || params.get('state') !== expected) return { error: '無法確認這次 Google 登入是從本頁開始的，請重新登入。' }
+  const error = params.get('error')
+  if (error) return { error: error === 'access_denied' ? '已取消 Google 登入。' : `Google 登入失敗（${error}）` }
+  const value = params.get('access_token')
+  const expiresIn = Number(params.get('expires_in'))
+  if (!value || !(expiresIn > 0)) return { error: '登入失敗' }
+  if (!(params.get('scope') ?? '').split(' ').includes(DRIVE_SCOPE)) return { error: '需要授權 Google Drive 存取權限才能儲存資料' }
+  return { token: { value, expiresAt: Date.now() + expiresIn * 1000 } }
+}
+
+// Reads the answer once: the fragment leaves the address bar (and history) and the state is
+// used up, so a reload or a copied link cannot sign in again with it.
+export function takeRedirectResult(): RedirectResult {
+  const result = peekRedirectResult()
+  if (!result) return null
+  window.history.replaceState(window.history.state, '', window.location.pathname + window.location.search)
+  try {
+    sessionStorage.removeItem(REDIRECT_STATE_KEY)
+  } catch {
+    // Nothing stored.
+  }
+  return result
 }
 
 export async function revokeAccessToken(token: AccessToken): Promise<void> {

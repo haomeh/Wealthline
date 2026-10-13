@@ -89,6 +89,57 @@ test('a renewed token from the same account is accepted', async () => {
   assert.equal((await auth.renewAccessToken(profile)).value, 'same-token')
 })
 
+test('with Google Identity Services loaded, the sign-in popup opens within the click itself', async () => {
+  let opened = false
+  globalThis.window = { google: { accounts: { oauth2: {
+    initTokenClient: ({ callback }) => ({ requestAccessToken: () => { opened = true; queueMicrotask(() => callback({ access_token: 't', expires_in: 3600 })) } }),
+    hasGrantedAllScopes: () => true,
+  } } } }
+  const pending = auth.requestAccessToken('select_account')
+  // Safari blocks popups opened after the click handler has returned.
+  assert.equal(opened, true)
+  assert.equal((await pending).value, 't')
+})
+
+test('a popup the browser blocked asks the user to click again', async () => {
+  globalThis.window = { google: { accounts: { oauth2: {
+    initTokenClient: ({ error_callback }) => ({ requestAccessToken: () => error_callback({ type: 'popup_failed_to_open', message: 'Failed to open popup window' }) }),
+    hasGrantedAllScopes: () => true,
+  } } } }
+  await assert.rejects(() => auth.requestAccessToken('select_account'), /再按一次登入/)
+})
+
+test('same-tab sign-in sends Google this page as the redirect URI and a fresh state', () => {
+  let target
+  globalThis.window = { location: { origin: 'https://wealthline.example', assign: (url) => { target = new URL(url) } } }
+  auth.startRedirectSignIn('', 'a@example.com')
+  assert.equal(target.origin + target.pathname, 'https://accounts.google.com/o/oauth2/v2/auth')
+  const p = target.searchParams
+  assert.equal(p.get('client_id'), 'test-client')
+  assert.equal(p.get('redirect_uri'), 'https://wealthline.example/')
+  assert.equal(p.get('response_type'), 'token')
+  assert.match(p.get('scope'), /drive\.file/)
+  assert.equal(p.get('login_hint'), 'a@example.com')
+  assert.equal(p.get('prompt'), null)
+  assert.match(p.get('state'), /^[0-9a-f]{32}$/)
+  assert.equal(tabStorage.get('wealthline.oauth.state'), p.get('state'))
+  auth.startRedirectSignIn('select_account')
+  assert.equal(target.searchParams.get('prompt'), 'select_account')
+  assert.notEqual(target.searchParams.get('state'), p.get('state'))
+})
+
+test('a sign-in answer without Drive access or with an error is not accepted', () => {
+  tabStorage.set('wealthline.oauth.state', 's')
+  const answer = (hash) => { globalThis.window = { location: { hash } }; return auth.peekRedirectResult() }
+  assert.equal(answer(''), null)
+  assert.equal(answer('#features'), null)
+  assert.match(answer('#state=s&access_token=t&expires_in=3599&scope=openid%20email').error, /Drive/)
+  assert.match(answer('#state=s&error=access_denied').error, /取消/)
+  assert.equal(answer('#state=s&access_token=t&expires_in=3599&scope=openid%20https://www.googleapis.com/auth/drive.file').token.value, 't')
+  tabStorage.clear()
+  assert.match(answer('#state=s&access_token=t&expires_in=3599&scope=https://www.googleapis.com/auth/drive.file').error, /重新登入/)
+})
+
 test('userinfo without a stable account identifier is rejected', async () => {
   globalThis.fetch = async () => Response.json({ email: 'a@example.com', name: 'Alice' })
   await assert.rejects(() => auth.fetchProfile(token))
