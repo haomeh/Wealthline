@@ -396,3 +396,38 @@ test('profiles of one bank match by brand pattern, and a profile without cover i
  const declining={...copy,cover:()=>false}
  assert.deepEqual(bank.parseBankStatement(compact('taishin'),{},[declining,...BANK_PROFILES]),taishinExpected)
 })
+
+// Synthetic Taishin pages: invented account numbers and amounts on the measured column positions.
+const taishinRow=(y,date,text,debit,credit,edges=[317,377],x=[53,124,177])=>[item('100200****3456',x[0],y),item(date,x[1],y),...(text?[item(text,x[2],y)]:[]),...(debit?[right(debit,edges[0],y)]:[]),...(credit?[right(credit,edges[1],y)]:[])]
+const taishinHeader=(y,anchors,balance='帳戶餘額',fx=false)=>[item('帳號',75,y),item('日期',anchors[0],y),item('摘要',anchors[1],y),item(fx?'幣別':'支票號碼',anchors[1]+40,y),item('支出金額',anchors[2],y),item('存入金額',anchors[3],y),item(balance,anchors[4],y),item('備註',anchors[4]+93,y)]
+test('Taishin statements since 2021-07: renamed balance column and both moved column sets',()=>{
+ for(const [anchors,edges,x,balance] of [[[154,207,297,356,500],[342,402],[60,144,198],'帳戶餘額'],[[135,180,262,321,386],[307,367],[53,124,172],'帳戶餘額'],[[135,185,272,331,396],[317,377],[53,124,177],'帳戶餘額']]){
+  const r=bank.parseBankStatement([page(1,[...mast('台新銀行綜合對帳單'),item('新臺幣帳戶的往來明細',49,720),...taishinHeader(700,anchors,balance),...taishinRow(680,'2031/04/08','轉帳支取','$1,200','',edges,x),...taishinRow(663,'2031/04/09','轉帳存入','','$350',edges,x)])])
+  assert.equal(r.status,'recognized',String(anchors));assert.equal(r.bank,'Taishin');assert.deepEqual(r.sections[0].rows.map(w=>[w.date,w.direction,w.amount,w.currency]),[['2031-04-08','debit',1200,'TWD'],['2031-04-09','credit',350,'TWD']])
+ }
+})
+test('Taishin rows run to the page bottom and continue headerless only for the same account',()=>{
+ const head=[...mast('台新銀行綜合對帳單'),item('新臺幣帳戶的往來明細',49,720),...taishinHeader(700,[135,185,272,331,396])]
+ const next=[item('數位跨行 備註',450,826),...taishinRow(820,'2031/04/11','CD轉出','$90',''),item('公告事項一二三四五六七八九十一二三四五六七八九十一二三四五六七八九十一二三四五六七八九十',46,700),...taishinRow(680,'2031/04/12','轉帳支取','$5','')]
+ const r=bank.parseBankStatement([page(1,[...head,...taishinRow(680,'2031/04/08','轉帳支取','$1,200',''),...taishinRow(40,'2031/04/10','轉帳存入','','$70')]),page(2,next)])
+ assert.equal(r.status,'recognized');assert.deepEqual(r.sections[0].rows.map(w=>w.amount),[1200,70,90])
+ const other=bank.parseBankStatement([page(1,[...head,...taishinRow(40,'2031/04/10','轉帳存入','','$70')]),page(2,next.map(i=>i.text==='100200****3456'?{...i,text:'900800****7654'}:i))])
+ assert.deepEqual(other.sections.flatMap(s=>s.rows).map(w=>w.amount),[70])
+})
+test('Taishin two-line summary around a row and the foreign table with printed zero amounts',()=>{
+ const fx=(y,text,currency,debit,credit)=>[...taishinRow(y,'2031/04/21',text,debit,credit,[317,377],[57,124,175]),item(currency,231,y)]
+ const r=bank.parseBankStatement([page(1,[...mast('台新銀行綜合對帳單'),item('新臺幣帳戶的往來明細',49,720),...taishinHeader(700,[135,185,272,331,396]),item('跨行轉帳',177,687),...taishinRow(680,'2031/04/08','','$15',''),item('手續費',181,673),
+  item('外幣帳戶的往來明細',49,620),...taishinHeader(600,[135,185,272,331,396],'帳戶餘額',true),...fx(580,'INTEREST','JPY','$0','$0'),...fx(563,'INTEREST','USD','$0','$0.12'),...fx(546,'DRAW','USD','$20.00','$0')])])
+ assert.equal(r.status,'recognized');assert.equal(r.sections[0].rows[0].description,'跨行轉帳手續費')
+ assert.deepEqual(r.sections.map(s=>[s.currency,s.noTransactions,...s.rows.map(w=>w.direction+w.amount)]),[['TWD',false,'debit15'],['JPY',true],['USD',false,'credit0.12','debit20']])
+})
+test('Taishin note column joins the summary: shared balance item, wrapped lines of the nearest row, empty note unchanged',()=>{
+ const r=bank.parseBankStatement([page(1,[...mast('台新銀行綜合對帳單'),item('新臺幣帳戶的往來明細',49,720),...taishinHeader(700,[135,185,272,331,396]),
+  ...taishinRow(680,'2031/04/08','轉帳支取','$1,200',''),item('$8,800 午餐費',414,680),
+  item('數位跨行900-12345678**',450,663),...taishinRow(656,'2031/04/09','CD轉出','$300',''),item('$8,500',418,656),item('**9012',450,649),
+  ...taishinRow(625,'2031/04/10','存款息','','$7'),item('$8,507',418,625),
+  ...taishinRow(608,'2031/04/11','手續費','$15',''),item('$8,492 手續費',414,608)])])
+ assert.equal(r.status,'recognized');const d=r.sections[0].rows.map(w=>w.description)
+ assert.equal(d[0],'轉帳支取 · 午餐費');assert.match(d[1],/^CD轉出 · 數位跨行/);assert.ok(d[1].endsWith('**9012'));assert.equal(d[2],'存款息');assert.equal(d[3],'手續費')
+ assert.deepEqual(r.sections[0].rows.map(w=>w.amount),[1200,300,7,15])
+})
