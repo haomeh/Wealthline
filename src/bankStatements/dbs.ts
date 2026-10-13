@@ -1,4 +1,5 @@
 import { labeledAccount, tableHeader, type Layout, type SpatialLine } from './common';
+import type { BankProfile } from './profile';
 
 // Taiwan's supplied summary has no activity evidence. Keep it unsupported.
 export const DBS_UNSUPPORTED = 'unsupported-dbs-activity-layout';
@@ -19,3 +20,9 @@ export function dbsSingaporeContext(lines: readonly SpatialLine[], index: number
     if (accounts.size !== 1 || labels.length !== 1 || !/^CURRENCY:\s*SINGAPORE DOLLAR$/i.test(labels[0].text)) return;
     return { account: [...accounts][0], currency: 'SGD' };
 }
+
+/** The cover alone never selects DBS: the parser also needs dbsSingaporeContext evidence. */
+export const singaporeProfile: BankProfile = {
+    layout: singaporeLayout, brand: /DBS|星展銀行/i,
+    acceptTable: ({ lines, index }) => dbsSingaporeContext(lines, index) ?? 'unsupported-dbs-sg-account',
+};

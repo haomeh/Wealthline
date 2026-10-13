@@ -344,3 +344,55 @@ test('closing dates reject conflicting labels on the same cover line and invalid
  }
  const p=dbsSg();p[0].items.push(item('Statement Date: 30 September 2031 as at 30 Sep 2031',231,508));assert.equal(bank.parseBankStatement(p).balances[0].date,'2031-09-30');
 })
+test('every bank profile has a distinct layout bank name and a matching asset institution',async()=>{
+ const {BANK_PROFILES}=await server.ssrLoadModule('/src/bankStatements/profiles.ts'),assets=await server.ssrLoadModule('/src/bankStatementAssets.ts')
+ const names=BANK_PROFILES.map(p=>p.layout.bank)
+ assert.equal(new Set(names).size,names.length)
+ for(const name of names)assert.ok(assets.bankStatementIdentity(name),name)
+})
+const relabel=(pages,from,to)=>pages.map(p=>({...p,items:p.items.map(i=>i.text===from?{...i,text:to}:i)}))
+const codes=r=>[...r.warnings,...r.sections.flatMap(s=>s.warnings)].map(w=>w.code)
+test('each bank profile rejects an unsupported table with its own warning code',()=>{
+ const usd=bank=>relabel(relabel(compact(bank),'TWD 交易明細','USD 交易明細'),'帳戶摘要 帳號: 8800002222 TWD','帳戶摘要 帳號: 8800002222 USD')
+ const cases=[
+  ['Taishin',usd('taishin'),'unsupported-taishin-currency'],
+  ['Fubon',usd('fubon'),'unsupported-fubon-currency'],
+  ['E.SUN',relabel(compact('esun'),'轉出交易明細','交易明細'),'unsupported-esun-table'],
+  ['HSBC Singapore',relabel(hsbc(true),'SGD Savings Account No: 7700001111','USD Savings Account No: 7700001111'),'unsupported-hsbc-sg-account'],
+  ['HSBC Singapore',relabel(hsbc(true),'SGD Savings Account No: 7700001111','SGD Current Account No: 7700001111'),'unsupported-hsbc-sg-account'],
+  ['HSBC Taiwan',relabel(hsbc(false),'TWD 活期 帳號: 7700001111','EUR 活期 帳號: 7700001111'),'unsupported-hsbc-tw-account'],
+  ['HSBC Taiwan',relabel(hsbc(false),'TWD 活期 帳號: 7700001111','TWD 信用卡 帳號: 7700001111'),'unsupported-hsbc-tw-account'],
+ ]
+ for(const [name,pages,code] of cases){
+  const r=bank.parseBankStatement(pages)
+  assert.equal(r.bank,name);assert.equal(r.recognizedCount,0,code);assert.equal(r.status,'unsupported',code);assert.deepEqual(codes(r),[code,'unsupported-activity-layout'])
+ }
+ // A second DBS table without its own My Account heading is skipped; the first table still imports.
+ const dbs=dbsSg();dbs.push({...dbs[1],page:4,items:dbs[1].items.filter(i=>i.text!=='My Account')})
+ const r=bank.parseBankStatement(dbs)
+ assert.equal(r.bank,'DBS Singapore');assert.equal(r.recognizedCount,2);assert.deepEqual(r.warnings.filter(w=>w.page===4).map(w=>w.code),['unsupported-dbs-sg-account'])
+})
+test('covers naming two regions or two banks fail closed; an HSBC cover without a region uses the table',()=>{
+ for(const cover of ['HSBC Singapore Taiwan','HSBC Taiwan 台新銀行','台北富邦銀行 玉山銀行']){
+  const r=bank.parseBankStatement(relabel(hsbc(true),'HSBC Singapore',cover))
+  assert.equal(r.status,'unsupported',cover);assert.equal(r.bank,undefined,cover);assert.deepEqual(codes(r),['unsupported-bank-layout'],cover)
+ }
+ assert.equal(bank.parseBankStatement(relabel(hsbc(true),'HSBC Singapore','HSBC')).bank,'HSBC Singapore')
+ assert.equal(bank.parseBankStatement(relabel(hsbc(false),'HSBC Taiwan','HSBC')).bank,'HSBC Taiwan')
+})
+test('profiles of one bank match by brand pattern, and a profile without cover is skipped',async()=>{
+ const {BANK_PROFILES}=await server.ssrLoadModule('/src/bankStatements/profiles.ts')
+ const dbsSingapore=BANK_PROFILES.find(p=>p.layout.bank==='DBS Singapore'),taishin=BANK_PROFILES.find(p=>p.layout.bank==='Taishin')
+ const expected=bank.parseBankStatement(dbsSg()),taishinExpected=bank.parseBankStatement(compact('taishin'))
+ assert.equal(expected.bank,'DBS Singapore');assert.equal(taishinExpected.bank,'Taishin')
+ // Another DBS profile with a cover that declines: the cover-less DBS Singapore profile must not be called.
+ for(const brand of [dbsSingapore.brand,/DBS|星展銀行/i]){
+  const dbsTaiwan={layout:{...dbsSingapore.layout,bank:'DBS Taiwan'},brand,cover:()=>false}
+  assert.deepEqual(bank.parseBankStatement(dbsSg(),{},[...BANK_PROFILES,dbsTaiwan]),expected,String(brand===dbsSingapore.brand))
+ }
+ // A later profile with an equal but separate brand pattern is the same bank, not a second bank.
+ const copy={...taishin,brand:/台新(?:銀行|國際)/,layout:{...taishin.layout,bank:'Taishin copy'}}
+ assert.deepEqual(bank.parseBankStatement(compact('taishin'),{},[...BANK_PROFILES,copy]),taishinExpected)
+ const declining={...copy,cover:()=>false}
+ assert.deepEqual(bank.parseBankStatement(compact('taishin'),{},[declining,...BANK_PROFILES]),taishinExpected)
+})

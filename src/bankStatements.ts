@@ -3,13 +3,15 @@ import type { StatementCashBalance } from './bankStatementAssets';
 import { BANK_PDF_ERRORS } from './bankStatementErrors';
 import { protectBankText } from './bankTextPrivacy';
 import { spatialLines, tableHeader, isoDate, money, identifier, labeledAccount, currencies } from './bankStatements/common';
-import type { BankDraftRow, BankPage, BankSection, BankStatementMetadata, BankWarning, Layout, Table } from './bankStatements/common';
+import type { BankDraftRow, BankPage, BankSection, BankStatementMetadata, BankWarning, SpatialLine, Table } from './bankStatements/common';
 import { layout as taiwan } from './bankStatements/hsbcTaiwan';
 import { layout as singapore } from './bankStatements/hsbcSingapore';
 import { layout as taishin } from './bankStatements/taishin';
 import { layout as fubon, foreignLayout } from './bankStatements/fubon';
 import { layout as esun } from './bankStatements/esun';
 import { DBS_UNSUPPORTED, singaporeLayout as dbsSingapore, dbsSingaporeContext } from './bankStatements/dbs';
+import type { BankProfile } from './bankStatements/profile';
+import { BANK_PROFILES } from './bankStatements/profiles';
 export type { PositionedItem, BankPage, BankSection, BankDraftRow, BankStatementMetadata, BankWarning } from './bankStatements/common';
 export interface BankStatementResult {
     status: 'recognized' | 'partial' | 'unsupported';
@@ -21,6 +23,16 @@ export interface BankStatementResult {
     balances?: StatementCashBalance[];
 }
 const warning = (page: number, code: string): BankWarning => ({ page, code, count: 1 });
+// Profiles of one bank are matched by the brand pattern text, not by RegExp object identity.
+const brandKey = (brand: RegExp) => `${brand.source}/${brand.flags}`;
+const sameBrand = (a: RegExp, b: RegExp) => brandKey(a) === brandKey(b);
+const tableHeaderOf = (line: SpatialLine, profile: BankProfile): Table | undefined => {
+    for (const layout of [profile.layout, ...(profile.variants ?? [])]) {
+        const table = tableHeader(line, layout);
+        if (table)
+            return table;
+    }
+};
 const nonActivity = /^(?:期初|期末|開戶|Closing Balance|Opening Balance|Balance Brought Forward|Balance Carried Forward|結餘|餘額|合計|總計|交易筆數|Transaction (?:total|count)|Total (?:deposits|withdrawals))/i;
 const boundary = /^(?:帳戶摘要|存款總覽|投資摘要|信用卡摘要|證券|Investment Summary|Relationship Summary|Credit Card Summary|重要事項|注意事項|Disclosure)/i;
 interface Pending {
@@ -31,8 +43,11 @@ interface Pending {
     invalid: boolean;
     leading?: string[];
 }
-/** Pure, synchronous positional parser. Input pages and all identifier evidence are transient. */
-export function parseBankStatement(pages: readonly BankPage[], metadata: BankStatementMetadata = {}): BankStatementResult {
+/**
+ * Pure, synchronous positional parser. Input pages and all identifier evidence are transient.
+ * `profiles` is for tests; the app always uses BANK_PROFILES.
+ */
+export function parseBankStatement(pages: readonly BankPage[], metadata: BankStatementMetadata = {}, profiles: readonly BankProfile[] = BANK_PROFILES): BankStatementResult {
     if (pages.length > 100 || new Set(pages.map(p => p.page)).size !== pages.length)
         throw new Error('銀行文件頁數無效');
     let chars = 0;
@@ -85,54 +100,34 @@ export function parseBankStatement(pages: readonly BankPage[], metadata: BankSta
     const balanceDate=periods.size>1?undefined:statementClosingDate(ordered[0]?.lines??[],period?.end);
     const closing=new Map<string,{currency:string;quantity:number}>(),invalidClosing=new Set<string>(),cashScopes=new Map<string,string>();
     const masthead = ordered[0]?.lines.filter(l => l.y > ordered[0].height - 160 && !/Disclosure|注意|說明|優惠|投資|mentions/i.test(l.text)).map(l => l.text).join(' ') ?? '';
-    let layout: Layout | undefined;
-    if (/HSBC|匯豐|滙豐/i.test(masthead)) {
-        if (/Singapore|新加坡/i.test(masthead))
-            layout = singapore;
-        else if (/Taiwan|台灣|臺灣|匯豐|滙豐/i.test(masthead))
-            layout = taiwan;
-        else {
-            const tw = ordered.some(p => p.lines.some(l => tableHeader(l, taiwan))), sg = ordered.some(p => p.lines.some(l => tableHeader(l, singapore)) && p.lines.some(l => /SGD.*Savings|Savings.*SGD/i.test(l.text)));
-            if (tw !== sg)
-                layout = tw ? taiwan : singapore;
-        }
-    }
-    else if (/台新(?:銀行|國際)/.test(masthead))
-        layout = taishin;
-    else if (/(?:台北|臺北)?富邦銀行/.test(masthead))
-        layout = fubon;
-    else if (/玉山銀行|E\.?SUN/i.test(masthead))
-        layout = esun;
+    // The first bank named on the cover decides; several banks fail closed below.
+    const coverBrand = profiles.find(p => p.cover && p.brand.test(masthead))?.brand;
+    let detected: BankProfile | undefined = coverBrand && profiles.find(p => sameBrand(p.brand, coverBrand) && p.cover?.(masthead, ordered));
     const statementHeading = ordered[0]?.lines.some(l => l.y > 400 && l.items.some(i => /對帳單|STATEMENT/.test(i.text.replace(/\s/g, '').toUpperCase()))) ?? false;
     // The samples use raster logos. A bank-specific, complete positional activity
     // fingerprint plus a statement cover/cash context is stronger than arbitrary
     // bank-name occurrences in disclosures. Do not widen name search to page bodies.
-    if (!layout && statementHeading) {
-        const fingerprints = [taiwan, singapore, taishin, fubon, esun].filter(candidate => ordered.some(p => p.lines.some((l, n) => {
-            if (!(tableHeader(l, candidate) || (candidate === fubon && tableHeader(l, foreignLayout))))
+    if (!detected && statementHeading) {
+        const fingerprints = profiles.filter(candidate => candidate.fingerprint && ordered.some(p => p.lines.some((l, n) => {
+            if (!tableHeaderOf(l, candidate))
                 return false;
             const nearby = p.lines.slice(Math.max(0, n - 4), n).filter(r => r.y - l.y < 40).map(r => r.text).join(' ');
-            if (candidate === singapore)
-                return ordered.some(page => page.lines.some(row => /Savings\s*Account/i.test(row.text) && currencies(row.text).includes('SGD'))) || /Savings/i.test(nearby);
-            if (candidate === esun)
-                return /轉出.*交易明細/.test(nearby);
-            if (candidate === taiwan)
-                return /活期|綜合外幣存款/.test(nearby);
-            return p.lines.slice(Math.max(0,n-4),n).some(r=>r.y-l.y<40&&r.items.some(i=>i.x<110&&/^(?:新臺幣|新台幣|臺幣|台幣|TWD|外幣).{0,10}$/.test(i.text)));
+            return candidate.fingerprint!({ nearby, lines: p.lines, index: n, pages: ordered });
         })));
         if (fingerprints.length === 1)
-            layout = fingerprints[0];
+            detected = fingerprints[0];
     }
     const dbsFooter = ordered[0]?.lines.some(l => l.y < 100 && l.items.some(i => /\bDBS\b/i.test(i.text))) ?? false;
-    const isDbs = /DBS|星展銀行/i.test(masthead) || (statementHeading && dbsFooter && !layout);
-    const bankMatches = [/HSBC|匯豐|滙豐/i, /台新(?:銀行|國際)/, /(?:台北|臺北)?富邦銀行/, /玉山銀行|E\.?SUN/i, /DBS|星展銀行/i].filter(pattern => pattern.test(masthead));
-    if (bankMatches.length > 1 || /HSBC/i.test(masthead) && /Singapore/i.test(masthead) && /Taiwan/i.test(masthead))
-        layout = undefined;
-    if (!layout && isDbs && bankMatches.length <= 1 && ordered.some(p => p.lines.some((_, n) => dbsSingaporeContext(p.lines, n))))
-        layout = dbsSingapore;
+    const isDbs = /DBS|星展銀行/i.test(masthead) || (statementHeading && dbsFooter && !detected);
+    const bankMatches = [...new Map(profiles.map(p => [brandKey(p.brand), p.brand])).values()].filter(pattern => pattern.test(masthead));
+    if (bankMatches.length > 1 || profiles.some(p => p.ambiguousCover?.(masthead)))
+        detected = undefined;
+    if (!detected && isDbs && bankMatches.length <= 1 && ordered.some(p => p.lines.some((_, n) => dbsSingaporeContext(p.lines, n))))
+        detected = profiles.find(p => p.layout === dbsSingapore);
     const sections: BankSection[] = [], warnings: BankWarning[] = [];
-    if (!layout)
+    if (!detected)
         return { status: 'unsupported', ...(isDbs ? { bank: 'DBS' } : {}), sections, warnings: [warning(ordered[0]?.page ?? 1, isDbs ? DBS_UNSUPPORTED : 'unsupported-bank-layout')], recognizedCount: 0, rejectedCount: 0 };
+    const profile = detected, layout = profile.layout;
     // Collect only explicit identifier contexts and validated own-account columns, never arbitrary long references.
     const accounts = new Set<string>(), identities = new Set<string>(), summary = new Map<string, Set<string>>();
     for (const p of ordered) {
@@ -171,7 +166,7 @@ export function parseBankStatement(pages: readonly BankPage[], metadata: BankSta
                     summary.set(id, new Set(['SGD']));
                 }
             }
-            const h = tableHeader(l, layout) ?? (layout === fubon ? tableHeader(l, foreignLayout) : undefined);
+            const h = tableHeaderOf(l, profile);
             if(h&&(layout===taiwan||layout===singapore)){
                 const index=p.lines.indexOf(l);
                 for(const heading of p.lines.slice(Math.max(0,index-3),index).filter(r=>r.y-l.y<=30)){
@@ -257,7 +252,7 @@ export function parseBankStatement(pages: readonly BankPage[], metadata: BankSta
                 context = [l.text];
                 continue;
             }
-            const candidate = tableHeader(l, layout) ?? (layout === fubon ? tableHeader(l, foreignLayout) : undefined);
+            const candidate = tableHeaderOf(l, profile);
             if (candidate) {
                 let before = context.join(' ');
                 if (layout !== singapore && layout !== esun) {
@@ -276,40 +271,15 @@ export function parseBankStatement(pages: readonly BankPage[], metadata: BankSta
                 const brought = p.lines.slice(n + 1, n + 4).some(r => /Balance Brought Forward/i.test(r.text));
                 const continuing = mayContinue && contextAccount === previousAccount && brought;
                 let resolved = cs.length === 1 ? cs[0] : continuing ? previousCurrency : '';
-                if (layout === dbsSingapore) {
-                    const dbs = dbsSingaporeContext(p.lines, n);
-                    if (!dbs) {
-                        issue(p.page, 'unsupported-dbs-sg-account');
-                        table = undefined;
-                        continue;
-                    }
-                    contextAccount = dbs.account;
-                    resolved = dbs.currency;
-                }
-                if (layout === singapore && (resolved !== 'SGD' || (!/Savings/i.test(before) && !continuing && !summary.get(contextAccount ?? '')?.has('SGD')))) {
-                    issue(p.page, 'unsupported-hsbc-sg-account');
+                const accepted = profile.acceptTable?.({ lines: p.lines, index: n, table: candidate, before, resolved, continuing, contextAccount, summary });
+                if (typeof accepted === 'string') {
+                    issue(p.page, accepted);
                     table = undefined;
                     continue;
                 }
-                if (layout === taiwan && (!['TWD', 'USD', 'JPY', 'SGD'].includes(resolved) || !/活期|存款|Savings|Deposit/i.test(before))) {
-                    issue(p.page, 'unsupported-hsbc-tw-account');
-                    table = undefined;
-                    continue;
-                }
-                if (layout === esun && !/轉出.*交易明細/.test(before)) {
-                    issue(p.page, 'unsupported-esun-table');
-                    table = undefined;
-                    continue;
-                }
-                if (layout === fubon && !candidate.currencyX && resolved !== 'TWD') {
-                    issue(p.page, 'unsupported-fubon-currency');
-                    table = undefined;
-                    continue;
-                }
-                if (layout === taishin && resolved !== 'TWD') {
-                    issue(p.page, 'unsupported-taishin-currency');
-                    table = undefined;
-                    continue;
+                if (accepted) {
+                    contextAccount = accepted.account;
+                    resolved = accepted.currency;
                 }
                 if (layout !== esun && !candidate.currencyX && !resolved) {
                     issue(p.page, 'missing-section-currency');
