@@ -9,7 +9,7 @@ function autoLabels(passwords:readonly StatementPassword[],count:number) {
   return labels
 }
 
-export function StatementPasswordSettings({scope,passwords,busy,onSave,onRemove,onClose}: {scope:string;passwords:StatementPassword[];busy:boolean;onSave:(rows:StatementPassword[])=>void;onRemove:(id:string)=>void;onClose:()=>void}) {
+export function StatementPasswordSettings({scope,passwords,busy,onSave,onRemove,onRemoveAll,onClose}: {scope:string;passwords:StatementPassword[];busy:boolean;onSave:(rows:StatementPassword[])=>void;onRemove:(id:string)=>void;onRemoveAll:()=>void;onClose:()=>void}) {
   const ref = useRef<HTMLDialogElement>(null)
   const active = useRef(true)
   const save = useRef(onSave)
@@ -24,8 +24,9 @@ export function StatementPasswordSettings({scope,passwords,busy,onSave,onRemove,
   useEffect(()=>{let cancelled=false;void statementPasswordStatus(scope,passwords).then(ids=>{if(!cancelled)setAvailable(ids)});return()=>{cancelled=true}},[scope,passwords])
   return <dialog ref={ref} className="review statement-password-dialog" aria-label="帳單密碼設定" onCancel={e=>{e.preventDefault();if(!locked)onClose()}}>
     <div className="panel-head"><h3>帳單密碼設定</h3><button disabled={locked} onClick={onClose}>關閉</button></div>
-    <p className="muted small">密碼加密後隨個人資料保存，解密金鑰只留在此瀏覽器。新裝置或清除網站資料後，請重新設定。修改後需按「儲存變更」。</p>
+    <p className="muted small">設定名稱以明文保存；密碼加密後隨個人資料保存，密文也可能留在舊備份或 Google Drive 版本。解密金鑰只留在此瀏覽器。新裝置或清除網站資料後，請重新設定。此功能無法防護控制同一瀏覽器使用者資料的人。修改後需按「儲存變更」。</p>
     {!!passwords.length && <ul className="statement-password-list">{passwords.map(p=><li key={p.id}><div><strong>{p.label}</strong><small className="muted">{available.includes(p.id)?'已設定 · 此瀏覽器可用':'需在此瀏覽器重新設定'}</small></div><div className="row"><button disabled={locked} onClick={()=>{setId(p.id);setPassword('');setError('')}} aria-label={`重新設定 ${p.label} 密碼`}>重新設定</button><button disabled={locked} onClick={()=>{onRemove(p.id);if(id===p.id){setId(undefined);setPassword('')}}} aria-label={`移除 ${p.label} 密碼`}>移除</button></div></li>)}</ul>}
+    {!!passwords.length && <div className="row"><button type="button" disabled={locked} onClick={()=>{if(locked || !window.confirm('移除目前全部帳單密碼設定？仍需按「儲存變更」才會保存；舊備份、Google Drive 版本及此瀏覽器的金鑰不會因此刪除。'))return;setId(undefined);setPassword('');setError('');onRemoveAll()}}>移除全部密碼設定</button></div>}
     <form className="form" onSubmit={async e=>{
       e.preventDefault();if(locked)return
       const secrets=splitStatementPasswords(password)
