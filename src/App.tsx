@@ -878,6 +878,8 @@ export default function App() {
           <Cashflow
             data={data}
             months={ledgerMonths}
+            onChange={update}
+            busy={busy}
             onGoExpenses={() => go({ tab: 'expenses' })}
             onGoBankTransactions={() => go({ tab: 'bank-transactions' })}
           />
