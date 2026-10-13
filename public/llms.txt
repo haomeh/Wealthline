@@ -1,11 +1,11 @@
 # Wealthline
 
-> Wealthline（個人資產統計）is a free, open-source personal asset tracker web app. Users sign in with Google, and financial records are processed in the browser and saved as JSON files in their own Google Drive. There is no financial records database on the operator's servers. Sign-in hints and short-lived tokens use browser storage; market requests send symbols and history start dates to the quote relay and providers. Interface language: Traditional Chinese (zh-Hant); base currency: New Taiwan Dollar (TWD).
+> Wealthline（個人資產統計）is a free, open-source personal asset tracker web app. Financial records are processed in the browser and saved as JSON files in the user's own Google Drive or this browser, depending on mode. Downloaded backups create separate copies at locations chosen by users. There is no financial records database on the operator's servers. Sign-in hints and short-lived tokens use browser storage; market requests send symbols and history start dates to the quote relay and providers. Interface language: Traditional Chinese (zh-Hant); base currency: New Taiwan Dollar (TWD).
 
 Key facts:
 
-- Sign-in: Google account via Google Identity Services. Requested scopes: openid, email, profile and `drive.file`, which lets the app reach only the files it created, not the rest of the user's Drive.
-- Data location: the `My Drive / Wealthline` folder in the user's own Google Drive: the main data file `wealthline-data.json`, plus part files for card expenses and bank transactions (one per quarter, in the `明細` subfolder) and earlier years of history (one per year, in the `歷史` subfolder). They are visible to the user, who can open, download a full backup of, or delete them at any time.
+- Sign-in: Google account via Google Identity Services. Requested scopes: openid, email, profile and `drive.file`. Wealthline currently creates and reads its own data files; the scope can also cover files a user opens with or shares with an app. Wealthline has no such file-selection flow and does not request whole-Drive access.
+- Data location: Google mode uses the `My Drive / Wealthline` folder in the user's own Google Drive: the main data file `wealthline-data.json`, plus part files for card expenses and bank transactions (one per quarter, in the `明細` subfolder) and earlier years of history (one per year, in the `歷史` subfolder). Local mode stores financial records in this browser. Downloaded backups are separate user-held copies.
 - Features: define bank and investment accounts, record cash balances per currency, record holdings by ticker and quantity only (prices from Yahoo Finance, crypto from CoinGecko), automatic exchange rates to TWD (ExchangeRate-API), allocation charts, daily total snapshots, a change log, per-holding value history, liabilities and repayment estimates.
 - Cost: free. No registration or installation needed.
 - License: PolyForm Noncommercial 1.0.0. Commercial use requires written permission.

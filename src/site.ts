@@ -23,7 +23,7 @@ export const PRIVACY_UPDATED = '2026-10-13'
 export const PAGES = {
   privacy: {
     path: '/privacy', title: '隱私權政策', en: 'Privacy Policy',
-    description: 'Wealthline 如何使用你的 Google 帳號資料：只要求 drive.file 權限，資料只存在你自己的 Google Drive，沒有後端資料庫。How Wealthline handles your Google user data.',
+    description: 'Wealthline 財務資料在瀏覽器處理，依使用模式儲存在你的 Google Drive 或此瀏覽器；下載備份另存於你選擇的位置。Privacy Policy for Google and local modes.',
   },
   terms: {
     path: '/terms', title: '使用條款', en: 'Terms of Service',

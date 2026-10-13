@@ -89,8 +89,8 @@ const SCOPES = [
   },
   {
     scope: 'https://www.googleapis.com/auth/drive.file',
-    zh: `在你的 Google Drive 建立「${FOLDER_NAME}」資料夾及其中的「${LEDGER_FOLDER_NAME}」「${HISTORY_FOLDER_NAME}」子資料夾，在裡面建立主資料檔 ${DATA_FILE_NAME} 與分檔（消費明細與銀行流水每季一個、往年歷史每年一個），並讀取、更新這些檔案。只能存取本服務建立的檔案，看不到你雲端硬碟中的其他檔案`,
-    en: `Creates the "${FOLDER_NAME}" folder and its "${LEDGER_FOLDER_NAME}" (transactions) and "${HISTORY_FOLDER_NAME}" (history) subfolders in your Google Drive, and in them the main data file ${DATA_FILE_NAME} plus part files (one per quarter for card expenses and bank transactions, one per year for earlier history), then reads and updates those files. It can only access files this app created and cannot see any other file in your Drive`,
+    zh: `在你的 Google Drive 建立「${FOLDER_NAME}」資料夾及其中的「${LEDGER_FOLDER_NAME}」「${HISTORY_FOLDER_NAME}」子資料夾，在裡面建立主資料檔 ${DATA_FILE_NAME} 與分檔（消費明細與銀行流水每季一個、往年歷史每年一個），並讀取、更新這些檔案。drive.file 權限也可涵蓋你透過應用程式開啟或分享給應用程式的檔案；Wealthline 目前沒有這類選檔流程，也不要求讀取整個雲端硬碟`,
+    en: `Creates the "${FOLDER_NAME}" folder and its "${LEDGER_FOLDER_NAME}" (transactions) and "${HISTORY_FOLDER_NAME}" (history) subfolders in your Google Drive, and in them the main data file ${DATA_FILE_NAME} plus part files (one per quarter for card expenses and bank transactions, one per year for earlier history), then reads and updates those files. The drive.file scope can also cover files you open with or share with an app; Wealthline currently has no such file-selection flow and does not request whole-Drive access`,
   },
 ]
 
@@ -130,7 +130,7 @@ function Privacy() {
             <strong>你輸入的資產資料</strong>：帳戶名稱、類型、國家、各幣別餘額、持有標的代號與數量、匯率、每日資產快照、歷史數量與持倉期間、修改紀錄，以及負債名稱、金額、幣別、利率與還款排程。用途：計算與呈現你的資產統計。
           </li>
         </ul>
-        <p>匯入信用卡或銀行對帳單時，你選擇的 PDF 與解密密碼只在瀏覽器中處理，不上傳、不保存原始檔。臨時輸入的密碼只留在記憶體；若選擇帳單密碼設定，密碼以 AES-GCM 加密後隨個人資料檔存於本機或自己的 Google Drive，匯出備份也包含密文。解密金鑰不可匯出，只存於此瀏覽器的 IndexedDB，依 Google 帳號或本機模式分開。新裝置、清除網站資料或遺失金鑰後需重新輸入帳單密碼；移除設定並儲存後會刪除目前檔案中的密文，舊備份不會同步刪除。登出不刪除此瀏覽器的金鑰；共享裝置請清除網站資料。加密不能防止已控制瀏覽器或本站執行環境的攻擊者使用金鑰。匯豐圖片商家欄使用本機 OCR；辨識圖片只留在記憶體，英文／繁中語言包由本站提供，無第三方辨識服務。預覽文字可能包含帳單上的個人資訊，離開匯入頁面後不保存。確認後僅將交易日期、商家／說明、金額、幣別、自訂銀行／卡片名稱，以及用於防止重複匯入的雜湊識別碼加入資料檔；在本機模式儲存在此瀏覽器，Google 模式則在你儲存變更後存入自己的 Drive。本服務不要求金融機構登入密碼、完整卡號或身分證字號。</p>
+        <p>匯入信用卡或銀行對帳單時，你選擇的 PDF 與解密密碼只在瀏覽器中處理，不上傳、不保存原始檔。臨時輸入的密碼只留在記憶體；若選擇帳單密碼設定，設定名稱以明文保存，密碼以 AES-GCM 加密後隨個人資料檔存於本機或自己的 Google Drive，匯出備份也包含密文。解密金鑰不可匯出，只存於此瀏覽器的 IndexedDB，依 Google 帳號或本機模式分開。新裝置、清除網站資料或遺失金鑰後需重新輸入帳單密碼；移除密碼設定後仍須按「儲存變更」，才會刪除目前資料中的密文，舊備份與 Google Drive 舊版本不會同步刪除，此瀏覽器的金鑰也不會因此刪除。登出不刪除此瀏覽器的金鑰；共享裝置請清除網站資料。加密不能防止已控制同一瀏覽器設定檔或本站執行環境的攻擊者使用金鑰。匯豐圖片商家欄使用本機 OCR；辨識圖片只留在記憶體，英文／繁中語言包由本站提供，無第三方辨識服務。預覽文字可能包含帳單上的個人資訊，離開匯入頁面後不保存。確認信用卡交易後，僅將交易日期、商家／說明、金額、幣別、自訂銀行／卡片名稱，以及用於防止重複匯入的雜湊識別碼加入資料檔；在本機模式儲存在此瀏覽器，Google 模式則在你儲存變更後存入自己的 Drive。銀行對帳單的資料處理見下段。本服務不要求金融機構登入密碼、完整卡號或身分證字號。</p>
         <p>銀行流水獨立保存確認的入出帳日期、摘要、幣別、方向、金額、分類、自訂銀行／帳戶標籤及雜湊去重識別碼，若帳單有明確日期、幣別及期末餘額，確認匯入後會將期末現金餘額補入對應日期的資產歷史，並保存文件雜湊以避免重複補登；不保存期初或逐筆餘額，不改動目前持倉或負債。解析會遮蔽已識別的帳號及客戶識別碼，但摘要與自行輸入的文字仍可能包含個人資訊；請勿輸入完整帳號或身分資料。Overview 的收支統計排除標記為不計收支（如自有帳戶轉帳、信用卡繳款）的流水，未分類的流水依入帳／支出計入收入或消費；投資回收款可能包含本金，不代表投資收益，收支差額不是帳戶餘額。</p>
       </Section>
 
@@ -193,7 +193,7 @@ function Privacy() {
             <strong>下載與上傳</strong>：「下載資料檔」會在你的裝置上產生一個 JSON 檔，存放在你選擇的位置，由你自行保管。「上傳資料檔」只在瀏覽器中讀取你選的檔案，並取代此瀏覽器中的資料，檔案不會傳送到任何伺服器。Google Drive 中的主資料檔不含消費明細與往年歷史，不能直接上傳；請改用登入後帳號選單的「下載完整備份」。
           </li>
           <li>
-            <strong>保存期限與刪除</strong>：資料會保留到你在選單中按「刪除此瀏覽器中的資料」，或清除瀏覽器的網站資料為止。「離開本機模式」會保留資料，供下次繼續使用。換瀏覽器、換裝置或使用無痕視窗時看不到這些資料，營運者也無法替你復原，請定期下載備份。
+            <strong>保存期限與刪除</strong>：資料會保留到你使用本機模式的資料刪除功能，或清除瀏覽器的網站資料為止。「離開本機模式」會保留資料，供下次繼續使用。此刪除不會刪除已下載的備份或此瀏覽器的密碼加密金鑰。換瀏覽器、換裝置或使用無痕視窗時看不到這些資料，營運者也無法替你復原，請定期下載備份。
           </li>
           <li>
             <strong>安全</strong>：瀏覽器中保存的資產與交易資料沒有加密（已設定的帳單密碼僅保存密文），能使用這個瀏覽器設定檔的人都可能讀取。共用裝置請勿使用本機模式，或在使用後刪除資料。
@@ -218,7 +218,7 @@ function Privacy() {
             <strong>清除本機登入資訊</strong>：在本服務中按「登出」，或清除瀏覽器的網站資料。
           </li>
           <li>
-            <strong>刪除本機模式的資料</strong>：在本機模式的選單按「刪除此瀏覽器中的資料」，或清除瀏覽器的網站資料；下載的資料檔請自行刪除。
+            <strong>刪除本機模式的資料</strong>：使用本機模式的資料刪除功能，或清除瀏覽器的網站資料；下載的資料檔請自行刪除。App 內刪除不會移除密碼加密金鑰。
           </li>
           <li>
             <strong>撤銷 Google 授權</strong>：到 <a href="https://myaccount.google.com/connections">Google 帳戶的第三方連結</a> 移除 Wealthline 的存取權。撤銷授權不會刪除 Drive 檔案，需另外執行上述刪除步驟。
@@ -309,9 +309,9 @@ function PrivacyEnglish() {
         </li>
         <li>a short-lived <strong>OAuth access token</strong> (about one hour) used to call the Google Drive API on your behalf.</li>
       </ul>
-      <p>Wealthline does not access Gmail, Contacts, Calendar or any other file in your Google Drive.</p>
-      <p>When you import a credit card or bank statement, the selected PDF and its decryption password are processed only in browser memory. The original file is never uploaded or stored. Temporary passwords stay in memory. If you choose to save a password setting, its AES-GCM ciphertext is saved with your personal data in this browser or your own Google Drive and included in exported backups. The non-extractable decryption key stays only in this browser’s IndexedDB, separately for each Google account or local mode. On a new device, after clearing site data, or after losing the key, re-enter your statement passwords. Removing a setting and saving removes its ciphertext from the current file, but not older backups. Signing out retains the device key; clear site data on shared devices. This encryption cannot protect against an attacker who controls the browser or the site’s execution environment. HSBC image merchant columns use local OCR. Cropped images stay in memory; English and Traditional Chinese models are served by this site without a third-party recognition service. Preview text may contain personal information printed on the statement and is discarded when you leave the import page. Only confirmed transaction dates, descriptions, amounts, currencies, your bank/card label and hashed identifiers for duplicate detection are added to your data file. Saving keeps these records in this browser in local mode, or in your own Google Drive in Google mode. Bank login credentials, full card numbers and government identifiers are not required.</p>
-      <p>The independent bank ledger stores confirmed booking dates, descriptions, currencies, debit/credit directions, amounts, classifications, your bank/account labels and hashed duplicate-detection identifiers. It does not store statement opening, closing or running balances, or change assets or liabilities. Recognized account and customer identifiers are masked, but descriptions and manually entered text may still contain personal information; do not enter full account numbers or identity details. Overview excludes transactions marked as not counted (such as own-account transfers or credit-card payments) from income and consumption totals; unclassified transactions count as income or consumption by their direction. Investment recovery may include principal and is not investment profit; the income-minus-consumption difference is not an account balance.</p>
+      <p>Wealthline does not request Gmail, Contacts, Calendar or whole-Drive access. Its current Drive workflow creates and reads its own data files; it has no flow for selecting other Drive files.</p>
+      <p>When you import a credit card or bank statement, the selected PDF and its decryption password are processed only in browser memory. The original file is never uploaded or stored. Temporary passwords stay in memory. If you choose to save a password setting, its name is saved as plaintext and its AES-GCM ciphertext is saved with your personal data in this browser or your own Google Drive and included in exported backups. The non-extractable decryption key stays only in this browser’s IndexedDB, separately for each Google account or local mode. On a new device, after clearing site data, or after losing the key, re-enter your statement passwords. Removing password settings still requires “Save changes” to remove ciphertext from current data; older backups and Google Drive versions are unaffected, and the browser key remains. Signing out retains the device key; clear site data on shared devices. This encryption cannot protect against an attacker who controls the same browser profile or the site’s execution environment. HSBC image merchant columns use local OCR. Cropped images stay in memory; English and Traditional Chinese models are served by this site without a third-party recognition service. Preview text may contain personal information printed on the statement and is discarded when you leave the import page. Confirmed card transaction dates, descriptions, amounts, currencies, your bank/card label and hashed identifiers for duplicate detection are added to your data file. Confirmed bank transactions and eligible statement closing balances are handled as described below. Saving keeps these records in this browser in local mode, or in your own Google Drive in Google mode. Bank login credentials, full card numbers and government identifiers are not required.</p>
+      <p>The independent bank ledger stores confirmed booking dates, descriptions, currencies, debit/credit directions, amounts, classifications, your bank/account labels and hashed duplicate-detection identifiers. When a statement has an explicit date, currency and closing balance, confirming the import adds that closing cash balance to asset history for the corresponding date and stores a document hash to prevent duplicate entries. It does not store opening or transaction-by-transaction balances, or change current holdings or liabilities. Recognized account and customer identifiers are masked, but descriptions and manually entered text may still contain personal information; do not enter full account numbers or identity details. Overview excludes transactions marked as not counted (such as own-account transfers or credit-card payments) from income and consumption totals; unclassified transactions count as income or consumption by their direction. Investment recovery may include principal and is not investment profit; the income-minus-consumption difference is not an account balance.</p>
 
       <h3>2. How we use Google user data</h3>
       <p>Google user data is used only to provide the features you see in the app:</p>
@@ -339,7 +339,7 @@ function PrivacyEnglish() {
           are kept in localStorage as a hint for your next sign-in, along with the version of this policy you last saw.
         </li>
         <li>All traffic between your browser, Google and Wealthline uses HTTPS (TLS) encryption.</li>
-        <li>Wealthline only requests the narrow drive.file scope, so it cannot reach your other files.</li>
+        <li>Wealthline requests the per-file drive.file scope. It currently creates and reads its own data files; the scope can also cover files opened with or shared with an app, though Wealthline has no such selection flow.</li>
         <li>
           The full source code is public on <a href={REPO_URL}>GitHub</a>, so anyone can verify these statements.
         </li>
@@ -381,8 +381,8 @@ function PrivacyEnglish() {
           it cannot be uploaded; use “Download full backup” in the account menu after signing in instead.
         </li>
         <li>
-          The data stays until you choose “Delete the data in this browser” from the menu or clear the browser's site data. “Leave local mode” keeps the data
-          for next time. It is not available in other browsers, on other devices or in private windows, and the operator cannot recover it, so download
+          The data stays until you use the local-mode data deletion action or clear the browser's site data. “Leave local mode” keeps the data
+          for next time. The in-app deletion does not remove downloaded backups or the browser's password-encryption key. It is not available in other browsers, on other devices or in private windows, and the operator cannot recover it, so download
           backups regularly.
         </li>
         <li>
@@ -515,7 +515,7 @@ function Disclaimer() {
 
       <Section title="三、資料安全與遺失">
         <p>
-          你的資料只存在你的 Google Drive，或在本機模式下只存在你的瀏覽器，本服務不另外保存副本。帳號遭盜用、資料檔被刪除或覆寫、瀏覽器網站資料被清除、第三方服務異常等情況造成的資料遺失或外洩，營運者無法負責，請定期下載備份。
+          財務資料在瀏覽器處理，依使用模式保存在你的 Google Drive 或此瀏覽器；下載備份會另產生一份由你保管的檔案，營運者不另建財務資料庫。帳號遭盜用、資料檔被刪除或覆寫、瀏覽器網站資料被清除、第三方服務異常等情況造成的資料遺失或外洩，營運者無法負責，請定期下載備份。
         </p>
       </Section>
 
