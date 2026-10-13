@@ -141,14 +141,20 @@ test('an account detail page waits for the earlier years before it shows', async
   assert.match(main(), /Bank A/)
 })
 
-test('the bank page also waits for the earlier years, which statement balances are checked against', async () => {
+test('bank records show before earlier years are loaded, and import waits for balance history', async () => {
   const drive = await splitDrive()
   drive.hold('history')
   await open('/bank-transactions')
+  assert.doesNotMatch(main(), /正在載入往年歷史/)
+  assert.match(main(), /Salary transfer/)
+  assert.ok(!drive.reads.some(name=>name.startsWith('history-')))
+  await click(button('匯入銀行帳單'))
   assert.match(main(), /正在載入往年歷史/)
-  assert.doesNotMatch(main(), /Salary transfer/)
+  assert.equal(document.querySelector('.bank-import form'), null)
   await drive.release('history')
   assert.doesNotMatch(main(), /正在載入/)
+  assert.ok(document.querySelector('.bank-import form'))
+  await click(button('取消匯入'))
   assert.match(main(), /Salary transfer/)
 })
 
