@@ -1,5 +1,7 @@
 # Security incident tabletop — paper exercise
 
+Status: template. This exercise has not been run yet; no dates, participants or results are recorded here.
+
 This is a paper exercise. Do not access production, inspect credentials, notify users, revoke access, roll back a deployment, or change services while running it. A facilitator reads each case; participants record a decision owner, evidence, next proposed action and stop condition. Use role names until actual people have been assigned through the [adoption checklist](security-incident-response.md#adoption-checklist).
 
 | Scenario | Decision owner | Evidence to request | Proposed next action | Stop condition |
