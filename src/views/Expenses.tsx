@@ -21,7 +21,7 @@ export function Expenses({data,onChange,busy,passwordScope}: {passwordScope?:str
   const expenses = data.expenses ?? []
   const rules = data.expenseCategoryRules ?? []
   const passwords = data.statementPasswords ?? []
-  const passwordDialog = managingPasswords && passwordScope && <StatementPasswordSettings scope={passwordScope} passwords={passwords} busy={busy} onClose={()=>setManagingPasswords(false)} onSave={rows=>onChange({...data,version:dataVersion(data, {minimumVersion:12}),statementPasswords:parseStatementPasswords(mergeStatementPasswords(passwords,rows))})} onRemove={id=>onChange({...data,version:dataVersion(data, {minimumVersion:12}),statementPasswords:passwords.filter(p=>p.id!==id)})}/>
+  const passwordDialog = managingPasswords && passwordScope && <StatementPasswordSettings scope={passwordScope} passwords={passwords} busy={busy} onClose={()=>setManagingPasswords(false)} onSave={rows=>onChange({...data,version:dataVersion(data, {minimumVersion:12}),statementPasswords:parseStatementPasswords(mergeStatementPasswords(passwords,rows))})} onRemove={id=>onChange({...data,version:dataVersion(data, {minimumVersion:12}),statementPasswords:passwords.filter(p=>p.id!==id)})} onRemoveAll={()=>{if(!busy)onChange({...data,version:dataVersion(data, {minimumVersion:12}),statementPasswords:[]})}}/>
 
   const ruleDialog = ruleExpense && <CategoryRuleDialog expense={ruleExpense.expense} rule={ruleExpense.index===undefined?undefined:rules[ruleExpense.index]} busy={busy} onCancel={()=>setRuleExpense(null)} onSave={rule=>{
     onChange({...data,version:dataVersion(data, {minimumVersion:11}),expenseCategoryRules:parseExpenseCategoryRules(ruleExpense.index===undefined?[...rules,rule]:rules.map((r,i)=>i===ruleExpense.index?rule:r))})
@@ -168,7 +168,7 @@ function StatementImport({existing,busy,onCancel,onImport,rules,onAddRule,passwo
     {!drafts ? <form onSubmit={parse}>
       <fieldset className="statement-upload-fields" disabled={locked}>
         <label className="field statement-upload"><span>帳單 PDF（可選多份）</span><small className="muted">選擇信用卡帳單 · 每份最多 20 MB</small><input type="file" multiple accept=".pdf,application/pdf" required onChange={e=>{setFiles(Array.from(e.target.files??[]));setPassword('');setError('');setReports([])}}/></label>
-        <label className="field statement-password"><span>PDF 密碼（多組以逗號 , 分隔）</span><input type="password" autoComplete="off" placeholder="未加密的帳單可留空" value={password} onChange={e=>setPassword(e.target.value)}/><small className="muted">不同帳單的密碼以逗號分隔。</small></label>
+        <label className="field statement-password"><span>PDF 密碼（多組以逗號 , 分隔）</span><input type="password" autoComplete="off" placeholder="未加密的帳單可留空" value={password} onChange={e=>setPassword(e.target.value)}/><small className="muted">僅供本次解析，不會保存。不同帳單的密碼以逗號分隔。</small></label>
       </fieldset>
       <details className="statement-options"><summary>進階選項<span className="muted small">辨識不到時再填寫</span></summary>
         <fieldset className="expense-fields" disabled={locked}>
