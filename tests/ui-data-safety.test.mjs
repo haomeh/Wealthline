@@ -92,12 +92,11 @@ const setupDrive = (data) => {
   }
 }
 
-// First in this file: GIS is loaded once per module, so a later test would find it already loaded.
-test('public home and legal pages need no sign-in; only the sign-in page loads Google sign-in', async () => {
+// First in this file: GIS is loaded once per module, so after a signed-in test it would already be in the page.
+test('public home and legal pages need no sign-in and legal pages do not restore Drive sessions', async () => {
   let calls = 0
   globalThis.fetch = async () => { calls++; throw new Error('public pages must not fetch account or Drive data') }
-  const gisScripts = () => document.querySelectorAll('script[src*="accounts.google.com"]').length
-  for (const path of ['/privacy', '/terms', '/disclaimer', '/', '/app']) {
+  for (const path of ['/', '/privacy', '/terms', '/disclaimer', '/app']) {
     if (root) { await act(() => root.unmount()); root = null }
     auth.clearSession()
     if (path === '/privacy') auth.storeSession({ token, profile })
@@ -105,13 +104,39 @@ test('public home and legal pages need no sign-in; only the sign-in page loads G
     await render(App)
     assert.ok(document.querySelector('footer a[href="/privacy"]'))
     assert.ok(document.querySelector('footer a[href="/terms"]'))
-    // The sign-in page fetches the GIS script ahead of the click (Safari blocks a popup opened after it).
-    assert.equal(gisScripts(), path === '/' || path === '/app' ? 1 : 0, path)
+    assert.equal(document.querySelectorAll('script[src*="accounts.google.com"]').length, 0)
     assert.equal(document.querySelector('.sidebar'), null)
     assert.equal(calls, 0, path)
     if (path === '/' || path === '/app') assert.ok(button('使用 Google 登入'))
     else assert.ok(document.querySelector('.legal article'))
   }
+})
+
+const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.file'
+
+test('returning from Google sign-in opens the app and removes the token from the address bar', async () => {
+  setupDrive(fixture())
+  auth.clearSession()
+  sessionStorage.setItem('wealthline.oauth.state', 'state-1')
+  window.history.replaceState(null, '', `/#state=state-1&access_token=test-token&token_type=Bearer&expires_in=3599&scope=${encodeURIComponent(`openid email profile ${DRIVE_SCOPE}`)}`)
+  await render(App)
+  assert.equal(window.location.pathname, '/app')
+  assert.equal(window.location.hash, '')
+  assert.ok(document.querySelector('.sidebar'))
+  assert.equal(sessionStorage.getItem('wealthline.oauth.state'), null)
+  assert.equal(auth.loadSession()?.token?.value, 'test-token')
+})
+
+test('a sign-in answer this tab did not ask for is refused without contacting Drive', async () => {
+  let calls = 0
+  globalThis.fetch = async () => { calls++; throw new Error('must not fetch') }
+  sessionStorage.setItem('wealthline.oauth.state', 'mine')
+  window.history.replaceState(null, '', `/#state=forged&access_token=attacker&expires_in=3599&scope=${encodeURIComponent(DRIVE_SCOPE)}`)
+  await render(App)
+  assert.equal(calls, 0)
+  assert.equal(window.location.hash, '')
+  assert.equal(document.querySelector('.sidebar'), null)
+  assert.match(document.querySelector('.signin-message')?.textContent ?? '', /重新登入/)
 })
 
 test('editing another rate during a deferred save preserves it and remains dirty', async () => {
