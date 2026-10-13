@@ -339,3 +339,9 @@ test('closing dates reject conflicting labels on the same cover line and invalid
  }
  const p=dbsSg();p[0].items.push(item('Statement Date: 30 September 2031 as at 30 Sep 2031',231,508));assert.equal(bank.parseBankStatement(p).balances[0].date,'2031-09-30');
 })
+test('every bank profile has a distinct layout bank name and a matching asset institution',async()=>{
+ const {BANK_PROFILES}=await server.ssrLoadModule('/src/bankStatements/profiles.ts'),assets=await server.ssrLoadModule('/src/bankStatementAssets.ts')
+ const names=BANK_PROFILES.map(p=>p.layout.bank)
+ assert.equal(new Set(names).size,names.length)
+ for(const name of names)assert.ok(assets.bankStatementIdentity(name),name)
+})
