@@ -3078,9 +3078,6 @@ dialog.expense-rule-dialog { max-width: 440px; }
 .bank-page h4 { margin:6px 0; overflow-wrap:anywhere; }
 .bank-fields { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,210px),1fr)); gap:12px; border:0; padding:0; margin:12px 0; min-width:0; }
 .bank-fields > *, .bank-fields input, .bank-fields select { min-width:0; max-width:100%; }
-.bank-account { display:flex; flex-wrap:wrap; align-items:end; gap:8px; padding:12px 0; }
-.bank-accounts ul { padding:0; list-style:none; }
-.bank-account .field { flex:1 1 180px; }
 @media (max-width: 640px) { .bank-record-panel { padding: 16px; } }
 .bank-section { border-top:1px solid var(--border); padding-top:18px; margin-top:18px; }
 .bank-preview-row { padding:8px 0; border-bottom:1px solid var(--border); }
@@ -3250,7 +3247,7 @@ dialog.expense-rule-dialog { max-width: 440px; }
 .liability-record-details > summary::-webkit-details-marker { display: none; }
 .liability-actions { justify-content: end; margin-top: 8px; }
 .liability-schedule-summary { overflow-wrap: anywhere; }
-.bank-rules ol { list-style: none; padding: 0; }
+.bank-rules ol { list-style: none; margin: 8px 0 0; padding: 0; }
 .bank-rules li { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--hairline); }
 .bank-rules li > span { min-width: 0; overflow-wrap: anywhere; }
 .bank-rules li > .row { flex-shrink: 0; flex-wrap: nowrap; }
@@ -3699,3 +3696,90 @@ button.pin-chip:hover:not(:disabled) { background: var(--ink); opacity: 0.85; }
 .data-privacy .panel { margin-top: 16px; }
 .data-privacy .panel > button { margin-right: 8px; }
 .data-privacy .row { gap: 16px; flex-wrap: wrap; }
+
+/* Bank ledger page: rows listed by month, each with its day, account and category under the description. */
+.bank-filters { grid-template-columns: repeat(4, minmax(0, 1fr)); margin: 4px 0 8px; }
+.bank-swipe-hint { display: none; margin: 0 0 4px; }
+.swipe-icon { display: contents; }
+.bank-filter-summary { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 16px; margin: 0 0 4px; color: var(--ink-2); font-size: 13px; }
+.bank-filter-summary button.link { font-size: 13px; }
+.bank-records { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; min-width: 0; margin-top: 12px; }
+/* Each month is one tinted block, so its rows read as one group. */
+.bank-month { --row-bg: var(--surface-2); min-width: 0; overflow: hidden; padding: 0 16px 4px; border-radius: 14px; background: var(--row-bg); }
+.bank-month-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; padding: 14px 0 10px; border-bottom: 1px solid var(--border); }
+.bank-month .detail-record { border-bottom-color: var(--border); }
+.bank-month-head h4 { margin: 0; font-size: 15px; }
+.bank-month-totals { display: flex; flex-wrap: wrap; gap: 4px 16px; margin-left: auto; color: var(--ink-2); font-size: 12px; font-variant-numeric: tabular-nums; }
+.bank-month-totals > span { display: inline-flex; align-items: baseline; gap: 6px; }
+.bank-month-totals small { font-size: 11px; }
+.bank-month-in { color: var(--good); }
+.detail-record-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.detail-record-subtitle { display: flex; align-items: center; gap: 8px; min-width: 0; color: var(--ink-2); font-size: 12px; line-height: 16px; }
+.detail-record-subtitle time { flex-shrink: 0; font-variant-numeric: tabular-nums; }
+.detail-record-subtitle .bank-record-account { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.detail-record-subtitle .tag { flex-shrink: 0; padding: 0 6px; font-size: 11px; line-height: 16px; }
+.detail-record.bank-record:has(.detail-record-subtitle) .detail-record-details > summary { min-height: 52px; }
+.detail-record.bank-record:has(.detail-record-subtitle) > .detail-record-actions { top: 8px; }
+.bank-settings { padding-top: 4px; padding-bottom: 4px; }
+.bank-setting { border-bottom: 1px solid var(--hairline); }
+.bank-setting:last-child { border-bottom: 0; }
+.bank-setting > summary, .bank-passwords { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 12px; min-height: 56px; font-weight: 600; }
+.bank-setting > summary { list-style: none; cursor: pointer; }
+.bank-setting > summary::-webkit-details-marker { display: none; }
+.bank-setting > summary::after { content: ''; width: 7px; height: 7px; margin: 0 6px 4px; border-right: 1.5px solid var(--ink-2); border-bottom: 1.5px solid var(--ink-2); transform: rotate(45deg); transition: transform .15s; }
+.bank-setting[open] > summary::after { margin-bottom: -2px; transform: rotate(225deg); }
+.bank-setting > summary .muted, .bank-passwords .muted { font-weight: 400; }
+.bank-setting[open] { padding-bottom: 16px; }
+.bank-setting > p { margin: 0 0 8px; }
+.bank-rules-head { display: flex; align-items: start; justify-content: space-between; gap: 12px; }
+.bank-rules-head p { margin: 0; }
+.bank-rules-head button { flex-shrink: 0; }
+.bank-accounts ul { margin: 0; padding: 0; list-style: none; }
+.bank-account { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 52px; padding: 4px 0; border-bottom: 1px solid var(--hairline); }
+.bank-account-name { display: grid; gap: 2px; min-width: 0; }
+.bank-account-name > strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+.bank-account > .row { flex-shrink: 0; flex-wrap: nowrap; }
+.bank-account > .row button { display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px; min-height: 44px; padding: 0; border-color: transparent; background: transparent; color: var(--ink-2); }
+.bank-account > .row button:hover:not(:disabled) { color: var(--accent); background: var(--accent-wash); }
+.bank-account-rename, .bank-account-add { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: end; gap: 12px; width: 100%; padding: 8px 0; }
+.bank-account-add { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto auto; margin-top: 8px; }
+.bank-account-rename .field, .bank-account-add .field { margin: 0; min-width: 0; }
+.bank-account-rename input, .bank-account-add input { width: 100%; box-sizing: border-box; }
+.bank-account-rename button, .bank-account-add button { min-height: 44px; }
+.bank-account-add-open { margin-top: 12px; }
+.bank-rules li:last-child { border-bottom: 0; }
+.bank-rules li, .bank-account { min-height: 56px; padding: 6px 0; box-sizing: border-box; font-size: 15px; }
+.bank-account-name .small { font-size: 12px; }
+.bank-passwords button { font-weight: 400; }
+@media (max-width: 640px) {
+  .bank-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .bank-rules-head { flex-direction: column; }
+  .bank-month { padding: 0 12px 4px; }
+  .bank-account-add { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .bank-account-add .field { grid-column: 1 / -1; }
+  .bank-account-rename { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .bank-account-rename .field { grid-column: 1 / -1; }
+  /* Description and amount on the first line, day, account and category on the second. The
+     buttons stay hidden until a left swipe (or keyboard focus) slides the row aside. */
+  .bank-swipe-hint { display: block; }
+  .detail-record.bank-record[data-swipe] { --record-action-space: 0px; padding: 0; touch-action: pan-y; }
+  .detail-record.bank-record[data-swipe][data-revealed] { --swipe-rest: -112px; --swipe-p-rest: 1; }
+  .detail-record.bank-record[data-swipe] .detail-record-details > summary { grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: auto; gap: 8px; min-height: 64px; padding: 4px 0; border-radius: 0; }
+  .detail-record.bank-record[data-swipe] .detail-record-secondary { min-height: 0; padding-right: 0; }
+  .detail-record.bank-record[data-swipe] .detail-record-value { text-align: right; }
+  /* The row slides over the buttons like a sheet: it keeps the month's tint, and its right edge
+     rounds and casts a soft shadow while it is moved aside. */
+  .detail-record.bank-record[data-swipe] > .detail-record-details { position: relative; z-index: 1; background: var(--row-bg, var(--surface)); border-radius: 0 12px 12px 0; transform: translateX(var(--swipe, var(--swipe-rest, 0px))); transition: transform .25s cubic-bezier(.2, .8, .2, 1), box-shadow .25s; }
+  .detail-record.bank-record[data-swipe]:is([data-revealed], [data-dragging]) > .detail-record-details { box-shadow: 8px 0 16px -10px rgba(0, 0, 0, .35); }
+  .detail-record.bank-record[data-swipe][data-dragging] > .detail-record-details { transition: none; }
+  /* The buttons fade and grow in with the swipe (--swipe-p: 0 closed, 1 open). */
+  .detail-record.bank-record[data-swipe] > .detail-record-actions { --p: var(--swipe-p, var(--swipe-p-rest, 0)); top: 0; bottom: 0; z-index: 0; align-items: center; gap: 0; }
+  .detail-record.bank-record[data-swipe] > .detail-record-actions > button, .detail-record.bank-record[data-swipe] > .detail-record-actions > button:hover:not(:disabled) { flex: 0 0 56px; width: 56px; height: auto; background: transparent; color: var(--ink-2); font-size: 11px; opacity: var(--p); transform: scale(calc(.7 + .3 * var(--p))); transition: opacity .25s, transform .25s cubic-bezier(.2, .8, .2, 1); }
+  .detail-record.bank-record[data-swipe][data-dragging] > .detail-record-actions > button { transition: none; }
+  .detail-record.bank-record[data-swipe] .swipe-icon { display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; border-radius: 50%; background: var(--surface); box-shadow: inset 0 0 0 1px var(--border); color: var(--ink); }
+  .detail-record.bank-record[data-swipe] .bank-record-rule .swipe-icon { background: var(--accent-wash); box-shadow: none; color: var(--accent); }
+  .detail-record.bank-record[data-swipe] .bank-record-rule[data-pending="true"] .swipe-icon { background: var(--accent); color: var(--surface); }
+}
+@media (max-width: 640px) and (prefers-reduced-motion: reduce) {
+  .detail-record.bank-record[data-swipe] > .detail-record-details, .detail-record.bank-record[data-swipe] > .detail-record-actions > button { transition: none; }
+}

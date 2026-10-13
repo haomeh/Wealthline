@@ -184,8 +184,8 @@ test('cashflow loads summary-backed ledger details and month navigation reaches 
   assert.equal(document.querySelectorAll('.bank-record').length, 20)
   const filter = document.querySelector('[aria-label="流水月份篩選"]')
   await act(() => {
-    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(filter, '2026-07')
-    filter.dispatchEvent(new Event('input', { bubbles: true }))
+    Object.getOwnPropertyDescriptor(dom.window.HTMLSelectElement.prototype, 'value').set.call(filter, '2026-07')
+    filter.dispatchEvent(new Event('change', { bubbles: true }))
   })
   assert.equal(document.querySelectorAll('.bank-record').length, 100)
   assert.match(document.querySelector('[aria-label="銀行流水分頁"]').textContent, /第 1／2 頁/)
