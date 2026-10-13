@@ -421,3 +421,13 @@ test('Taishin two-line summary around a row and the foreign table with printed z
  assert.equal(r.status,'recognized');assert.equal(r.sections[0].rows[0].description,'跨行轉帳手續費')
  assert.deepEqual(r.sections.map(s=>[s.currency,s.noTransactions,...s.rows.map(w=>w.direction+w.amount)]),[['TWD',false,'debit15'],['JPY',true],['USD',false,'credit0.12','debit20']])
 })
+test('Taishin note column joins the summary: shared balance item, wrapped lines of the nearest row, empty note unchanged',()=>{
+ const r=bank.parseBankStatement([page(1,[...mast('台新銀行綜合對帳單'),item('新臺幣帳戶的往來明細',49,720),...taishinHeader(700,[135,185,272,331,396]),
+  ...taishinRow(680,'2031/04/08','轉帳支取','$1,200',''),item('$8,800 午餐費',414,680),
+  item('數位跨行900-12345678**',450,663),...taishinRow(656,'2031/04/09','CD轉出','$300',''),item('$8,500',418,656),item('**9012',450,649),
+  ...taishinRow(625,'2031/04/10','存款息','','$7'),item('$8,507',418,625),
+  ...taishinRow(608,'2031/04/11','手續費','$15',''),item('$8,492 手續費',414,608)])])
+ assert.equal(r.status,'recognized');const d=r.sections[0].rows.map(w=>w.description)
+ assert.equal(d[0],'轉帳支取 · 午餐費');assert.match(d[1],/^CD轉出 · 數位跨行/);assert.ok(d[1].endsWith('**9012'));assert.equal(d[2],'存款息');assert.equal(d[3],'手續費')
+ assert.deepEqual(r.sections[0].rows.map(w=>w.amount),[1200,300,7,15])
+})

@@ -472,6 +472,16 @@ export function parseBankStatement(pages: readonly BankPage[], metadata: BankSta
             // A two-line summary is centered on its row: one line just above, one just below, none on the row.
             if (layout.splitDescription && dateText && !narrative)
                 narrative = [p.lines[n - 1], p.lines[n + 1]].filter(r => r && Math.abs(r.y - l.y) < 9 && !r.items.some(i => i.x < t.descriptionX - 8 * t.scale)).map(r => narrativeOf(r!)).filter(Boolean).join('');
+            if (t.noteX !== undefined && dateText) {
+                // The note cell starts right of the balance, may share an item with it and may wrap above and below the row.
+                // A wrapped line belongs to this row only when no other row is as near.
+                const rowLike = (r: SpatialLine) => r.items.some(i => i.x < t.descriptionX - 8 * t.scale);
+                const mine = (k: number, step: number) => { for (let j = k; p.lines[j] && Math.abs(p.lines[j].y - l.y) < 30 * t.scale; j += step) if (rowLike(p.lines[j])) return Math.abs(p.lines[j].y - p.lines[k].y) > Math.abs(p.lines[k].y - l.y); return true; };
+                const wrapped = (k: number, step: number) => { const r = p.lines[k]; return r && !rowLike(r) && Math.abs(r.y - l.y) < 16 * t.scale && mine(k, step) ? [r] : []; };
+                const note = [...wrapped(n - 2, -1), ...wrapped(n - 1, -1), l, ...wrapped(n + 1, 1), ...wrapped(n + 2, 1)].flatMap(r => r.items.filter(i => i.x > t.creditEdge + 30 * t.scale)).map(i => { const [head, ...rest] = i.text.split(' '); return money(head) === undefined ? i.text : rest.join(' '); }).join('').slice(0, 120);
+                if (note && note !== narrative)
+                    narrative = narrative ? `${narrative} · ${note}` : note;
+            }
             if (!dateText && !debit.length && !credit.length && !narrative)
                 continue;
             if (dateText) {
