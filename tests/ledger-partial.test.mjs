@@ -68,7 +68,7 @@ test('the bank page reads only the parts it asks for, and the scope says what is
   assert.deepEqual([...new Set(partReads(from).filter((n) => n !== 'main'))].sort(), ['ledger-2026-Q3', 'ledger-2026-Q4'])
   assert.deepEqual(ids(data.bankTransactions), ['c', 'd'])
   const scope = store.ledgerScope(state, data)
-  assert.deepEqual(scope, { next: 'ledger-2025-Q4', from: '2026-01', earlier: { rows: 2, pending: 2 } })
+  assert.deepEqual(scope, { next: 'ledger-2025-Q4', from: '2026-01', earlier: { rows: 2, pending: 2 }, months: ['2025-02', '2025-05'] })
   // The overview counts the loaded months from the records and the rest from the summary.
   assert.deepEqual(totals(store.ledgerCashflow(state, data)), totals(cashflow.cashflowMonths({ expenses: [expense('e', '2025-11-01')], bankTransactions: [tx('a', '2025-02-01'), tx('b', '2025-05-01'), tx('c', '2026-08-01'), tx('d', '2026-10-01')] })))
 })

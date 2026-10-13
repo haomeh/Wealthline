@@ -907,7 +907,7 @@ export default function App() {
         {data && tab === 'bank-transactions' && !bankShown && waiting('ledger', ledgerWanted)}
         {data && tab === 'expenses' && !missing('ledger') && <Expenses key={local?'local':user?.sub} passwordScope={local?'local':user?`google:${user.sub}`:undefined} data={data} onChange={update} busy={busy} />}
         {data && tab === 'bank-transactions' && bankShown && <BankTransactions key={local?'local':user?.sub} passwordScope={local?'local':user?`google:${user.sub}`:undefined} data={data} onChange={update} busy={busy} historyReady={!missing('history')} historyStatus={groupLoad.history} onLoadHistory={()=>void loadGroup('history')}
-          ledger={ledger ? { ...ledger, status: groupLoad.ledger, onLoadEarlier: () => loadEarlier(ledger.next), onLoadAll: () => loadEarlier('') } : undefined} />}
+          ledger={ledger ? { ...ledger, status: groupLoad.ledger, onLoadEarlier: () => loadEarlier(ledger.next), onLoadAll: () => loadEarlier(''), onLoadMonth: (month) => void loadGroup('ledger', [ledgerPart(`${month}-01`)]) } : undefined} />}
         {data && tab === 'rates' && <Rates data={data} onChange={update} onRefresh={async () => void (await refreshRates(data))} error={ratesError} />}
       </main>
       <SiteFooter />

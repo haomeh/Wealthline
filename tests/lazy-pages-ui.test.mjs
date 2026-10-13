@@ -359,6 +359,27 @@ test('a filter that leaves the list end on screen keeps loading earlier quarters
   assert.equal(partReads(drive, partOf(monthsAgo(15))), 1)
 }))
 
+test('choosing a month not loaded yet reads only that month\'s quarter', () => withObserver(async () => {
+  const drive = await splitDrive(quarterly())
+  await open('/bank-transactions')
+  const older = monthsAgo(15).slice(0, 7)
+  const select = document.querySelector('[aria-label="流水月份篩選"]')
+  assert.ok([...select.options].some((o) => o.value === older), 'the month list includes months not loaded')
+  drive.hold('ledger')
+  await act(() => {
+    Object.getOwnPropertyDescriptor(dom.window.HTMLSelectElement.prototype, 'value').set.call(select, older)
+    select.dispatchEvent(new Event('change', { bubbles: true }))
+  })
+  await settle()
+  assert.match(main(), /正在載入 .* 月的流水/)
+  assert.doesNotMatch(main(), /沒有符合篩選的流水/)
+  await drive.release('ledger')
+  assert.match(main(), /Row older/)
+  assert.equal(document.querySelector('[data-load-earlier]'), null, 'a month filter does not load earlier quarters')
+  assert.equal(partReads(drive, partOf(monthsAgo(15))), 1)
+  assert.equal(partReads(drive, partOf(monthsAgo(6))), 0, 'quarters in between are not read')
+}))
+
 test('a failed load of an earlier quarter shows why and loads again only on 重試', () => withObserver(async () => {
   const drive = await splitDrive(quarterly())
   await open('/bank-transactions')

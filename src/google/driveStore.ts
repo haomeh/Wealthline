@@ -106,10 +106,12 @@ export function recentLedgerFrom(state: DriveState, today: string): string {
 // - from: the first month (YYYY-MM) from which every part is loaded;
 // - earlier: bank records and unclassified bank records in the parts not loaded, counted from
 //   the summary; undefined when a part not loaded has no summary entry.
+// - months: the months (YYYY-MM) with bank records in the parts not loaded, from the summary.
 export interface LedgerScope {
   next: string
   from: string
   earlier?: { rows: number; pending: number }
+  months: string[]
 }
 export function ledgerScope(state: DriveState, data: WealthData): LedgerScope | null {
   const unheld = ledgerNames(state).filter((name) => !holds(partsOf(data), name))
@@ -118,9 +120,10 @@ export function ledgerScope(state: DriveState, data: WealthData): LedgerScope | 
   const year = Number(next.slice(7, 11)), quarter = Number(next.slice(13))
   const from = quarter === 4 ? `${year + 1}-01` : `${year}-${String(quarter * 3 + 1).padStart(2, '0')}`
   const months = unheld.map((name) => state.summary.parts[name]?.cashflow)
-  if (months.some((m) => !m)) return { next, from }
-  const all = months.flatMap((m) => m!)
-  return { next, from, earlier: { rows: all.reduce((n, m) => n + m.coverage.bankCount, 0), pending: all.reduce((n, m) => n + m.totals.pending.count, 0) } }
+  const all = months.flatMap((m) => m ?? [])
+  const withRows = [...new Set(all.filter((m) => m.coverage.bankCount > 0).map((m) => m.month))].sort()
+  if (months.some((m) => !m)) return { next, from, months: withRows }
+  return { next, from, earlier: { rows: all.reduce((n, m) => n + m.coverage.bankCount, 0), pending: all.reduce((n, m) => n + m.totals.pending.count, 0) }, months: withRows }
 }
 
 // The monthly cashflow while some transaction parts are not loaded: counted from the records
