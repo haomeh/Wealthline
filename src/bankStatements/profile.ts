@@ -31,7 +31,7 @@ export interface BankProfile {
     layout: Layout;
     /** Other header geometries of the same table, tried after `layout`. */
     variants?: readonly Layout[];
-    /** Bank name on the cover. Profiles of one bank share the same RegExp object. Two banks named on one cover fail closed. */
+    /** Bank name on the cover. Profiles of one bank use the same pattern and flags. Two banks named on one cover fail closed. */
     brand: RegExp;
     /** For a cover that names this bank: does it select this layout? Without it, the cover never selects this profile. */
     cover?(masthead: string, pages: readonly ProfilePage[]): boolean;

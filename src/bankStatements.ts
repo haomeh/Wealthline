@@ -23,6 +23,9 @@ export interface BankStatementResult {
     balances?: StatementCashBalance[];
 }
 const warning = (page: number, code: string): BankWarning => ({ page, code, count: 1 });
+// Profiles of one bank are matched by the brand pattern text, not by RegExp object identity.
+const brandKey = (brand: RegExp) => `${brand.source}/${brand.flags}`;
+const sameBrand = (a: RegExp, b: RegExp) => brandKey(a) === brandKey(b);
 const tableHeaderOf = (line: SpatialLine, profile: BankProfile): Table | undefined => {
     for (const layout of [profile.layout, ...(profile.variants ?? [])]) {
         const table = tableHeader(line, layout);
@@ -40,8 +43,11 @@ interface Pending {
     invalid: boolean;
     leading?: string[];
 }
-/** Pure, synchronous positional parser. Input pages and all identifier evidence are transient. */
-export function parseBankStatement(pages: readonly BankPage[], metadata: BankStatementMetadata = {}): BankStatementResult {
+/**
+ * Pure, synchronous positional parser. Input pages and all identifier evidence are transient.
+ * `profiles` is for tests; the app always uses BANK_PROFILES.
+ */
+export function parseBankStatement(pages: readonly BankPage[], metadata: BankStatementMetadata = {}, profiles: readonly BankProfile[] = BANK_PROFILES): BankStatementResult {
     if (pages.length > 100 || new Set(pages.map(p => p.page)).size !== pages.length)
         throw new Error('銀行文件頁數無效');
     let chars = 0;
@@ -95,14 +101,14 @@ export function parseBankStatement(pages: readonly BankPage[], metadata: BankSta
     const closing=new Map<string,{currency:string;quantity:number}>(),invalidClosing=new Set<string>(),cashScopes=new Map<string,string>();
     const masthead = ordered[0]?.lines.filter(l => l.y > ordered[0].height - 160 && !/Disclosure|注意|說明|優惠|投資|mentions/i.test(l.text)).map(l => l.text).join(' ') ?? '';
     // The first bank named on the cover decides; several banks fail closed below.
-    const coverBrand = BANK_PROFILES.find(p => p.cover && p.brand.test(masthead))?.brand;
-    let detected: BankProfile | undefined = coverBrand && BANK_PROFILES.find(p => p.brand === coverBrand && p.cover!(masthead, ordered));
+    const coverBrand = profiles.find(p => p.cover && p.brand.test(masthead))?.brand;
+    let detected: BankProfile | undefined = coverBrand && profiles.find(p => sameBrand(p.brand, coverBrand) && p.cover?.(masthead, ordered));
     const statementHeading = ordered[0]?.lines.some(l => l.y > 400 && l.items.some(i => /對帳單|STATEMENT/.test(i.text.replace(/\s/g, '').toUpperCase()))) ?? false;
     // The samples use raster logos. A bank-specific, complete positional activity
     // fingerprint plus a statement cover/cash context is stronger than arbitrary
     // bank-name occurrences in disclosures. Do not widen name search to page bodies.
     if (!detected && statementHeading) {
-        const fingerprints = BANK_PROFILES.filter(candidate => candidate.fingerprint && ordered.some(p => p.lines.some((l, n) => {
+        const fingerprints = profiles.filter(candidate => candidate.fingerprint && ordered.some(p => p.lines.some((l, n) => {
             if (!tableHeaderOf(l, candidate))
                 return false;
             const nearby = p.lines.slice(Math.max(0, n - 4), n).filter(r => r.y - l.y < 40).map(r => r.text).join(' ');
@@ -113,11 +119,11 @@ export function parseBankStatement(pages: readonly BankPage[], metadata: BankSta
     }
     const dbsFooter = ordered[0]?.lines.some(l => l.y < 100 && l.items.some(i => /\bDBS\b/i.test(i.text))) ?? false;
     const isDbs = /DBS|星展銀行/i.test(masthead) || (statementHeading && dbsFooter && !detected);
-    const bankMatches = [...new Set(BANK_PROFILES.map(p => p.brand))].filter(pattern => pattern.test(masthead));
-    if (bankMatches.length > 1 || BANK_PROFILES.some(p => p.ambiguousCover?.(masthead)))
+    const bankMatches = [...new Map(profiles.map(p => [brandKey(p.brand), p.brand])).values()].filter(pattern => pattern.test(masthead));
+    if (bankMatches.length > 1 || profiles.some(p => p.ambiguousCover?.(masthead)))
         detected = undefined;
     if (!detected && isDbs && bankMatches.length <= 1 && ordered.some(p => p.lines.some((_, n) => dbsSingaporeContext(p.lines, n))))
-        detected = BANK_PROFILES.find(p => p.layout === dbsSingapore);
+        detected = profiles.find(p => p.layout === dbsSingapore);
     const sections: BankSection[] = [], warnings: BankWarning[] = [];
     if (!detected)
         return { status: 'unsupported', ...(isDbs ? { bank: 'DBS' } : {}), sections, warnings: [warning(ordered[0]?.page ?? 1, isDbs ? DBS_UNSUPPORTED : 'unsupported-bank-layout')], recognizedCount: 0, rejectedCount: 0 };
