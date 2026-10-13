@@ -615,7 +615,7 @@ export default function App() {
   const missing = (group: PartGroup) => !!state && !!data && missingParts(state, data, group).length > 0
   const archive = state && missing('history') ? archiveSummary(state) : null
   const needs = (group: PartGroup) => missing(group) && (group === 'ledger'
-    ? tab === 'expenses' || tab === 'bank-transactions' || ((tab === 'overview' || tab === 'cashflow') && !summaryCashflow(state!))
+    ? tab === 'expenses' || tab === 'bank-transactions' || tab === 'cashflow' || (tab === 'overview' && !summaryCashflow(state!))
     // The bank page uses the history when it imports statement balances (bankStatementAssets.ts).
     : route.tab === 'history' || tab === 'bank-transactions' || (route.tab === 'accounts' && route.page === 'detail') || (tab === 'overview' && !archive))
   const needed = (['ledger', 'history'] as const).filter(needs)
@@ -848,6 +848,8 @@ export default function App() {
             loadingHistory={groupLoad.history === 'loading'}
           />
         )}
+        {/* The cashflow page shows the stored totals while the records load; a failed load still needs its 重試. */}
+        {data && tab === 'cashflow' && missing('ledger') && groupLoad.ledger && groupLoad.ledger !== 'loading' && waiting('ledger')}
         {data && tab === 'cashflow' && (
           <Cashflow
             data={data}
