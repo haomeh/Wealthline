@@ -1,5 +1,5 @@
 import { dataVersion } from './dataVersion'
-import { Fragment, useEffect, useReducer, useRef, useState } from 'react'
+import { Fragment, useEffect, useMemo, useReducer, useRef, useState } from 'react'
 import {
   clearSession,
   fetchProfile,
@@ -16,7 +16,8 @@ import {
   type UserProfile,
 } from './google/auth'
 import { DATA_FILE_NAME, FOLDER_NAME, HISTORY_FOLDER_NAME, LEDGER_FOLDER_NAME } from './google/drive'
-import { archiveSummary, summaryCashflow, emptyDriveState, loadDrive, mergeParts, missingParts, readGroup, saveDrive, storedSizes, type DriveState, type PartGroup } from './google/driveStore'
+import { archiveSummary, emptyDriveState, ledgerCashflow, ledgerScope, loadDrive, mergeParts, missingParts, readGroup, recentLedgerFrom, saveDrive, storedSizes, withHeldParts, type DriveState, type PartGroup } from './google/driveStore'
+import { ledgerPart } from './dataParts'
 import { applyFetchedRates, emptyData, missingRates, parseWealthData, ratesStale, usedCurrencies, type WealthData } from './model'
 import { finishSave } from './saveState'
 import { classifyBankTransaction } from './bankTransactions'
@@ -95,7 +96,10 @@ export default function App() {
   // (driveStore.ts). A load in progress, or the message of a failed one.
   const [groupLoad, setGroupLoad] = useState<Partial<Record<PartGroup, string>>>({})
   const groupLoads = useRef(new Map<PartGroup, Promise<void>>())
-  const [, setSummaryVersion] = useState(0)
+  // Drive: the oldest transaction part the bank page asked for with 載入更早的 ('' for all);
+  // null until then, when it reads the last three months (recentLedgerFrom).
+  const [bankFrom, setBankFrom] = useState<string | null>(null)
+  const [summaryVersion, setSummaryVersion] = useState(0)
   // Local mode: how much of this browser's storage the site uses, when the browser says.
   const [browserStorage, setBrowserStorage] = useState<{ usage: number; quota: number } | null>(null)
   const [dirty, setDirty] = useState(false)
@@ -173,6 +177,7 @@ export default function App() {
     setUser(p)
     driveState.current = file?.state ?? emptyDriveState()
     setGroupLoad({})
+    setBankFrom(null)
     startSession(file?.data ?? null)
   }
 
@@ -257,7 +262,7 @@ export default function App() {
       const written = await write(next)
       if (version !== sessionVersion.current) return
       saved.current = written
-      setData((d) => d ? finishSave(d, market, written) : d)
+      setData((d) => d ? withHeldParts(finishSave(d, market, written), written) : d)
     } catch (e) {
       if (version === sessionVersion.current) setStatus({ kind: 'error', text: e instanceof Error ? e.message : String(e) })
     } finally {
@@ -280,20 +285,22 @@ export default function App() {
     setStoredTotal({ files: sizes.length, bytes: sizes.reduce((a, b) => a + b, 0) })
   }
 
-  // Reads the parts of `group` the data does not hold yet and adds their records.
-  function loadGroup(group: PartGroup): Promise<void> {
+  // Reads the parts of `group` the data does not hold yet, or only the parts named in `only`, and
+  // adds their records. Edits not saved yet are kept over the records read (mergeParts).
+  function loadGroup(group: PartGroup, only?: readonly string[]): Promise<void> {
     const state = driveState.current
     const running = groupLoads.current.get(group)
-    if (running) return running
-    if (localMode.current || !state) return Promise.resolve()
+    if (running) return running.then(() => loadGroup(group, only))
+    if (localMode.current || !state || only?.length === 0) return Promise.resolve()
     const session = sessionVersion.current
     setGroupLoad((s) => ({ ...s, [group]: 'loading' }))
     const task = (async () => {
       try {
-        const parts = await readGroup(await validToken(), state, group)
+        const parts = await readGroup(await validToken(), state, group, only)
         if (session !== sessionVersion.current) return
+        const base = saved.current ?? undefined
         if (saved.current) saved.current = mergeParts(saved.current, parts, parseWealthData)
-        setData((d) => d && mergeParts(d, parts, parseWealthData))
+        setData((d) => d && mergeParts(d, parts, parseWealthData, base))
         measureStored(saved.current)
         setGroupLoad((s) => ({ ...s, [group]: undefined }))
       } catch (e) {
@@ -455,6 +462,7 @@ export default function App() {
       driveState.current = null
       saved.current = null
       setGroupLoad({})
+      setBankFrom(null)
       setReturning(null)
       setRefreshing(false)
       setUser(null)
@@ -561,7 +569,7 @@ export default function App() {
         const written = await write(next)
         if (session !== sessionVersion.current) return
         saved.current = written
-        setData((current) => current ? finishSave(current, submitted, written) : current)
+        setData((current) => current ? withHeldParts(finishSave(current, submitted, written), written) : current)
         const stillDirty = edits !== editVersion.current
         dirtyRef.current = stillDirty
         setDirty(stillDirty)
@@ -614,25 +622,42 @@ export default function App() {
   const state = !local ? driveState.current : null
   const missing = (group: PartGroup) => !!state && !!data && missingParts(state, data, group).length > 0
   const archive = state && missing('history') ? archiveSummary(state) : null
-  const needs = (group: PartGroup) => missing(group) && (group === 'ledger'
-    ? tab === 'expenses' || tab === 'bank-transactions' || tab === 'cashflow' || (tab === 'overview' && !summaryCashflow(state!))
-    : route.tab === 'history' || (route.tab === 'accounts' && route.page === 'detail') || (tab === 'overview' && !archive))
-  const needed = (['ledger', 'history'] as const).filter(needs)
+  // Transactions: the monthly totals while some parts are not loaded, from the records loaded
+  // and the summary of the rest (ledgerCashflow); undefined once all are loaded.
+  const ledgerMissing = state && data ? missingParts(state, data, 'ledger') : []
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const ledgerMonths = useMemo(() => state && data && ledgerMissing.length ? ledgerCashflow(state, data) : undefined, [state, data, summaryVersion])
+  const ledger = state && data ? ledgerScope(state, data) : null
+  // The bank page shows once the parts of the last three months are loaded; earlier quarters
+  // load when it asks (bankFrom). The expense and cashflow pages read every part.
+  const recentFrom = state ? recentLedgerFrom(state, localDate(new Date().toISOString())) : ''
+  const bankShown = !ledgerMissing.some((name) => name >= recentFrom)
+  // A record dated in a part not loaded (an edit or a new record) loads that part, so every
+  // record shown belongs to a loaded part and a later save rewrites that part as a whole.
+  const recordParts = ledgerMissing.length && data ? new Set([...(data.bankTransactions ?? []), ...(data.expenses ?? [])].map((r) => ledgerPart(r.date))) : null
+  const ledgerWanted = !ledgerMissing.length ? []
+    : tab === 'expenses' || tab === 'cashflow' || (tab === 'overview' && !ledgerMonths) ? ledgerMissing
+      : ledgerMissing.filter((name) => (tab === 'bank-transactions' && name >= (bankFrom ?? recentFrom)) || recordParts?.has(name))
+  const needsHistory = missing('history') && (route.tab === 'history' || (route.tab === 'accounts' && route.page === 'detail') || (tab === 'overview' && !archive))
   useEffect(() => {
-    for (const group of needed) if (!groupLoad[group]) void loadGroup(group)
+    if (ledgerWanted.length && !groupLoad.ledger) void loadGroup('ledger', ledgerWanted)
+    if (needsHistory && !groupLoad.history) void loadGroup('history')
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [needed.join()])
-  const waiting = (group: PartGroup) => {
+  }, [ledgerWanted.join(), needsHistory])
+  const loadEarlier = (from: string) => {
+    setBankFrom(from)
+    void loadGroup('ledger', ledgerMissing.filter((name) => name >= from))
+  }
+  const waiting = (group: PartGroup, only?: readonly string[]) => {
     const failed = groupLoad[group] && groupLoad[group] !== 'loading' ? groupLoad[group] : ''
     return <section className="panel" aria-busy={!failed}>{failed
-      ? <div className="banner error" role="alert"><p>{failed}</p><button onClick={() => void loadGroup(group)}>重試</button></div>
+      ? <div className="banner error" role="alert"><p>{failed}</p><button onClick={() => void loadGroup(group, only)}>重試</button></div>
       : <p className="muted">正在載入{GROUP_NAMES[group]}…</p>}</section>
   }
 
-  // Bank rows still to classify, for the sidebar badge: from the rows, or the stored monthly totals before they load.
-  const ledgerSummary = state && missing('ledger') ? summaryCashflow(state) : undefined
-  const unclassified = !data ? 0 : ledgerSummary
-    ? ledgerSummary.reduce((n, m) => n + m.totals.pending.count, 0)
+  // Bank rows still to classify, for the sidebar badge: from the rows, or with the stored monthly totals for parts not loaded.
+  const unclassified = !data ? 0 : ledgerMonths
+    ? ledgerMonths.reduce((n, m) => n + m.totals.pending.count, 0)
     : (data.bankTransactions ?? []).filter((t) => classifyBankTransaction(t, data.bankCategoryRules ?? []).kind === 'pending').length
   const savedAt = saved.current?.updatedAt ? savedLabel(saved.current.updatedAt) : ''
 
@@ -841,7 +866,7 @@ export default function App() {
             onGoAccounts={() => goAccounts({ page: 'list' })}
             onGoCashflow={() => go({ tab: 'cashflow' })}
             status={syncPill}
-            cashflowMonths={ledgerSummary}
+            cashflowMonths={ledgerMonths}
             archive={archive ?? undefined}
             onLoadHistory={() => void loadGroup('history')}
             loadingHistory={groupLoad.history === 'loading'}
@@ -852,7 +877,7 @@ export default function App() {
         {data && tab === 'cashflow' && (
           <Cashflow
             data={data}
-            months={ledgerSummary}
+            months={ledgerMonths}
             onGoExpenses={() => go({ tab: 'expenses' })}
             onGoBankTransactions={() => go({ tab: 'bank-transactions' })}
           />
@@ -878,9 +903,11 @@ export default function App() {
           />
         )}
         {data && tab === 'liabilities' && <Liabilities data={data} onChange={update} />}
-        {data && (tab === 'expenses' || tab === 'bank-transactions') && missing('ledger') && waiting('ledger')}
+        {data && tab === 'expenses' && missing('ledger') && waiting('ledger')}
+        {data && tab === 'bank-transactions' && !bankShown && waiting('ledger', ledgerWanted)}
         {data && tab === 'expenses' && !missing('ledger') && <Expenses key={local?'local':user?.sub} passwordScope={local?'local':user?`google:${user.sub}`:undefined} data={data} onChange={update} busy={busy} />}
-        {data && tab === 'bank-transactions' && !missing('ledger') && <BankTransactions key={local?'local':user?.sub} passwordScope={local?'local':user?`google:${user.sub}`:undefined} data={data} onChange={update} busy={busy} historyReady={!missing('history')} historyStatus={groupLoad.history} onLoadHistory={()=>void loadGroup('history')} />}
+        {data && tab === 'bank-transactions' && bankShown && <BankTransactions key={local?'local':user?.sub} passwordScope={local?'local':user?`google:${user.sub}`:undefined} data={data} onChange={update} busy={busy} historyReady={!missing('history')} historyStatus={groupLoad.history} onLoadHistory={()=>void loadGroup('history')}
+          ledger={ledger ? { ...ledger, status: groupLoad.ledger, onLoadEarlier: () => loadEarlier(ledger.next), onLoadAll: () => loadEarlier('') } : undefined} />}
         {data && tab === 'rates' && <Rates data={data} onChange={update} onRefresh={async () => void (await refreshRates(data))} error={ratesError} />}
       </main>
       <SiteFooter />

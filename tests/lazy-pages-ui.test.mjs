@@ -278,3 +278,75 @@ test('the overview recounts an old summary and shows an unclassified August inco
   assert.equal(document.querySelector('[data-cashflow-metric="income"]').textContent, '3,000')
   assert.match(document.querySelector('[data-cashflow-pending]').textContent, /1 筆銀行流水未分類/)
 })
+
+// The bank page reads the last three months first (driveStore.ts recentLedgerFrom); dates are
+// relative to today, which the app reads from the clock.
+const monthsAgo = (n, day = 15) => { const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - n); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}` }
+const partOf = (date) => `ledger-${date.slice(0, 4)}-Q${Math.floor((Number(date.slice(5, 7)) - 1) / 3) + 1}`
+const bankRow = (id, date, accountId = 'acct') => ({ id, accountId, date, description: `Row ${id}`, currency: 'TWD', direction: 'debit', amount: 5 })
+const quarterly = () => {
+  const data = fixture()
+  data.expenses = []
+  data.bankTransactionAccounts = [{ id: 'acct', label: 'Main ledger', bank: 'Bank' }, { id: 'old', label: 'Old ledger', bank: 'Bank' }, { id: 'unused', label: 'Unused ledger', bank: 'Bank' }]
+  data.bankTransactions = [bankRow('now', monthsAgo(0)), bankRow('recent', monthsAgo(1)), bankRow('half', monthsAgo(6)), bankRow('older', monthsAgo(15), 'old')]
+  return data
+}
+const startsWith = (text) => [...document.querySelectorAll('button')].find((b) => b.textContent.startsWith(text))
+const ledgerReads = (drive) => [...new Set(drive.reads.filter((name) => name.startsWith('ledger-')))].sort()
+
+test('the bank page shows the last three months first and loads earlier quarters on request', async () => {
+  const drive = await splitDrive(quarterly())
+  await open('/bank-transactions')
+  const recent = [partOf(monthsAgo(0)), partOf(monthsAgo(1))]
+  assert.ok(ledgerReads(drive).every((name) => name >= partOf(monthsAgo(2))), ledgerReads(drive).join())
+  assert.ok(!ledgerReads(drive).includes(partOf(monthsAgo(6))))
+  assert.ok(recent.every((name) => ledgerReads(drive).includes(name)))
+  assert.match(main(), /Row now/)
+  assert.match(main(), /Row recent/)
+  assert.doesNotMatch(main(), /Row half|Row older/)
+  const notice = () => document.querySelector('.bank-scope')?.textContent ?? ''
+  assert.match(notice(), /更早還有 2 筆流水還沒載入（其中 2 筆未分類）/)
+  assert.match(notice(), /只涵蓋已載入的月份/)
+  // The sidebar badge counts the quarters not loaded from the summary.
+  assert.equal(document.querySelector('.nav-badge')?.textContent, '4')
+  // Each 載入更早的流水 reads the next older quarter that has a file.
+  while (!main().includes('Row half')) await click(startsWith('載入更早的流水'))
+  assert.ok(!ledgerReads(drive).includes(partOf(monthsAgo(15))))
+  assert.match(notice(), /更早還有 1 筆流水/)
+  await click(button('全部載入'))
+  assert.match(main(), /Row older/)
+  assert.equal(document.querySelector('.bank-scope'), null)
+})
+
+test('importing a bank statement first loads every quarter, to find duplicates among all records', async () => {
+  const drive = await splitDrive(quarterly())
+  await open('/bank-transactions')
+  drive.hold('ledger')
+  drive.hold('history')
+  await click(button('匯入銀行帳單'))
+  assert.match(main(), /正在載入全部銀行流水/)
+  assert.equal(document.querySelector('.bank-import form'), null)
+  await drive.release('history')
+  assert.equal(document.querySelector('.bank-import form'), null, 'history alone is not enough')
+  await drive.release('ledger')
+  assert.ok(document.querySelector('.bank-import form'))
+  assert.ok(ledgerReads(drive).includes(partOf(monthsAgo(15))))
+  await click(button('取消匯入'))
+  assert.match(main(), /Row older/)
+})
+
+test('deleting an account loads every quarter first, and keeps an account an earlier record uses', async () => {
+  const drive = await splitDrive(quarterly())
+  await open('/bank-transactions')
+  assert.match(main(), /已載入的期間沒有流水/)
+  drive.hold('ledger')
+  await click(button('刪除帳戶 Old ledger'))
+  assert.match(main(), /正在載入全部流水，確認沒有流水使用這個帳戶後就會刪除/)
+  await drive.release('ledger')
+  assert.match(main(), /帳戶仍被流水引用/)
+  assert.ok(button('刪除帳戶 Old ledger'))
+  assert.equal(button('刪除帳戶 Old ledger').disabled, true)
+  await click(button('刪除帳戶 Unused ledger'))
+  assert.equal(button('刪除帳戶 Unused ledger'), undefined)
+  assert.match(document.querySelector('.save-bar')?.textContent ?? '', /未儲存/)
+})
