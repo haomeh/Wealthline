@@ -82,6 +82,14 @@ export interface Layout {
     /** Never inherit a date for a new amount-bearing row in this layout. */
     datedRowsOnly?: boolean;
     partial?: boolean;
+    /** Rows below this y are footer, not activity. Default 100. */
+    bodyBottom?: number;
+    /** A table cut by the page end continues on the next page without a repeated header. */
+    headerlessContinuation?: boolean;
+    /** A summary too long for its cell is printed on two lines around the row. */
+    splitDescription?: boolean;
+    /** A printed 0 in an amount column means the column is empty. */
+    zeroAmountBlank?: boolean;
     accountColumn?: boolean;
     currencyColumn?: boolean;
 }
@@ -149,7 +157,7 @@ export function tableHeader(line: SpatialLine, layout: Layout): Table | undefine
     if (layout.currencyColumn && !currency)
         return;
     const reference = labels.find(i => /^支票(?:號碼)?$/.test(i.text) && i.x > description.x);
-    return { dateX: date.x + (geometry.bodyStarts[0] - expected[0]) * scale, descriptionX: date.x + (geometry.bodyStarts[1] - expected[0]) * scale, descriptionEnd: reference?.x ?? Math.min(debit.x, credit.x), debitEdge: date.x + (layout.edges[0] - expected[0]) * scale, creditEdge: date.x + (layout.edges[1] - expected[0]) * scale, scale, accountX: geometry.accountX === undefined ? account?.x : date.x + (geometry.accountX - expected[0]) * scale, currencyX: currency?.x, balanceX: balance?.x };
+    return { dateX: date.x + (geometry.bodyStarts[0] - expected[0]) * scale, descriptionX: date.x + (geometry.bodyStarts[1] - expected[0]) * scale, descriptionEnd: reference?.x ?? Math.min(debit.x, credit.x, currency && currency.x > description.x ? currency.x : Infinity), debitEdge: date.x + (layout.edges[0] - expected[0]) * scale, creditEdge: date.x + (layout.edges[1] - expected[0]) * scale, scale, accountX: geometry.accountX === undefined ? account?.x : date.x + (geometry.accountX - expected[0]) * scale, currencyX: currency?.x, balanceX: balance?.x };
 }
 export function money(text: string, decimalOnly = false): number | undefined {
     const normalized = text.replace(/^\$\s*/, '');

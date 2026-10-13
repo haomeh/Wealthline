@@ -26,6 +26,7 @@ const BANK_WARNINGS: Record<string,[WarningKind,string]> = {
  'partial-outgoing-transfer-coverage':['scope','此版型僅涵蓋局部轉出明細，不是完整月流水'],
  'unproven-page-continuity':['scope','無法確認交易區段完整結束或續頁屬於同一帳戶，可能有未匯入的內容；請核對原帳單及續頁，必要時手動補登'],
  'unsupported-dbs-sg-account':['scope','新加坡星展區段缺少相符的 My Account 帳戶、完整收支表頭或 SGD 幣別標示，該區段未匯入；請核對原帳單'],
+ 'unsupported-bank-layout':['scope','封面或交易表頭不符合任何已支援的銀行版型，未匯入任何交易；請確認是銀行帳戶對帳單，或手動補登'],
  'unsupported-dbs-activity-layout':['scope','未辨識到支援的星展收支交易表；若文件只有帳戶摘要，請另下載交易明細。未匯入任何交易'],
 }
 /**
