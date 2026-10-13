@@ -5,10 +5,13 @@ import {
   fetchProfile,
   isFresh,
   loadSession,
-  requestAccessToken,
+  peekRedirectResult,
+  preloadGis,
   renewAccessToken,
   revokeAccessToken,
+  startRedirectSignIn,
   storeSession,
+  takeRedirectResult,
   type AccessToken,
   type UserProfile,
 } from './google/auth'
@@ -54,6 +57,12 @@ type Status = { kind: 'idle' } | { kind: 'busy'; text: string } | { kind: 'error
 
 const GROUP_NAMES: Record<PartGroup, string> = { ledger: '消費明細與銀行流水', history: '往年歷史' }
 
+// This page load is the return from Google's sign-in page with a token.
+function hasRedirectToken(): boolean {
+  const r = peekRedirectResult()
+  return !!r && 'token' in r
+}
+
 export default function App() {
   const token = useRef<AccessToken | null>(null)
   // What this session last read from or wrote to Drive (driveStore.ts).
@@ -69,7 +78,7 @@ export default function App() {
   // background tasks started before the state re-renders; `localRaw` is the stored text this tab last read or wrote.
   // A tab keeps the mode it chose itself; otherwise a live Google session in the tab wins over
   // the flag other tabs share (see opensLocal).
-  const [local, setLocal] = useState(() => opensLocal(!!loadSession()?.token))
+  const [local, setLocal] = useState(() => opensLocal(!!loadSession()?.token || hasRedirectToken()))
   const localMode = useRef(local)
   const localRaw = useRef<string | null>(null)
   // The home page reads whether local data exists on render; this re-renders it after a delete.
@@ -99,7 +108,7 @@ export default function App() {
   // Between getting a token and showing the app. A reload with a live token starts here,
   // so the signed-out page never flashes before the app.
   const [opening, setOpening] = useState<{ step: OpeningStep; profile?: UserProfile } | null>(() =>
-    loadSession()?.token && !opensLocal(true) ? { step: 'auth' } : null,
+    (loadSession()?.token || hasRedirectToken()) && !opensLocal(true) ? { step: 'auth' } : null,
   )
   // Prices and rates being fetched after the data file has loaded.
   const [refreshing, setRefreshing] = useState(false)
@@ -338,6 +347,12 @@ export default function App() {
     }
   }
 
+  // Renewing an expired token opens Google's popup, which Safari allows only inside the click,
+  // so GIS is fetched as soon as the user is signed in rather than when the renewal starts.
+  useEffect(() => {
+    if (user) preloadGis()
+  }, [user])
+
   // Restore the session after a reload while this tab's token is still valid,
   // or local mode when the user was using it.
   const restored = useRef(false)
@@ -355,6 +370,15 @@ export default function App() {
           setLocal(false)
           throw e
         }
+      })
+      return
+    }
+    // Back from Google's sign-in page (see startRedirectSignIn).
+    const redirect = takeRedirectResult()
+    if (redirect) {
+      void run('登入中…', async () => {
+        if ('error' in redirect) throw new Error(redirect.error)
+        await openSession(redirect.token)
       })
       return
     }
@@ -377,17 +401,17 @@ export default function App() {
     if ((user || local) && path === '/') navigate('/app', { replace: true })
   }, [user, local, path])
 
+  // Sign-in leaves for Google's page in this tab and comes back with the token (see the restore above).
   const signIn = () =>
-    run('登入中…', async () => {
-      await openSession(await requestAccessToken('select_account'))
+    run('前往 Google 登入…', async () => {
+      startRedirectSignIn('select_account')
     })
 
   const resume = () =>
-    run('登入中…', async () => {
+    run('前往 Google 登入…', async () => {
       if (!returning) return
-      const t = await requestAccessToken('', returning.email)
-      // The user may have picked a different account in Google's dialog.
-      await openSession(t)
+      // The user may pick a different account on Google's page; openSession reads whichever comes back.
+      startRedirectSignIn('', returning.email)
     })
 
   const signOut = () =>

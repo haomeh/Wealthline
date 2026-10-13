@@ -34,7 +34,12 @@
    - 正式部署的網址，例如 `https://wealthline.haomeh.com`
 
    只填「協定 + 網域 + port」，結尾不要加 `/` 或路徑。`localhost` 和 `127.0.0.1` 算不同來源，要和瀏覽器網址列完全一致。存檔後通常要等 5 分鐘到幾小時才會生效。
-4. 「已授權的重新導向 URI」留空即可（使用 Google Identity Services 的 token 彈出視窗流程，不需要 redirect）。
+4. 「已授權的重新導向 URI」加入同樣的網址，但結尾**要**加 `/`：
+   - `http://localhost:5173/`
+   - `http://localhost:4173/`
+   - `https://wealthline.haomeh.com/`
+
+   首頁的登入按鈕會在同一個分頁跳到 Google，登入後帶著權杖回到這個網址（Safari 會把彈出視窗開成新分頁且回不來）。權杖過期時的續期仍用 Google Identity Services 的彈出視窗，只需要上面的 JavaScript 來源。
 5. 建立後複製「用戶端 ID」。
 
 ## 4. 設定到專案
