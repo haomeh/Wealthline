@@ -34,7 +34,7 @@ export function ChangeSinceLast({ data }: { data: WealthData }) {
   const diff = today.total - previous.total
   const gap = dayNumber(today.date) - dayNumber(previous.date)
   return (
-    <p className="hero-change">
+    <p className={`hero-change ${diff > 0 ? 'up' : diff < 0 ? 'down' : ''}`}>
       <strong className="num">
         {signed(diff)}
         {previous.total > 0 && <small> {diff >= 0 ? '+' : '−'}{pct(Math.abs(diff) / previous.total)}</small>}

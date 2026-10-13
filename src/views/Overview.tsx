@@ -1,6 +1,7 @@
 import { useCalendarNow } from '../useCalendarNow'
-import { useState, type CSSProperties } from 'react'
+import { useState, type CSSProperties, type ReactNode } from 'react'
 import { ActionIcon } from './ActionIcon'
+import { Logo } from './Site'
 import type { HistoricalPoint } from '../quantityHistory'
 import { snapshotOf, totalPoints } from '../history'
 import { seriesFor, MODES, type Mode } from './historySeries'
@@ -8,6 +9,7 @@ import { SnapshotDetails } from './SnapshotDetails'
 import { TrendChart } from './TrendChart'
 import { useHistoricalValuations } from '../useHistoricalValuations'
 import { balanceSheet } from '../liabilities'
+import { projectLiability } from '../loanSchedule'
 import { fmt } from '../format'
 import {
   CATEGORIES,
@@ -25,6 +27,7 @@ import { accountChange } from '../accountTrend'
 import type { ColoredSlice } from '../chartColors'
 import { CashflowSummary } from './CashflowSummary'
 import type { CashflowMonthTotals } from '../cashflow'
+import { useCashflowPeriod, useTwdCashflow } from '../cashflowPeriod'
 import type { Change, Snapshot } from '../history'
 
 // Earlier years of history that are not loaded: the last snapshot of each month, the edits
@@ -51,9 +54,13 @@ interface Props {
   archive?: ArchiveSummary
   onLoadHistory?: () => void
   loadingHistory?: boolean
+  // Phone only: the account list's 全部 link, the month tile's target and the save state in the header.
+  onGoAccounts?: () => void
+  onGoCashflow?: () => void
+  status?: ReactNode
 }
 
-export function Overview({ data: loaded, onGoHistory, onGoRates, onGoLiabilities, onNewAccount, onImport, onOpenAccount, onGoExpenses, onGoBankTransactions, cashflowMonths, archive, onLoadHistory, loadingHistory }: Props) {
+export function Overview({ data: loaded, onGoHistory, onGoRates, onGoLiabilities, onNewAccount, onImport, onOpenAccount, onGoExpenses, onGoBankTransactions, cashflowMonths, archive, onLoadHistory, loadingHistory, onGoAccounts, onGoCashflow, status }: Props) {
   const now = useCalendarNow()
   const data = archive ? { ...loaded, history: { ...loaded.history, snapshots: [...archive.points, ...loaded.history.snapshots], changes: [...archive.carried, ...loaded.history.changes] } } : loaded
   const estimated = data.liabilities?.some(d => d.schedule)
@@ -71,6 +78,9 @@ export function Overview({ data: loaded, onGoHistory, onGoRates, onGoLiabilities
   const index = Math.max(0, keys.includes(selected) ? keys.indexOf(selected) : points.length - 1)
   const point = points[index]
   const current = keys[index] === 'current'
+  const cashflowInput = { expenses: data.expenses, expenseRules: data.expenseCategoryRules, bankTransactions: data.bankTransactions, bankRules: data.bankCategoryRules, months: cashflowMonths }
+  const cashflowPeriod = useCashflowPeriod(cashflowInput, now)
+  const monthFlow = useTwdCashflow(cashflowInput, cashflowPeriod.endMonth, cashflowPeriod.period, cashflowPeriod.today)
   const cashflow = (cashflowMonths ? cashflowMonths.length > 0 : !!(data.expenses?.length || data.bankTransactions?.length)) &&
     <CashflowSummary expenses={data.expenses} expenseRules={data.expenseCategoryRules} bankTransactions={data.bankTransactions} bankRules={data.bankCategoryRules} months={cashflowMonths} now={now} onGoExpenses={onGoExpenses} onGoBankTransactions={onGoBankTransactions}/>
   if (data.accounts.length === 0 && !data.liabilities?.length && points.length === 1) {
@@ -97,20 +107,27 @@ export function Overview({ data: loaded, onGoHistory, onGoRates, onGoLiabilities
   const byCategory = breakdown(data, (a) => a.category)
   const accounts = breakdown(data, accountLabel).slices
   const hasCountry = data.accounts.some((a) => a.country)
+  const netChange = monthChange(allPoints, now)
+  // One scheduled loan: show how much of it is repaid, as the phone design does.
+  const loan = data.liabilities?.length === 1 && data.liabilities[0].schedule ? data.liabilities[0] : undefined
+  const repaid = loan && loan.balance > 0 ? projectLiability(loan, now).principalRepaid / loan.balance : null
+  const month = monthFlow.groups[0]
 
   return (
     <div className="overview">
       <div className="page-head overview-head">
-        <div>
+        <div className="overview-title">
+          <Logo size={30} className="mobile-only" />
           <h2>總覽</h2>
-          <p className="muted small">
+          <p className="muted small desktop-only">
             {data.accounts.length} 個帳戶
             {data.fxUpdatedAt && ` · 匯率更新於 ${new Date(data.fxUpdatedAt).toLocaleString('zh-TW', { dateStyle: 'short', timeStyle: 'short' })}`}
           </p>
         </div>
         <div className="row">
+          {status && <span className="mobile-only">{status}</span>}
           {!current && <button onClick={() => setSelected('current')}>回到目前</button>}
-          {onGoHistory && <button onClick={() => onGoHistory(current ? undefined : point.date)}>{current ? '查看歷史明細' : '查看這天的明細'}</button>}
+          {onGoHistory && <button className={current ? 'desktop-only' : ''} onClick={() => onGoHistory(current ? undefined : point.date)}>{current ? '查看歷史明細' : '查看這天的明細'}</button>}
         </div>
       </div>
       {current && missing.length > 0 && (
@@ -133,8 +150,8 @@ export function Overview({ data: loaded, onGoHistory, onGoRates, onGoLiabilities
               <ChangeSinceLast data={historical.data} />
             </div> : <div><span className="eyebrow">資產時間線</span><h3>{point.date.replaceAll('-', '/')}</h3></div>}
             <div className="trend-controls">
-              <div className="segmented" role="group" aria-label="顯示方式">{(Object.keys(MODES) as Mode[]).map(m => <button key={m} aria-pressed={m === mode} className={m === mode ? 'on' : ''} onClick={() => setMode(m)}>{MODES[m]}</button>)}</div>
-              <div className="segmented" role="group" aria-label="期間">{(Object.keys(RANGES) as Range[]).map(r => <button key={r} aria-pressed={r === range} className={r === range ? 'on' : ''} onClick={() => setRange(r)}>{RANGES[r]}</button>)}</div>
+              <div className="segmented trend-mode" role="group" aria-label="顯示方式">{(Object.keys(MODES) as Mode[]).map(m => <button key={m} aria-pressed={m === mode} className={m === mode ? 'on' : ''} onClick={() => setMode(m)}>{MODES[m]}</button>)}</div>
+              <div className="segmented trend-range" role="group" aria-label="期間">{(Object.keys(RANGES) as Range[]).map(r => <button key={r} aria-pressed={r === range} className={r === range ? 'on' : ''} onClick={() => setRange(r)}>{RANGES[r]}</button>)}</div>
             </div>
           </div>
           <TrendChart dates={chartPoints.map(p => p.date)} series={seriesFor(mode, chartPoints, accountNames)} area={mode === 'total'} />
@@ -164,15 +181,18 @@ export function Overview({ data: loaded, onGoHistory, onGoRates, onGoLiabilities
           <section className="panel deep tile-stat overview-net" aria-label="淨資產">
             <span>{estimated ? '淨資產（預估）' : '淨資產'}</span>
             <strong>{totals.net === null ? '尚無法換算' : <><small>NT$ </small>{fmt(totals.net, 0)}</>}</strong>
-            <small>總資產 − 總負債{totals.net === null ? ' · 請檢查匯率' : ''}</small>
+            <small>{totals.net === null ? '總資產 − 總負債 · 請檢查匯率' : netChange === null ? '總資產 − 總負債' : `較上月 ${netChange >= 0 ? '+' : '−'}${Math.abs(netChange * 100).toFixed(1)}%`}</small>
           </section>
-          <section className="panel tile-stat" aria-label="總負債">
-            <span>{estimated ? '總負債（含預估）' : '總負債'}</span>
+          <section className="panel tile-stat overview-debt" aria-label="總負債">
+            <span>{loan ? `負債 · ${loan.name}` : estimated ? '總負債（含預估）' : '總負債'}</span>
             <strong>{totals.liabilities === null ? '尚無法換算' : <><small>NT$ </small>{fmt(totals.liabilities, 0)}</>}</strong>
-            {!!totals.liabilities && byCategory.total > 0 && <div className="meter" aria-hidden><span style={{ width: `${Math.min(100, totals.liabilities / byCategory.total * 100)}%` }} /></div>}
-            <small>{data.liabilities?.length ?? 0} 筆{estimated ? ' · 假設按期還款；不代表銀行餘額，不會扣除現金' : '手動記錄'}{!!totals.liabilities && byCategory.total > 0 && ` · 占總資產 ${(totals.liabilities / byCategory.total * 100).toFixed(1)}%`}</small>
+            {repaid !== null ? <div className="meter" aria-hidden><span style={{ width: `${Math.min(100, Math.max(0, repaid * 100))}%` }} /></div>
+              : !!totals.liabilities && byCategory.total > 0 && <div className="meter" aria-hidden><span style={{ width: `${Math.min(100, totals.liabilities / byCategory.total * 100)}%` }} /></div>}
+            {repaid !== null ? <small>已還 {(repaid * 100).toFixed(1)}%（預估）<span className="desktop-only"> · 假設按期還款；不代表銀行餘額，不會扣除現金</span></small>
+              : <small>{data.liabilities?.length ?? 0} 筆{estimated ? <span className="desktop-only"> · 假設按期還款；不代表銀行餘額，不會扣除現金</span> : '手動記錄'}{!!totals.liabilities && byCategory.total > 0 && ` · 占總資產 ${(totals.liabilities / byCategory.total * 100).toFixed(1)}%`}</small>}
             {onGoLiabilities && <button className="link" onClick={onGoLiabilities}>管理負債 →</button>}
           </section>
+          {month && <MonthTile label={`${cashflowPeriod.selection.month} 月收支`} income={month.income} consumption={month.consumption} difference={month.difference} currency={month.currency} onClick={onGoCashflow} />}
           {data.accounts.length > 0 && <>
             <section className={`panel ${hasCountry ? '' : 'span-2 '}overview-share`} aria-label="資產配置">
               <span className="tile-label">類別</span>
@@ -187,6 +207,7 @@ export function Overview({ data: loaded, onGoHistory, onGoRates, onGoLiabilities
               <ShareBar slices={colorize(breakdown(data, (a) => (a.country ? countryLabel(a.country) : '')).slices, Object.values(COUNTRIES))} />
             </section>}
             <section className="panel span-4 overview-accounts" aria-label="帳戶">
+              <div className="overview-accounts-head mobile-only"><strong>帳戶</strong>{onGoAccounts && <button className="link" onClick={onGoAccounts}>全部 {data.accounts.length} 個 ›</button>}</div>
               <ul className="rank account-strip">
                 {accounts.slice(0, 3).map((slice) => {
                   const account = data.accounts.find(a => accountLabel(a) === slice.label)
@@ -214,13 +235,36 @@ export function Overview({ data: loaded, onGoHistory, onGoRates, onGoLiabilities
   )
 }
 
-type Range = '3m' | '1y' | 'all'
-const RANGES: Record<Range, string> = { '3m': '3 個月', '1y': '1 年', all: '全部' }
-function rangeStart(range: Range, now: string) {
-  if (range === 'all') return ''
+type Range = '1m' | '3m' | '1y' | 'all'
+const RANGES: Record<Range, string> = { '1m': '1 個月', '3m': '3 個月', '1y': '1 年', all: '全部' }
+const monthsBack = (now: string, months: number) => {
   const d = new Date(now)
-  d.setMonth(d.getMonth() - (range === '3m' ? 3 : 12))
+  d.setMonth(d.getMonth() - months)
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+function rangeStart(range: Range, now: string) {
+  return range === 'all' ? '' : monthsBack(now, range === '1m' ? 1 : range === '3m' ? 3 : 12)
+}
+
+// Net worth against the last record at least a month old; null without one.
+function monthChange(points: HistoricalPoint[], now: string) {
+  const edge = monthsBack(now, 1)
+  const base = points.filter((p) => p.date <= edge && p.netWorth != null).at(-1)
+  const today = points.at(-1)
+  if (!base?.netWorth || today?.netWorth == null) return null
+  return (today.netWorth - base.netWorth) / Math.abs(base.netWorth)
+}
+
+// The phone's month tile: the difference and two bars, income and spending.
+function MonthTile({ label, income, consumption, difference, currency, onClick }: { label: string; income: number; consumption: number; difference: number; currency: string; onClick?: () => void }) {
+  const max = Math.max(income, consumption, 1)
+  const bar = (n: number) => `${Math.max(4, Math.max(0, n) / max * 100)}%`
+  return <button className="panel tile-stat overview-month mobile-only" onClick={onClick} aria-label={`${label}：收入 ${fmt(income, 0)}，消費 ${fmt(consumption, 0)}，差額 ${fmt(difference, 0)} ${currency}`}>
+    <span>{label}{currency !== 'TWD' && ` · ${currency}`}</span>
+    <strong className={difference >= 0 ? 'up' : 'down'}>{difference >= 0 ? '+' : '−'}{fmt(Math.abs(difference), 0)}</strong>
+    <span className="month-bars" aria-hidden><i style={{ height: bar(income), background: 'var(--s2)' }} /><i style={{ height: bar(consumption), background: 'var(--s1)' }} /></span>
+    <span className="month-labels" aria-hidden><span>收入</span><span>消費</span></span>
+  </button>
 }
 
 // The three largest parts and the rest as 其他.

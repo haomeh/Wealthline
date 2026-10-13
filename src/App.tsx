@@ -30,12 +30,13 @@ import { Cashflow } from './views/Cashflow'
 import { HistoryView } from './views/History'
 import { Rates } from './views/Rates'
 import { SaveReview } from './views/SaveReview'
+import { More } from './views/More'
 import { Landing } from './views/Landing'
 import { Opening, type OpeningStep } from './views/Opening'
 import { LegalPage } from './views/Legal'
 import { PAGES, goBack, navigate, usePage, usePath } from './site'
-import { NAV_GROUPS, TABS, parseRoute, routePath, tabPath, type Route } from './routes'
-import { Link, PrivacyNotice, SiteFooter } from './views/Site'
+import { MOBILE_TABS, NAV_GROUPS, TABS, parseRoute, routePath, tabPath, type Route } from './routes'
+import { Link, Logo, PrivacyNotice, SiteFooter } from './views/Site'
 import { DeviceIcon, UploadButton } from './views/LocalData'
 import { StorageMeter, StorageNotice } from './views/StorageMeter'
 import { byteSize, serializeData } from './storageLimits'
@@ -548,6 +549,54 @@ export default function App() {
   const go = (r: Route, replace = false) => navigate(routePath(r), { replace })
   const goAccounts = (view: AccountsView, replace = false) => go({ tab: 'accounts', ...view }, replace)
 
+  // The account menu's parts, shared by the sidebar menu and the phone's 更多 page.
+  const avatar = user
+    ? user.picture ? <img src={user.picture} alt="" referrerPolicy="no-referrer" /> : <span className="avatar">{user.email[0]}</span>
+    : <span className="avatar"><DeviceIcon /></span>
+  const dataMenu = user ? <>
+    <div className="menu-where">
+      <span>
+        我的雲端硬碟 / {FOLDER_NAME} / {DATA_FILE_NAME}<br />消費明細、銀行流水與往年歷史在「{LEDGER_FOLDER_NAME}」「{HISTORY_FOLDER_NAME}」子資料夾
+      </span>
+      {storedBytes > 0 && <StorageMeter bytes={storedBytes} total={storedTotal} />}
+    </div>
+    <button onClick={() => void downloadBackup()} disabled={busy || dirty || !saved.current}>
+      下載完整備份
+    </button>
+    {dirty ? <span className="muted small">請先儲存變更，再下載備份。</span> : <span className="muted small">一個檔案包含所有資料，可在本機模式上傳還原。</span>}
+  </> : <>
+    <div className="menu-where">
+      <span>資料只存在這個瀏覽器。清除網站資料、換瀏覽器或換裝置都看不到，請定期下載資料檔備份。</span>
+      {storedBytes > 0 && <StorageMeter bytes={storedBytes} browser={browserStorage} />}
+    </div>
+    <button onClick={() => saved.current && downloadDataFile(saved.current)} disabled={busy || dirty || !saved.current}>
+      下載資料檔
+    </button>
+    {dirty ? <span className="muted small">請先儲存變更，再下載資料檔。</span> : !saved.current && <span className="muted small">儲存過資料後就能下載。</span>}
+    <UploadButton onFile={upload} disabled={busy}>上傳資料檔</UploadButton>
+    <button onClick={() => leaveLocal()} disabled={saving}>
+      離開本機模式
+    </button>
+    <button className="danger" onClick={() => leaveLocal(true)} disabled={saving}>
+      刪除此瀏覽器中的資料
+    </button>
+  </>
+  const menuFoot = <div className="menu-foot">
+    <Link to={PAGES.privacy.path} className="small">
+      隱私權政策 Privacy Policy
+    </Link>
+    {user && <button className="link danger" onClick={signOut} disabled={busy}>
+      登出
+    </button>}
+  </div>
+  // The save state in one short line, for the phone's page headers.
+  const syncState = dirty ? 'dirty' : refreshing || saving ? 'busy' : status.kind === 'error' ? 'error' : 'ok'
+  const syncPill = <span className={`sync-pill ${syncState}`}>
+    {syncState === 'dirty' ? '● 有修改未儲存' : syncState === 'busy' ? (saving ? '儲存中…' : '更新報價…') : syncState === 'error' ? '同步未完成' : <><span aria-hidden>✓</span> {local ? '已存在此瀏覽器' : '已同步'}</>}
+  </span>
+  const unsavedCount = dirty && data ? pendingChanges(saved.current, data).length + pendingLiabilityChanges(saved.current, data).length : 0
+  const mobileTab = MOBILE_TABS.find((t) => t.pages.includes(tab))?.tab
+
   if (page) return <LegalPage page={page} signedIn={!!user || local} />
 
   if (!user && !local) {
@@ -570,7 +619,7 @@ export default function App() {
     <div className="app-enter shell">
       <aside className="sidebar" aria-label="導覽">
         <div className="brand">
-          <span className="brand-mark" aria-hidden>W</span>
+          <Logo size={32} />
           <span className="brand-name">Wealthline</span>
         </div>
         <nav className="side-nav" aria-label="分頁">
@@ -612,64 +661,20 @@ export default function App() {
               {savedAt && <span>{savedAt} 儲存</span>}
             </div>
           )}
-          {user ? <details className="account-menu">
-            <summary aria-label="帳號選單">
-              {user.picture ? <img src={user.picture} alt="" referrerPolicy="no-referrer" /> : <span className="avatar">{user.email[0]}</span>}
-              <span className="who"><span>{user.name}</span><small>帳號與備份</small></span>
+          <details className="account-menu">
+            <summary aria-label={user ? '帳號選單' : '本機模式選單'}>
+              {avatar}
+              <span className="who"><span>{user ? user.name : '本機模式'}</span><small>{user ? '帳號與備份' : '資料與備份'}</small></span>
             </summary>
             <div className="menu">
-              <div className="menu-who">
-                {user.picture ? <img src={user.picture} alt="" referrerPolicy="no-referrer" /> : <span className="avatar">{user.email[0]}</span>}
+              {user ? <div className="menu-who">
+                {avatar}
                 <div><strong>{user.name}</strong><span className="muted small">{user.email}</span></div>
-              </div>
-              <div className="menu-where">
-                <span>
-                  我的雲端硬碟 / {FOLDER_NAME} / {DATA_FILE_NAME}<br />消費明細、銀行流水與往年歷史在「{LEDGER_FOLDER_NAME}」「{HISTORY_FOLDER_NAME}」子資料夾
-                </span>
-                {storedBytes > 0 && <StorageMeter bytes={storedBytes} total={storedTotal} />}
-              </div>
-              <button onClick={() => void downloadBackup()} disabled={busy || dirty || !saved.current}>
-                下載完整備份
-              </button>
-              {dirty ? <span className="muted small">請先儲存變更，再下載備份。</span> : <span className="muted small">一個檔案包含所有資料，可在本機模式上傳還原。</span>}
-              <div className="menu-foot">
-                <Link to={PAGES.privacy.path} className="small">
-                  隱私權政策 Privacy Policy
-                </Link>
-                <button className="link danger" onClick={signOut} disabled={busy}>
-                  登出
-                </button>
-              </div>
+              </div> : <strong>本機模式（未登入）</strong>}
+              {dataMenu}
+              {menuFoot}
             </div>
-          </details> : <details className="account-menu">
-            <summary aria-label="本機模式選單">
-              <span className="avatar"><DeviceIcon /></span>
-              <span className="who"><span>本機模式</span><small>資料與備份</small></span>
-            </summary>
-            <div className="menu">
-              <strong>本機模式（未登入）</strong>
-              <div className="menu-where">
-                <span>資料只存在這個瀏覽器。清除網站資料、換瀏覽器或換裝置都看不到，請定期下載資料檔備份。</span>
-                {storedBytes > 0 && <StorageMeter bytes={storedBytes} browser={browserStorage} />}
-              </div>
-              <button onClick={() => saved.current && downloadDataFile(saved.current)} disabled={busy || dirty || !saved.current}>
-                下載資料檔
-              </button>
-              {dirty ? <span className="muted small">請先儲存變更，再下載資料檔。</span> : !saved.current && <span className="muted small">儲存過資料後就能下載。</span>}
-              <UploadButton onFile={upload} disabled={busy}>上傳資料檔</UploadButton>
-              <button onClick={() => leaveLocal()} disabled={saving}>
-                離開本機模式
-              </button>
-              <button className="danger" onClick={() => leaveLocal(true)} disabled={saving}>
-                刪除此瀏覽器中的資料
-              </button>
-              <div className="menu-foot">
-                <Link to={PAGES.privacy.path} className="small">
-                  隱私權政策 Privacy Policy
-                </Link>
-              </div>
-            </div>
-          </details>}
+          </details>
         </div>
       </aside>
 
@@ -699,6 +704,19 @@ export default function App() {
         </div>}
         {(tab === 'overview' || tab === 'cashflow' || tab === 'expenses' || tab === 'bank-transactions') && <StorageNotice bytes={storedBytes} browser={local ? browserStorage : undefined} />}
 
+        {data && (tab === 'cashflow' || tab === 'expenses' || tab === 'bank-transactions') && <div className="segmented cashflow-tabs mobile-only" role="group" aria-label="收支分頁">
+          {([['cashflow', '總覽'], ['expenses', '信用卡'], ['bank-transactions', '銀行流水']] as const).map(([t, label]) => <button key={t} className={t === tab ? 'on' : ''} aria-pressed={t === tab} onClick={() => go({ tab: t })}>{label}{t === 'bank-transactions' && unclassified > 0 && <span className="nav-badge" title={`${unclassified} 筆銀行流水未分類`}>{unclassified}</span>}</button>)}
+        </div>}
+        {data && tab === 'more' && <More
+          who={<>{avatar}<div><strong>{user ? user.name : '本機模式'}</strong><span className="muted small">{user ? user.email : '資料只存在這個瀏覽器'}</span></div>{syncPill}</>}
+          links={[
+            { label: '負債', detail: `${data.liabilities?.length ?? 0} 筆`, onClick: () => go({ tab: 'liabilities' }) },
+            { label: '歷史明細', detail: missing('history') ? undefined : `${data.history.snapshots.length} 天`, onClick: () => go({ tab: 'history' }) },
+            { label: '匯率', detail: `${usedCurrencies(data).length} 種${data.fxManual.length ? ` · ${data.fxManual.length} 筆手動` : ''}`, onClick: () => go({ tab: 'rates' }) },
+          ]}
+          data={dataMenu}
+          foot={menuFoot}
+        />}
         {data && tab === 'overview' && (
           <Overview
             data={data}
@@ -710,6 +728,9 @@ export default function App() {
             onNewAccount={() => goAccounts({ page: 'new' })}
             onImport={() => goAccounts({ page: 'list', importing: true })}
             onOpenAccount={(id) => goAccounts({ page: 'detail', id })}
+            onGoAccounts={() => goAccounts({ page: 'list' })}
+            onGoCashflow={() => go({ tab: 'cashflow' })}
+            status={syncPill}
             cashflowMonths={ledgerSummary}
             archive={archive ?? undefined}
             onLoadHistory={() => void loadGroup('history')}
@@ -741,6 +762,7 @@ export default function App() {
             onBack={(fallback) => goBack(routePath({ tab: 'accounts', ...fallback }))}
             onRefreshPrices={async () => void (await refreshMarket(data))}
             priceError={priceError}
+            saved={saved.current}
           />
         )}
         {data && tab === 'liabilities' && <Liabilities data={data} onChange={update} />}
@@ -752,6 +774,19 @@ export default function App() {
       </main>
       <SiteFooter />
       </div>
+      {dirty && <div className="save-bar">
+        <span>{unsavedCount ? `${unsavedCount} 筆修改未儲存` : '有修改未儲存'}</span>
+        <button className="primary" onClick={requestSave} disabled={busy}>{saving ? '儲存中…' : '檢查並儲存'}</button>
+      </div>}
+      <nav className="tab-bar" aria-label="主要分頁">
+        {MOBILE_TABS.map((t) => (
+          <button key={t.tab} className={t.tab === mobileTab ? 'active' : ''} aria-current={t.tab === mobileTab ? 'page' : undefined} onClick={() => navigate(tabPath(t.tab))}>
+            <span className={`tab-icon ${t.tab}`} aria-hidden />
+            {t.label}
+            {t.tab === 'cashflow' && unclassified > 0 && <span className="nav-badge" title={`${unclassified} 筆銀行流水未分類`}>{unclassified}</span>}
+          </button>
+        ))}
+      </nav>
     </div>
   )
 }
