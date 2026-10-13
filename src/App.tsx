@@ -700,7 +700,7 @@ export default function App() {
         {status.kind === 'busy' && !data && <p className="muted">{status.text}</p>}
         {status.kind === 'error' && <div className="banner error" role="alert">
           <p>{status.text}</p>
-          {data && <button onClick={() => void completeData(data).then((full) => full && downloadDataFile(full, 'we-wealth-local-backup.json'))}>下載本機資料備份</button>}
+          {data && <button onClick={() => void completeData(data).then((full) => full && downloadDataFile(full, 'wealthline-local-backup.json'))}>下載本機資料備份</button>}
         </div>}
         {(tab === 'overview' || tab === 'cashflow' || tab === 'expenses' || tab === 'bank-transactions') && <StorageNotice bytes={storedBytes} browser={local ? browserStorage : undefined} />}
 

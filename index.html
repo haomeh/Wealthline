@@ -22,7 +22,7 @@
     <link rel="sitemap" type="application/xml" href="/sitemap.xml" />
     <link rel="canonical" href="https://wealthline.haomeh.com/" />
     <!-- A reload while signed in (or in local mode) goes straight to the app: hide the prerendered sign-in page until the app takes over (main.tsx). -->
-    <script>try{if(sessionStorage.getItem('we-wealth.token')||sessionStorage.getItem('wealthline.local.tab')||localStorage.getItem('wealthline.local.active'))document.documentElement.classList.add('restoring')}catch(e){}</script>
+    <script>try{if(sessionStorage.getItem('wealthline.token')||sessionStorage.getItem('we-wealth.token')||sessionStorage.getItem('wealthline.local.tab')||localStorage.getItem('wealthline.local.active'))document.documentElement.classList.add('restoring')}catch(e){}</script>
     <style>.restoring #root>.landing{visibility:hidden;animation:restoring-reveal 0s 6s forwards}@keyframes restoring-reveal{to{visibility:visible}}</style>
   </head>
   <body>

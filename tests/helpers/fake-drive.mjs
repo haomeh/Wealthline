@@ -1,6 +1,6 @@
 // An in-memory Google Drive with the requests src/google/drive.ts makes: appProperties
-// queries, v2 metadata and pinned media reads, conditional media updates, multipart creates
-// and folder creates. Install `fetch` as globalThis.fetch.
+// queries, v2 metadata and pinned media reads, conditional media and multipart updates,
+// multipart creates, folder creates and v3 renames. Install `fetch` as globalThis.fetch.
 
 import { createHash } from 'node:crypto'
 
@@ -54,14 +54,23 @@ export function createFakeDrive({ profile } = {}) {
     const path = url.pathname
 
     if (method === 'GET' && path === '/drive/v3/files') {
-      return json({ files: query(url.searchParams.get('q') ?? '').map((f) => ({ id: f.id, appProperties: f.appProperties, size: String(new TextEncoder().encode(f.text).length), md5Checksum: md5(f.text) })) })
+      return json({ files: query(url.searchParams.get('q') ?? '').map((f) => ({ id: f.id, name: f.name, appProperties: f.appProperties, size: String(new TextEncoder().encode(f.text).length), md5Checksum: md5(f.text) })) })
     }
     if (method === 'POST' && path === '/drive/v3/files') {
       const meta = JSON.parse(init.body)
       const f = add({ name: meta.name, appProperties: meta.appProperties, parents: meta.parents })
       return json({ id: f.id })
     }
-    let m = path.match(/^\/drive\/v2\/files\/([^/]+)$/)
+    let m = path.match(/^\/drive\/v3\/files\/([^/]+)$/)
+    if (method === 'PATCH' && m) {
+      const f = files.get(m[1])
+      if (!f) return new Response('', { status: 404 })
+      const failed = await respond(url, init, f)
+      if (failed) return failed
+      f.name = JSON.parse(init.body).name
+      return json({ id: f.id })
+    }
+    m = path.match(/^\/drive\/v2\/files\/([^/]+)$/)
     if (method === 'GET' && m) {
       const f = files.get(m[1])
       if (!f || f.trashed) return new Response('', { status: 404 })
@@ -87,7 +96,13 @@ export function createFakeDrive({ profile } = {}) {
         const failed = await respond(url, init, f)
         if (failed) return failed
         if (init.headers['If-Match'] !== etag(f)) return new Response('', { status: 412 })
-        f.text = init.body
+        if (url.searchParams.get('uploadType') === 'multipart') {
+          const { metadata, text } = parseMultipart(init.body)
+          if (metadata.title !== undefined) f.name = metadata.title
+          f.text = text
+        } else {
+          f.text = init.body
+        }
         f.version++
         return json({ id: f.id, etag: etag(f), md5Checksum: md5(f.text) })
       }
@@ -104,11 +119,13 @@ export function createFakeDrive({ profile } = {}) {
     fetch,
     log,
     files,
-    // Puts a main data file with `data` (indented like the app writes it).
-    seed(data) {
-      const folder = add({ name: 'We Wealth', appProperties: { weWealth: 'folder' } })
-      return add({ name: 'we-wealth-data.json', appProperties: { weWealth: 'data' }, parents: [folder.id], text: JSON.stringify(data, null, 2) })
+    // Puts a main data file with `data` (indented like the app writes it), in a folder with the
+    // current names, or the names from before the rename to Wealthline with `{ legacy: true }`.
+    seed(data, { legacy = false } = {}) {
+      const folder = add({ name: legacy ? 'We Wealth' : 'Wealthline', appProperties: { weWealth: 'folder' } })
+      return add({ name: legacy ? 'we-wealth-data.json' : 'wealthline-data.json', appProperties: { weWealth: 'data' }, parents: [folder.id], text: JSON.stringify(data, null, 2) })
     },
+    folder: () => query("appProperties has { key='weWealth' and value='folder' }")[0],
     dataFile,
     main: () => JSON.parse(dataFile().text),
     parts,

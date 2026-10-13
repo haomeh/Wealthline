@@ -2,6 +2,8 @@
 // Worker for /api/quote and /api/history (worker/index.ts). Workers Builds runs `npm run build` first.
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
+  // The deployed Worker's name from before the rename to Wealthline. Workers Builds and the
+  // wealthline.haomeh.com route are bound to it; a new name would deploy a separate Worker.
   "name": "we-wealth",
   "main": "worker/index.ts",
   "compatibility_date": "2026-09-01",

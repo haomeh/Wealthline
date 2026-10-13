@@ -2,7 +2,7 @@
 // without signing in, since Google's OAuth consent screen links to the privacy policy.
 
 import type { MouseEvent, ReactNode } from 'react'
-import { DATA_FILE_NAME, FOLDER_NAME, HISTORY_FOLDER_NAME, LEDGER_FOLDER_NAME } from '../google/drive'
+import { DATA_FILE_NAME, FOLDER_NAME, HISTORY_FOLDER_NAME, LEDGER_FOLDER_NAME, LEGACY_DATA_FILE_NAME, LEGACY_FOLDER_NAME } from '../google/drive'
 import { AUTHOR, ISSUES_URL, LICENSE_URL, LICENSE_ZH_URL, OPERATOR, OPERATOR_URL, PAGES, PRIVACY_UPDATED, REPO_URL, SECURITY_URL, SITE_HOST, SITE_URL, hasPrevious, type PageKey } from '../site'
 import { Link, Logo, SiteFooter } from './Site'
 
@@ -249,7 +249,10 @@ function Privacy() {
           本政策如有修改，會更新本頁的「最後更新日期」，並可在 GitHub 的版本紀錄中查到每一次的變更內容。若修改內容涉及 Google 使用者資料的存取、使用、存放或分享方式，登入後的 App 內會顯示通知並連到新版政策；以新的方式使用 Google 使用者資料前，會再次取得你的同意。
         </p>
         <p>
-          2026 年 10 月 12 日：Google Drive 中的資料由單一資料檔改為主資料檔加分檔，分檔放在「{FOLDER_NAME}」資料夾下的「{LEDGER_FOLDER_NAME}」「{HISTORY_FOLDER_NAME}」子資料夾（見第五節）。存取的資料種類、用途與 drive.file 權限都沒有改變。本機模式的資料改存在瀏覽器的 IndexedDB（見第七節）。帳號選單新增「下載完整備份」。
+          2026 年 10 月 13 日：Google Drive 中的資料夾由「{LEGACY_FOLDER_NAME}」改名為「{FOLDER_NAME}」，主資料檔由 {LEGACY_DATA_FILE_NAME} 改名為 {DATA_FILE_NAME}。較早建立的資料夾與主資料檔會在下一次儲存時自動改成新名稱，檔案內容與位置不變；如果你自己改過它們的名稱，則保留你的名稱。存取的資料種類、用途與 drive.file 權限都沒有改變。
+        </p>
+        <p>
+          2026 年 10 月 12 日：Google Drive 中的資料由單一資料檔改為主資料檔加分檔，分檔放在「{LEGACY_FOLDER_NAME}」資料夾下的「{LEDGER_FOLDER_NAME}」「{HISTORY_FOLDER_NAME}」子資料夾（見第五節）。存取的資料種類、用途與 drive.file 權限都沒有改變。本機模式的資料改存在瀏覽器的 IndexedDB（見第七節）。帳號選單新增「下載完整備份」。
         </p>
       </Section>
 
@@ -408,8 +411,13 @@ function PrivacyEnglish() {
         will ask for your consent again before using Google user data in a new way.
       </p>
       <p>
+        October 13, 2026: the folder in Google Drive was renamed from "{LEGACY_FOLDER_NAME}" to "{FOLDER_NAME}", and the main data file from {LEGACY_DATA_FILE_NAME} to
+        {DATA_FILE_NAME}. A folder and main data file created earlier get the new names on the next save; their contents and location do not change, and a
+        name you gave them yourself is kept. The kinds of data accessed, their use and the drive.file scope are unchanged.
+      </p>
+      <p>
         October 12, 2026: the data in Google Drive moved from a single data file to a main data file plus part files, kept in the "{LEDGER_FOLDER_NAME}" and
-        "{HISTORY_FOLDER_NAME}" subfolders of the "{FOLDER_NAME}" folder (see sections 1 and 2). The kinds of data accessed, their use and the drive.file scope
+        "{HISTORY_FOLDER_NAME}" subfolders of the "{LEGACY_FOLDER_NAME}" folder (see sections 1 and 2). The kinds of data accessed, their use and the drive.file scope
         are unchanged. Local mode now keeps its data in the browser's IndexedDB (see section 6). The account menu offers “Download full backup”.
       </p>
 

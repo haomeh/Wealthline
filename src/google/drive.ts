@@ -1,5 +1,5 @@
 // Reads and writes the app's data files in the user's own Google Drive: the main data file in
-// a visible "We Wealth" folder, and the part files (dataParts.ts) in its "明細" and "歷史"
+// a visible "Wealthline" folder, and the part files (dataParts.ts) in its "明細" and "歷史"
 // subfolders, so the user can see, download or delete them.
 
 import type { AccessToken } from './auth'
@@ -55,9 +55,15 @@ export async function assertCurrent(token: AccessToken, version: DriveVersion, m
   if ((await readVersion(token, version.fileId)).etag !== version.etag) throw new DriveConflictError(message)
 }
 
-export const FOLDER_NAME = 'We Wealth'
-export const DATA_FILE_NAME = 'we-wealth-data.json'
-// Tags the app's own files so a search finds them even if the user renames them.
+export const FOLDER_NAME = 'Wealthline'
+export const DATA_FILE_NAME = 'wealthline-data.json'
+// Names from before the rename to Wealthline. Files are found by APP_PROP, not by name, so
+// earlier data still loads. The next save gives the folder and the main file the new names,
+// but only while they still carry these exact names: a name the user chose is kept.
+export const LEGACY_FOLDER_NAME = 'We Wealth'
+export const LEGACY_DATA_FILE_NAME = 'we-wealth-data.json'
+// Tags the app's own files so a search finds them even if the user renames them. The key keeps
+// its original spelling because every existing file carries it.
 const APP_PROP = { key: 'weWealth', folder: 'folder', data: 'data', part: 'part' }
 // Part files (dataParts.ts) sit in subfolders of the app folder.
 export const LEDGER_FOLDER_NAME = '明細'
@@ -77,14 +83,32 @@ async function driveFetch(token: AccessToken, url: string, init: RequestInit = {
   return res
 }
 
-async function findFile(token: AccessToken, role: string): Promise<string | null> {
+async function findEntry(token: AccessToken, role: string): Promise<{ id: string; name?: string } | null> {
   const q = `appProperties has { key='${APP_PROP.key}' and value='${role}' } and trashed = false`
-  const url = `${API}?q=${encodeURIComponent(q)}&spaces=drive&fields=files(id),nextPageToken&orderBy=createdTime&pageSize=100`
-  const { files, nextPageToken } = (await (await driveFetch(token, url, { cache: 'no-store' })).json()) as { files: { id: string }[]; nextPageToken?: string }
+  const url = `${API}?q=${encodeURIComponent(q)}&spaces=drive&fields=files(id,name),nextPageToken&orderBy=createdTime&pageSize=100`
+  const { files, nextPageToken } = (await (await driveFetch(token, url, { cache: 'no-store' })).json()) as { files: { id: string; name?: string }[]; nextPageToken?: string }
   if (role === APP_PROP.data && (files.length > 1 || nextPageToken)) {
     throw new DriveConflictError('Drive 中有多個資料檔，已停止讀寫以免選錯版本。請先備份並在 Drive 比對整理；本機修改仍保留。')
   }
-  return files[0]?.id ?? null
+  return files[0] ?? null
+}
+
+const findFile = async (token: AccessToken, role: string) => (await findEntry(token, role))?.id ?? null
+
+// Gives the app folder its new name if it still has the legacy one. Only the name changes, so
+// nothing in it moves; a failure only leaves the old name in place.
+async function renameLegacyFolder(token: AccessToken): Promise<void> {
+  try {
+    const folder = await findEntry(token, APP_PROP.folder)
+    if (folder?.name !== LEGACY_FOLDER_NAME) return
+    await driveFetch(token, `${API}/${folder.id}?fields=id`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: FOLDER_NAME }),
+    })
+  } catch {
+    // Only the folder's name is affected; the data was already saved.
+  }
 }
 
 async function ensureFolder(token: AccessToken, role = APP_PROP.folder, name = FOLDER_NAME, parent?: string): Promise<string> {
@@ -104,7 +128,7 @@ async function ensureFolder(token: AccessToken, role = APP_PROP.folder, name = F
 }
 
 function multipartBody(metadata: object, content: string): { body: string; contentType: string } {
-  const boundary = `we-wealth-${crypto.randomUUID()}`
+  const boundary = `wealthline-${crypto.randomUUID()}`
   const body =
     `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(metadata)}\r\n` +
     `--${boundary}\r\nContent-Type: application/json\r\n\r\n${content}\r\n` +
@@ -141,7 +165,7 @@ export function parseJson(text: string): unknown {
   try {
     return JSON.parse(text)
   } catch {
-    throw new Error(`Drive 中的 ${DATA_FILE_NAME} 不是有效的 JSON，請修正或刪除該檔案後重新登入。`)
+    throw new Error('Drive 中的主資料檔不是有效的 JSON，請修正或刪除該檔案後重新登入。')
   }
 }
 
@@ -224,14 +248,21 @@ export async function saveDataText(token: AccessToken, content: string, version?
     versionOf({ id: version.fileId, etag: version.etag })
     // A concurrent first creation may have appeared after this session loaded.
     // This detects ambiguity only; it is NOT the atomic version check.
-    if (await findFile(token, APP_PROP.data) !== version.fileId) throw new DriveConflictError()
+    const current = await findEntry(token, APP_PROP.data)
+    if (current?.id !== version.fileId) throw new DriveConflictError()
+    // A file still named as before the rename gets the new name in the same conditional write,
+    // so renaming never changes the ETag on its own and never conflicts with another device.
+    const migrate = current.name === LEGACY_DATA_FILE_NAME
+    const upload = migrate ? multipartBody({ title: DATA_FILE_NAME }, content) : { body: content, contentType: 'application/json' }
     // This condition must be enforced by Drive on the write itself, not a preflight GET.
-    const res = await driveFetch(token, `${UPLOAD}/${version.fileId}?uploadType=media&fields=id,etag`, {
+    const res = await driveFetch(token, `${UPLOAD}/${version.fileId}?uploadType=${migrate ? 'multipart' : 'media'}&fields=id,etag`, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json', 'If-Match': version.etag },
-      body: content,
+      headers: { 'Content-Type': upload.contentType, 'If-Match': version.etag },
+      body: upload.body,
     })
-    return versionOf(await res.json())
+    const saved = versionOf(await res.json())
+    if (migrate) await renameLegacyFolder(token)
+    return saved
   }
   // Never adopt and overwrite a file that appeared after this session loaded.
   if (await findFile(token, APP_PROP.data)) throw new DriveConflictError()

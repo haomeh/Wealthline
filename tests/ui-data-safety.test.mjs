@@ -1483,7 +1483,7 @@ test('statement privacy disclosure notifies users who saw the previous policy',a
   await render(App)
   assert.ok(button('知道了'))
   await click(button('知道了'))
-  assert.equal(localStorage.getItem('wealthline.privacySeen'),'2026-10-12')
+  assert.equal(localStorage.getItem('wealthline.privacySeen'),'2026-10-13')
 })
 
 test('oversized statement is rejected before file reading or PDF loading, and password is cleared',async()=>{
