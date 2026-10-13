@@ -35,13 +35,16 @@ test('summary uses validated records and shows unavailable history without guess
   assert.equal(preview.summarizeBackup({ ...source, history: { changes: [], snapshots: [{ date: '2024-01-03' }, { date: '2025-05-02' }] } }, { name: 'x', size: 1 }).historyRange.from, '2024-01-03')
 })
 
-test('preview reads IndexedDB and legacy storage without migration or cleanup', async () => {
+test('preview reads legacy storage without opening IndexedDB, migrating or cleaning up', async () => {
   localStorage.setItem('wealthline.local.data', JSON.stringify(data()))
   const before = [...Object.entries(localStorage)]
   const open = idb.indexedDB.open
+  const databases = idb.indexedDB.databases
+  idb.indexedDB.databases = async () => []
   idb.indexedDB.open = () => { throw new Error('preview opened IndexedDB') }
   const shot = await local.readLocalPreview()
   idb.indexedDB.open = open
+  idb.indexedDB.databases = databases
   assert.ok(shot.data)
   assert.equal(raw(), null)
   assert.deepEqual([...Object.entries(localStorage)], before)
@@ -95,4 +98,41 @@ test('replacement refuses no Web Locks and canceled session', async () => {
   globalThis.navigator.locks = undefined
   await assert.rejects(local.replaceLocal(data(), shot.version, () => true), /Web Locks/)
   assert.equal(raw(), null)
+})
+
+test('preview sees IndexedDB data when the stored-data hint is missing, and the restore goes through', async () => {
+  const old = JSON.stringify({ ...data(), updatedAt: '2026-10-09T00:00:00.000Z' })
+  idb.set('wealthline', 'files', 'core', old)
+  const shot = await local.readLocalPreview()
+  assert.equal(shot.version.raw, old)
+  assert.equal(shot.data.updatedAt, '2026-10-09T00:00:00.000Z')
+  assert.ok(await local.replaceLocal(data(), shot.version, () => true))
+  assert.notEqual(raw(), old)
+})
+
+test('replacement rejects a legacy localStorage write that lands after an IndexedDB preview', async () => {
+  const old = JSON.stringify(data())
+  idb.set('wealthline', 'files', 'core', old)
+  localStorage.setItem('wealthline.local.stored', '1')
+  const shot = await local.readLocalPreview()
+  localStorage.setItem('wealthline.local.data', JSON.stringify({ ...data(), updatedAt: '2026-10-12' }))
+  await assert.rejects(local.replaceLocal(data(), shot.version, () => true), local.LocalConflictError)
+  assert.equal(raw(), old)
+  assert.ok(localStorage.getItem('wealthline.local.data'))
+})
+
+test('a stale stored-data hint with no database fails preview without creating one', async () => {
+  localStorage.setItem('wealthline.local.stored', '1')
+  const { open, databases } = idb.indexedDB
+  idb.indexedDB.databases = async () => []
+  idb.indexedDB.open = () => { throw new Error('preview opened IndexedDB') }
+  try {
+    // `chosen` is already set by earlier tests in this file, so reload the module for a fresh page.
+    server.moduleGraph.invalidateAll()
+    const fresh = await server.ssrLoadModule('/src/localStore.ts')
+    await assert.rejects(fresh.readLocalPreview(), /無法只讀確認/)
+  } finally {
+    idb.indexedDB.open = open
+    idb.indexedDB.databases = databases
+  }
 })

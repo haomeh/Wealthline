@@ -244,9 +244,16 @@ export async function loadLocal(): Promise<LocalFile | null> {
 
 // Read the destination without running migration, cleanup, or mode changes.
 export async function readLocalPreview(): Promise<LocalPreview> {
-  // Opening IndexedDB can create an empty database; a browser with no stored-data hint
-  // can preview its legacy localStorage text without touching IndexedDB at all.
-  if (read(STORED_KEY) !== '1') {
+  const hinted = read(STORED_KEY) === '1'
+  // Opening IndexedDB can create an empty database, so preview opens it only when this page
+  // already did or the browser confirms it exists. The stored-data hint is best-effort and can be
+  // missing while IndexedDB holds data, so it does not decide this on its own.
+  const exists = !!chosen || (typeof indexedDB !== 'undefined' && !!indexedDB.databases
+    && (await indexedDB.databases()).some((entry) => entry.name === DB_NAME))
+  if (!exists && hinted) throw new Error('無法只讀確認此瀏覽器的本機資料，請重新開啟本機模式後再預覽。')
+  const store = exists ? await backend() : storageBackend
+  if (store === storageBackend) {
+    if (hinted) throw new Error(UNAVAILABLE)
     const legacy = read(DATA_KEY)
     if (legacy === null) return { data: null, invalid: false, version: { raw: null, legacy: null } }
     try {
@@ -255,14 +262,6 @@ export async function readLocalPreview(): Promise<LocalPreview> {
       return { data: null, invalid: true, version: { raw: null, legacy } }
     }
   }
-  // Do not let a stale hint create an empty IndexedDB database during preview.
-  if (!chosen) {
-    if (!indexedDB.databases || !(await indexedDB.databases()).some((entry) => entry.name === DB_NAME)) {
-      throw new Error('無法只讀確認此瀏覽器的本機資料，請重新開啟本機模式後再預覽。')
-    }
-  }
-  const store = await backend()
-  if (store === storageBackend) throw new Error(UNAVAILABLE)
   return locked(async () => {
     const raw = await store.get()
     const legacy = read(DATA_KEY)
