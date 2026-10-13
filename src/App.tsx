@@ -42,6 +42,7 @@ import { MOBILE_TABS, NAV_GROUPS, TABS, parseRoute, routePath, tabPath, type Rou
 import { Link, Logo, PrivacyNotice, SiteFooter } from './views/Site'
 import { DeviceIcon, UploadButton } from './views/LocalData'
 import { StorageMeter, StorageNotice } from './views/StorageMeter'
+import { DataPrivacy } from './views/DataPrivacy'
 import { byteSize, serializeData } from './storageLimits'
 
 // When the data was last saved, as the sidebar shows it: the time today, else the date.
@@ -99,6 +100,9 @@ export default function App() {
   const dirtyRef = useRef(false)
   dirtyRef.current = dirty
   const [status, setStatus] = useState<Status>({ kind: 'idle' })
+  const [dialogError, setDialogError] = useState<{ scope: 'privacy'; text: string } | null>(null)
+  const [dataPrivacyOpen, setDataPrivacyOpen] = useState(false)
+  const returnToDataControl = useRef<HTMLElement | null>(null)
   // Edits to balances or holdings are shown for review before they become history.
   const [reviewing, setReviewing] = useState(false)
   const [ratesError, setRatesError] = useState('')
@@ -137,13 +141,15 @@ export default function App() {
     return token.current
   }
 
-  async function run(text: string, task: () => Promise<void>) {
+  async function run(text: string, task: () => Promise<void>, onError?: (message: string) => void) {
     setStatus({ kind: 'busy', text })
     try {
       await task()
       setStatus({ kind: 'idle' })
     } catch (e) {
-      setStatus({ kind: 'error', text: e instanceof Error ? e.message : String(e) })
+      const message = e instanceof Error ? e.message : String(e)
+      setStatus({ kind: 'error', text: message })
+      onError?.(message)
     }
   }
 
@@ -180,6 +186,8 @@ export default function App() {
   // Shows the loaded data file (null: none yet) and refreshes its prices and rates.
   function startSession(file: WealthData | null) {
     const version = ++sessionVersion.current
+    setDataPrivacyOpen(false)
+    returnToDataControl.current = null
     saved.current = file
     measureStored(file)
     measureBrowser()
@@ -312,9 +320,26 @@ export default function App() {
   // Drive: every record as one file, which local mode can restore (readDataFile).
   const downloadBackup = () =>
     run('準備備份…', async () => {
+      setDialogError(null)
+      const session = sessionVersion.current
       const full = saved.current && await completeData(saved.current, true)
-      if (full) downloadDataFile(full)
-    })
+      if (full && session === sessionVersion.current) downloadDataFile(full)
+    }, (text) => setDialogError({ scope: 'privacy', text }))
+
+  const openDataPrivacy = (event: React.MouseEvent<HTMLButtonElement>) => {
+    const menu = event.currentTarget.closest('details')
+    returnToDataControl.current = menu?.querySelector('summary') ?? event.currentTarget
+    menu?.removeAttribute('open')
+    setDialogError(null)
+    setDataPrivacyOpen(true)
+  }
+  const closeDataPrivacy = () => { setDialogError(null); setDataPrivacyOpen(false) }
+  useEffect(() => {
+    if (!dataPrivacyOpen && returnToDataControl.current) {
+      returnToDataControl.current.focus()
+      returnToDataControl.current = null
+    }
+  }, [dataPrivacyOpen])
 
   function measureBrowser() {
     if (!localMode.current) return setBrowserStorage(null)
@@ -415,9 +440,11 @@ export default function App() {
     })
 
   const signOut = () =>
-    run('登出中…', async () => {
+    dirtyRef.current && !confirm('有尚未儲存的修改，登出後會遺失。要繼續嗎？') ? undefined : run('登出中…', async () => {
       const previous = token.current
       sessionVersion.current++
+      setDataPrivacyOpen(false)
+      returnToDataControl.current = null
       clearSession()
       token.current = null
       driveState.current = null
@@ -443,6 +470,7 @@ export default function App() {
   // Restores a downloaded data file into this browser, replacing what is stored here.
   const upload = (file: File) =>
     run('讀取資料檔…', async () => {
+      setDialogError(null)
       // Leaving local mode, deleting its data or opening another session meanwhile cancels the upload.
       const session = sessionVersion.current
       const current = () => session === sessionVersion.current
@@ -454,16 +482,18 @@ export default function App() {
       if (raw === null || !current()) return
       await openLocal({ data: uploaded, raw })
       navigate('/app')
-    })
+    }, (text) => { if (dataPrivacyOpen) setDialogError({ scope: 'privacy', text }) })
 
   // Leaves local mode, keeping the stored data for next time unless `erase` is set.
   const leaveLocal = (erase = false) => {
     const question = erase
-      ? '要刪除此瀏覽器中的 Wealthline 資料嗎？刪除後無法復原，建議先下載資料檔備份。'
+      ? '要刪除此瀏覽器中的財務資料與舊版遷移備份嗎？刪除後無法復原，建議先下載資料檔備份。Google Drive 檔案、已下載的備份及此瀏覽器的密碼加密金鑰不會刪除。'
       : dirtyRef.current ? '有尚未儲存的修改，離開本機模式後會遺失。要繼續嗎？' : ''
     if (question && !confirm(question)) return
     // First, so an upload still being read or waiting to write is dropped (see `upload`).
     sessionVersion.current++
+    setDataPrivacyOpen(false)
+    returnToDataControl.current = null
     setLocalActive(false)
     localMode.current = false
     localRaw.current = null
@@ -695,12 +725,29 @@ export default function App() {
                 {avatar}
                 <div><strong>{user.name}</strong><span className="muted small">{user.email}</span></div>
               </div> : <strong>本機模式（未登入）</strong>}
+              <button onClick={openDataPrivacy}>資料與隱私</button>
               {dataMenu}
               {menuFoot}
             </div>
           </details>
         </div>
       </aside>
+
+      {dataPrivacyOpen && (user || local) && <DataPrivacy
+        mode={local ? 'local' : 'google'}
+        email={user?.email}
+        busy={busy}
+        saving={saving}
+        dirty={dirty}
+        hasSaved={!!saved.current}
+        error={dialogError?.scope === 'privacy' ? dialogError.text : ''}
+        onDownload={local ? () => { if (saved.current) downloadDataFile(saved.current) } : () => void downloadBackup()}
+        onUpload={upload}
+        onSignOut={signOut}
+        onLeaveLocal={() => leaveLocal()}
+        onDeleteLocal={() => leaveLocal(true)}
+        onClose={closeDataPrivacy}
+      />}
 
       {reviewing && data && (pending.length > 0 || pendingDebts.length > 0) && (
         <SaveReview
@@ -738,7 +785,7 @@ export default function App() {
             { label: '歷史明細', detail: missing('history') ? undefined : `${data.history.snapshots.length} 天`, onClick: () => go({ tab: 'history' }) },
             { label: '匯率', detail: `${usedCurrencies(data).length} 種${data.fxManual.length ? ` · ${data.fxManual.length} 筆手動` : ''}`, onClick: () => go({ tab: 'rates' }) },
           ]}
-          data={dataMenu}
+          data={<><button onClick={openDataPrivacy}>資料與隱私</button>{dataMenu}</>}
           foot={menuFoot}
         />}
         {data && tab === 'overview' && (

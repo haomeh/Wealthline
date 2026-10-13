@@ -193,6 +193,22 @@ test('the account menu downloads a full backup with every part, which local mode
   assert.deepEqual(restored.history.snapshots.map((s) => s.date).filter((d) => d < '2026').sort(), ['2025-03-10', '2025-03-20', '2025-06-01'])
 })
 
+test('failed full backup explains missing Drive part inside data management and downloads nothing', async () => {
+  await splitDrive()
+  await open('/app')
+  const workingFetch = globalThis.fetch
+  globalThis.fetch = (url, init) => String(url).includes('alt=media')
+    ? Promise.reject(new Error('part unavailable')) : workingFetch(url, init)
+  await click(document.querySelector('summary[aria-label="帳號選單"]'))
+  await click(button('資料與隱私'))
+  const dialog = document.querySelector('dialog[aria-labelledby="data-privacy-title"]')
+  await click([...dialog.querySelectorAll('button')].find((b) => b.textContent === '下載完整備份'))
+  await settle()
+  assert.ok(dialog.open)
+  assert.match(dialog.querySelector('[role="alert"]')?.textContent ?? '', /沒有下載備份：part unavailable/)
+  assert.equal(downloads.length, 0)
+})
+
 test('the Drive main file itself is refused as a backup', async () => {
   const drive = await splitDrive()
   const text = drive.drive.dataFile().text

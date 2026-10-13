@@ -3658,3 +3658,19 @@ button.pin-chip:hover:not(:disabled) { background: var(--ink); opacity: 0.85; }
   .statement-preview-summary button.primary { position: sticky; bottom: calc(68px + env(safe-area-inset-bottom)); z-index: 5; order: 3; box-shadow: 0 12px 30px -12px rgba(0, 0, 0, 0.35); }
   .statement-preview-summary > p { order: 4; }
 }
+
+.data-privacy {
+  width: min(640px, calc(100vw - 32px));
+  max-height: min(85vh, 800px);
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 20px;
+  background: var(--surface);
+  color: var(--ink);
+}
+
+.data-privacy::backdrop { background: rgba(0, 0, 0, 0.45); }
+.data-privacy .panel { margin-top: 16px; }
+.data-privacy .panel > button { margin-right: 8px; }
+.data-privacy .row { gap: 16px; flex-wrap: wrap; }
