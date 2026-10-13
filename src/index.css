@@ -3193,6 +3193,8 @@ dialog.expense-rule-dialog { max-width: 440px; }
 .detail-record:last-child { border-bottom: 0; }
 .detail-record:has(> .detail-record-actions > button) { --record-action-space: 44px; }
 .detail-record:has(> .detail-record-actions > button + button) { --record-action-space: 88px; }
+/* Spending and bank rows may lack the category button; always reserve both slots so amounts stay aligned. */
+.expense-record:has(> .detail-record-actions > button), .bank-record:has(> .detail-record-actions > button) { --record-action-space: 88px; }
 .detail-record-details { min-width: 0; }
 .detail-record-details > summary { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 12px; min-height: 44px; list-style: none; cursor: pointer; border-radius: 6px; }
 .detail-record:has(> .detail-record-actions > button) .detail-record-details > summary { padding-right: calc(var(--record-action-space) + 4px); }
