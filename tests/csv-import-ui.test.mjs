@@ -212,7 +212,7 @@ test('the guide examples are valid imports of their own type', async () => {
   await render(Accounts, { view: { page: 'list', importing: true }, setView() {}, onBack() {}, onRefreshPrices: async () => {}, priceError: '' }, model.emptyData())
   const example = document.querySelector('[aria-label="帳戶餘額與持倉範例"]').textContent
   assert.deepEqual(sheet.importPositionCsv(model.emptyData(), example).errors, [])
-  root && await act(() => root.unmount()); root = null
+  if (root) await act(() => root.unmount()); root = null
   await render(Expenses, { busy: false }, { ...model.emptyData(), version: 13 })
   await click('匯入信用卡帳單')
   const card = csv.readCardCsv(document.querySelector('[aria-label="信用卡消費範例"]').textContent)

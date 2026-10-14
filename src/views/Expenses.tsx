@@ -161,7 +161,7 @@ function StatementImport({existing,busy,onCancel,onImport,rules,onAddRule,passwo
           const named = parsed.rows.flatMap((r,i)=>r.description ? [i] : [])
           const rows = await prepareExpenses(named.map(i=>parsed.rows[i]),statementCard,fileHash,info.bank === '匯豐' ? named.map(i=>parsed.sourceIndexes[i]) : undefined)
           if(abort.signal.aborted) return
-          previews.push(...rows.map(r=>({...r,selected:!pdf.ocrUsed,needsReview:pdf.ocrUsed,amountText:String(r.amount),sourceFile:outcomes.length})))
+          previews.push(...rows.map(r=>({...r,selected:true,needsReview:pdf.ocrUsed,amountText:String(r.amount),sourceFile:outcomes.length})))
           previews.push(...parsed.rows.filter(r=>!r.description).map(r=>({...r,id:crypto.randomUUID(),card:statementCard,selected:false,needsReview:true,amountText:String(r.amount),sourceFile:outcomes.length})))
           ignored.push(...parsed.skipped.map(line=>`${file.name}：${line}`))
           outcomes.push({name:file.name,bank:statementCard,month:statementMonth,source:info.monthSource || '手動備用',currency:info.currency || currency || 'TWD',count:parsed.rows.length,ocr:pdf.ocrUsed,warning:pdf.ocrError || (!parsed.rows.length ? '沒有辨識到可匯入的交易，請核對下方未匯入文字列並手動補登。' : undefined)})
@@ -249,7 +249,7 @@ function StatementImport({existing,busy,onCancel,onImport,rules,onAddRule,passwo
       <p className="muted small">原始帳單不保存；臨時密碼只留在記憶體。</p>
     </aside></div>}
     {!drafts && !parsing && <CsvGuide kinds={['card']} where="在上方「帳單 PDF 或 CSV」選擇檔案" />}
-    <details className="statement-help"><summary>支援格式與注意事項</summary><p className="muted small">支援富邦、玉山、台新文字帳單與 SG 匯豐 SGD 帳單；匯豐圖片商家欄以本機 OCR 補上。OCR 交易預設不勾選，請核對商家、日期、金額並排除繳款。證券帳單不支援，其他排版可能漏辨識。退款以負數記錄，繳款與總計不當作消費。</p><p className="muted small">其他銀行可改用 CSV，步驟、欄位與 AI 提示詞見「用 CSV 匯入：教學與 AI 提示詞」或 <a href={`${REPO_URL}/blob/main/docs/csv-import.md`} target="_blank" rel="noreferrer">CSV 匯入格式</a>。</p></details>
+    <details className="statement-help"><summary>支援格式與注意事項</summary><p className="muted small">支援富邦、玉山、台新文字帳單與 SG 匯豐 SGD 帳單；匯豐圖片商家欄以本機 OCR 補上。OCR 交易預設全部勾選並標示「核對」，請核對商家、日期、金額，不要的取消勾選；商家讀不到的列預設不勾選。證券帳單不支援，其他排版可能漏辨識。退款以負數記錄，繳款與總計不當作消費。</p><p className="muted small">其他銀行可改用 CSV，步驟、欄位與 AI 提示詞見「用 CSV 匯入：教學與 AI 提示詞」或 <a href={`${REPO_URL}/blob/main/docs/csv-import.md`} target="_blank" rel="noreferrer">CSV 匯入格式</a>。</p></details>
   </section>
 }
 
