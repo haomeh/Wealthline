@@ -1,3 +1,5 @@
+import { cashflowReturnTo } from '../cashflowQuery'
+import { navigate } from '../site'
 import { ExpenseRecords } from './ExpenseRecords'
 import { ExpenseEditor } from './ExpenseEditor'
 import { ImportKind, ImportSteps } from './ImportSteps'
@@ -14,11 +16,14 @@ import { mergeStatementPasswords, parseStatementPasswords, statementPasswordStat
 import type { WealthData } from '../model'
 import { removeExpense, saveExpense, saveExpenseRule } from '../ledgerEdits'
 
-export function Expenses({data,onChange,busy,passwordScope,importing:routed,onImporting,onImportBank}: {passwordScope?:string;data:WealthData;onChange:(next:WealthData)=>void;busy:boolean;importing?:boolean;onImporting?:(open:boolean)=>void;onImportBank?:()=>void}) {
+export function Expenses({data,onChange,busy,passwordScope,recordId,returnTo,importing:routed,onImporting,onImportBank}: {recordId?:string;returnTo?:string;passwordScope?:string;data:WealthData;onChange:(next:WealthData)=>void;busy:boolean;importing?:boolean;onImporting?:(open:boolean)=>void;onImportBank?:()=>void}) {
+ const back = cashflowReturnTo(returnTo??null)
+ const returnLink = back && <button type="button" className="link" onClick={()=>navigate(back,{scroll:'preserve',focus:'cashflow-records'})}>返回收支明細</button>
+ const missingRecord = recordId && !data.expenses?.some(e=>e.id===recordId) ? <p role="status">找不到指定紀錄，可能已移除。</p> : null
   // The app keeps the open import in the URL; mounted on its own, the page keeps it itself.
   const [opened,setOpened] = useState(false)
   const importing = routed ?? opened, setImporting = onImporting ?? setOpened
-  const [editing,setEditing] = useState<Expense|null>(null)
+  const [editing,setEditing] = useState<Expense|null>(()=>data.expenses?.find(e=>e.id===recordId)??null)
   const [message,setMessage] = useState('')
   const [managingPasswords,setManagingPasswords] = useState(false)
   const [ruleExpense,setRuleExpense] = useState<{expense:Expense;index?:number}|null>(null)
@@ -37,15 +42,15 @@ export function Expenses({data,onChange,busy,passwordScope,importing:routed,onIm
     setMessage(`已加入 ${result.added} 筆，略過 ${result.duplicates} 筆重複。`)
     setImporting(false)
   }}/></>
-  if(editing) return <ExpenseEditor rules={rules} expense={editing} busy={busy} onCancel={()=>setEditing(null)} onSave={expense=>{
+  if(editing) return <>{returnLink}<ExpenseEditor rules={rules} expense={editing} busy={busy} onCancel={()=>setEditing(null)} onSave={expense=>{
     onChange(saveExpense(data,expense))
     setEditing(null)
   }} onRemove={()=>{
     onChange(removeExpense(data,editing.id))
     setEditing(null)
     setMessage('已移除這筆消費，請按「儲存變更」保存。')
-  }}/>
-  return <div className="expenses-page">
+  }}/></>
+  return <div className="expenses-page">{returnLink}{missingRecord}
     {ruleDialog}{passwordDialog}
     <div className="page-head"><div><h2>信用卡消費</h2><p className="muted">從信用卡帳單匯入並整理交易。修改後請按「儲存變更」保存；這些紀錄不會自動扣除資產或變更信用卡負債。</p></div><button className="primary" disabled={busy} onClick={()=>{setMessage('');setImporting(true)}}>匯入信用卡帳單</button></div>
     {passwordScope && <div className="statement-password-summary"><span className="muted small">帳單密碼 · {passwords.length?`${passwords.length} 組設定`:'可設定後自動套用'}</span><button disabled={busy} onClick={()=>setManagingPasswords(true)}>管理帳單密碼</button></div>}

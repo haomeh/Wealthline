@@ -1,7 +1,9 @@
 // Structural inputs only: this helper must not depend on model/history at runtime.
+// 16: optional monthly review records in the main file.
 // 15: the Drive data file is split into a main file and part files (dataParts.ts).
-export type DataVersion = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15
+export type DataVersion = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 | 16
 export interface VersionedData {
+  monthlyReviews?: unknown
   version: DataVersion
   bankStatementBalances?: unknown
   bankTransactionAccounts?: unknown
@@ -21,6 +23,7 @@ export interface DataVersionOptions {
 }
 export function dataVersion(data: VersionedData, options: DataVersionOptions = {}): DataVersion {
   let version = Math.max(data.version, options.minimumVersion ?? 1, options.persistedVersion ?? 1)
+  if (data.monthlyReviews !== undefined) version = Math.max(version, 16)
   if (data.bankTransactionAccounts !== undefined || data.bankTransactions !== undefined || data.bankCategoryRules !== undefined) version = Math.max(version, 13)
   if (data.bankStatementBalances !== undefined) version = Math.max(version, 14)
   if (data.statementPasswords !== undefined) version = Math.max(version, 12)
@@ -33,3 +36,6 @@ export function dataVersion(data: VersionedData, options: DataVersionOptions = {
   }
   return version as DataVersion
 }
+
+// Only known split formats may resolve their separate ledger/history parts.
+export const supportedSplitVersion = (version: unknown): boolean => version === 15 || version === 16

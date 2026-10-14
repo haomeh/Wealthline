@@ -27,7 +27,7 @@ export function BackupRestore({ source, destination, destinationInvalid, dirty, 
       <h3>上傳的資料檔</h3>
       <p><strong>{source.name}</strong>（{(source.bytes / 1024).toFixed(1)} KB）</p>
       <p>資料最後儲存時間：{date}</p>
-      <p>帳戶 {counts.accounts}、持倉 {counts.positions}、負債 {counts.liabilities}、消費明細 {counts.expenses}、銀行交易 {counts.bankTransactions}</p>
+      <p>帳戶 {counts.accounts}、持倉 {counts.positions}、負債 {counts.liabilities}、消費明細 {counts.expenses}、銀行交易 {counts.bankTransactions}、每月核對 {counts.monthlyReviews}</p>
       <p>歷史日期範圍：{source.historyRange ? `${source.historyRange.from} 至 ${source.historyRange.to}` : '無資料'}</p>
     </section>
     <section className="panel">

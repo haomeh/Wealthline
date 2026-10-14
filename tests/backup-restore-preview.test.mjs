@@ -30,7 +30,7 @@ test('summary uses validated records and shows unavailable history without guess
   assert.equal(result.name, 'backup.json')
   assert.equal(result.bytes, 42)
   assert.equal(result.updatedAt, source.updatedAt)
-  assert.deepEqual(result.counts, { accounts: 1, positions: 1, liabilities: 0, expenses: 0, bankTransactions: 0 })
+  assert.deepEqual(result.counts, { accounts: 1, positions: 1, liabilities: 0, expenses: 0, bankTransactions: 0, monthlyReviews: 0 })
   assert.equal(result.historyRange, null)
   assert.equal(preview.summarizeBackup({ ...source, history: { changes: [], snapshots: [{ date: '2024-01-03' }, { date: '2025-05-02' }] } }, { name: 'x', size: 1 }).historyRange.from, '2024-01-03')
 })

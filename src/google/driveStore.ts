@@ -21,6 +21,7 @@
 // file the main file was saved with (fileId); a part with several files and no such record is
 // read from all of them (mergeCopies) until a save writes the merged records to one file.
 
+import { dataVersion, supportedSplitVersion } from '../dataVersion'
 import type { AccessToken } from './auth'
 import { DriveConflictError, PARTLY_SAVED, RELOAD_NEEDED, assertCurrent, createPart, findDataFile, listParts, parseJson, readFile, saveDataText, updatePart, type DriveVersion, type ListedPart } from './drive'
 import { canonicalHash, isPartName, joinData, keptLedger, ledgerPart, mergeCopies, parsePart, partFileName, recordsHash, rowKey, serializePart, splitData, type Part, type PartContent } from '../dataParts'
@@ -244,7 +245,7 @@ export async function loadDrive(token: AccessToken, parse: (raw: unknown) => Wea
   if (!fileId) return null
   const main = await readFile(token, fileId)
   const raw = parseJson(main.text) as Record<string, unknown>
-  const datasetId = raw?.version === 15 && typeof raw.datasetId === 'string' && raw.datasetId ? raw.datasetId : ''
+  const datasetId = supportedSplitVersion(raw?.version) && typeof raw.datasetId === 'string' && raw.datasetId ? raw.datasetId : ''
   // An older file, or one without a data set (a restored backup), holds everything itself.
   const rules = rulesFrom(raw)
   if (!datasetId) return { data: withParts(parse(raw), 'all'), state: { ...emptyDriveState(), main, rules } }
@@ -467,7 +468,7 @@ export async function saveDrive(token: AccessToken, data: WealthData, state: Dri
     throw e instanceof DriveConflictError ? new DriveConflictError(PARTLY_SAVED) : new Error('資料超過單一檔案的上限，已停止儲存，但部分修改可能已寫入 Drive 的分檔。請先下載本機資料備份，再重新載入。')
   }
   state.split = true
-  return withParts({ ...data, version: 15 }, held === 'all' ? 'all' : new Set([...held, ...created]))
+  return withParts({ ...data, version: dataVersion(data, { minimumVersion: 15 }) }, held === 'all' ? 'all' : new Set([...held, ...created]))
 }
 
 const assertSized = (text: string) => (assertWritable(text), text)

@@ -4,7 +4,7 @@ import { cashflowColor } from '../cashflowColor'
 
 const positiveTotal = (categories:readonly CashflowCategoryTotal<string>[])=>categories.reduce((sum,c)=>sum+Math.max(0,c.net),0)
 
-export function CashflowChart({group}: {group:CashflowCurrencySummary}) {
+export function CashflowChart({group,onSelect}: {group:CashflowCurrencySummary;onSelect?:(metric:'income'|'consumption'|'difference',category?:string)=>void}) {
   const rings=[{key:'income',label:'收入',position:'內圈',radius:78,categories:group.incomeCategories,total:group.income},{key:'consumption',label:'實際消費',position:'外圈',radius:108,categories:group.consumptionCategories,total:group.consumption}] as const
   const difference=`${group.difference>0?'+':''}${fmt(group.difference)}`
   return <div className="cashflow-nested">
@@ -25,15 +25,15 @@ export function CashflowChart({group}: {group:CashflowCurrencySummary}) {
             </g>
           })}
         </svg>
-        <div className="cashflow-ring-center"><span>收支差額</span><strong style={{fontSize:`${Math.min(26,170/difference.length)}px`}} data-cashflow-metric="difference" data-sign={Math.sign(group.difference)}>{difference}</strong><small>{group.currency}</small><span>收入 − 實際消費</span></div>
+        <div className="cashflow-ring-center"><button onClick={()=>onSelect?.('difference')}>收支差額</button><strong style={{fontSize:`${Math.min(26,170/difference.length)}px`}} data-cashflow-metric="difference" data-sign={Math.sign(group.difference)}>{difference}</strong><small>{group.currency}</small><span>收入 − 實際消費</span></div>
       </div>
       <figcaption>內圈收入 · 外圈消費<br/>各圈各自為 100%，不比較金額大小</figcaption>
     </figure>
     <div className="cashflow-category-lists">{rings.map(ring=>{
       const denominator=positiveTotal(ring.categories)
       return <section className="cashflow-ring-group" key={ring.key} aria-label={`${group.currency} ${ring.label}分類`}>
-        <div className="cashflow-ring-heading"><h4><small>{ring.position}</small>{ring.label}</h4><strong data-cashflow-metric={ring.key}>{fmt(ring.total)}</strong></div>
-        <ul>{ring.categories.map(c=><li key={c.category}><span><i aria-hidden="true" style={{background:cashflowColor(c.category,ring.key==='income')}}/>{c.category}<small> · {c.count} 筆</small></span><span>{fmt(c.net)}</span><small aria-label={c.net>0?'正值占比':'不計入圓環'}>{c.net>0?`${(c.net/denominator*100).toFixed(1)}%`:'—'}</small></li>)}</ul>
+        <div className="cashflow-ring-heading"><h4><small>{ring.position}</small>{ring.label}</h4><button onClick={()=>onSelect?.(ring.key)}><strong data-cashflow-metric={ring.key}>{fmt(ring.total)}</strong></button></div>
+        <ul>{ring.categories.map(c=><li key={c.category}><span><i aria-hidden="true" style={{background:cashflowColor(c.category,ring.key==='income')}}/><button onClick={()=>onSelect?.(ring.key,c.category)}>{c.category}</button><small> · {c.count} 筆</small></span><span>{fmt(c.net)}</span><small aria-label={c.net>0?'正值占比':'不計入圓環'}>{c.net>0?`${(c.net/denominator*100).toFixed(1)}%`:'—'}</small></li>)}</ul>
         {!ring.categories.length && <p className="muted small">沒有這類紀錄</p>}
         {!!ring.categories.length && denominator===0 && <p className="muted small">沒有正值分類</p>}
       </section>

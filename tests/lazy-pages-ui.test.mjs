@@ -176,7 +176,10 @@ test('cashflow loads summary-backed ledger details and month navigation reaches 
   assert.doesNotMatch(main(), /Salary transfer 0/)
   await click(month(7))
   assert.equal(document.querySelectorAll('.cashflow-bar').length, 12)
-  assert.equal(document.querySelectorAll('.bank-record').length, 120)
+  assert.equal(document.querySelectorAll('.bank-record').length, 100)
+  assert.match(document.querySelector('[data-filtered-total]').textContent, /收入 600.00/)
+  await click(document.querySelector('[aria-label="明細分頁"] button:last-child'))
+  assert.equal(document.querySelectorAll('.bank-record').length, 20)
   await click(button('前往銀行流水頁編輯 →'))
   assert.equal(window.location.pathname, '/bank-transactions')
   assert.equal(document.querySelectorAll('.bank-record').length, 100)
@@ -438,6 +441,25 @@ test('deleting an account loads every quarter first, and keeps an account an ear
   assert.match(document.querySelector('.save-bar')?.textContent ?? '', /未儲存/)
 })
 
+
+test('a focused old bank record loads the complete ledger before deciding it is missing, with no archived history read', async () => {
+  const data = fixture()
+  data.version = 16
+  data.monthlyReviews = [{month:'2025-01',expectedSources:[{kind:'bank',accountId:'acct'}],confirmations:[]}]
+  data.bankTransactions.push({...data.bankTransactions[0],id:'old-target',date:'2025-01-03',description:'Old focused record'})
+  const drive = await splitDrive(data)
+  drive.hold('ledger')
+  await open('/bank-transactions?recordId=old-target&returnTo='+encodeURIComponent('/cashflow?month=2025-01'))
+  assert.match(main(), /正在載入/)
+  assert.doesNotMatch(main(), /找不到指定紀錄/)
+  await drive.release('ledger')
+  assert.ok(drive.reads.includes('ledger-2025-Q1'))
+  assert.ok(document.querySelector('.bank-editor'))
+  assert.equal(document.querySelector('[aria-label="流水摘要"]').value, 'Old focused record')
+  assert.ok(button('返回收支明細'))
+  assert.ok(!drive.reads.some(name=>name.startsWith('history-')))
+})
+
 // One import screen for card and bank statements: the kind is in the URL, and decides the parts to load.
 const kind = () => [...document.querySelectorAll('[aria-label="帳單類型"] button')].filter((b) => b.getAttribute('aria-pressed') === 'true').map((b) => b.textContent)
 
@@ -508,4 +530,44 @@ test('clicking the page already open, in the sidebar or the phone tabs, does not
   // Another page still leaves the import.
   await click([...document.querySelectorAll('.side-nav button')].find((b) => b.textContent.startsWith('收支總覽')))
   assert.equal(window.location.pathname, '/cashflow')
+})
+
+for (const [tab, recordId, month, entry] of [['expenses','e1','2026-01','card:e1'],['bank-transactions','t1','2026-07','bank:t1']]) {
+  test(`${tab} import can close, then focused source editing returns to the same cashflow filter`, async () => {
+    await splitDrive()
+    await open(`/${tab}/import`)
+    await click(button('取消匯入'))
+    const site = await server.ssrLoadModule('/src/site.ts')
+    const back = `/cashflow?month=${month}&source=${tab === 'expenses' ? 'card' : 'bank'}`
+    await act(() => site.navigate(back))
+    await settle()
+    await click(document.querySelector(`[data-entry="${entry}"] button`))
+    assert.equal(new URLSearchParams(window.location.search).get('recordId'), recordId)
+    const returnTo = new URLSearchParams(window.location.search).get('returnTo')
+    assert.ok(button('返回收支明細'))
+    const select = document.querySelector(tab === 'expenses' ? 'form select' : '[aria-label="流水分類"]')
+    await act(() => { select.value = tab === 'expenses' ? '購物' : 'expense:購物'; select.dispatchEvent(new Event('change', {bubbles:true})) })
+    await act(() => document.querySelector('form').dispatchEvent(new Event('submit', {bubbles:true,cancelable:true})))
+    await click(button('返回收支明細'))
+    await settle()
+    assert.equal(window.location.pathname + window.location.search, returnTo)
+    assert.ok(document.querySelector(`[data-entry="${entry}"]`))
+    assert.match(document.querySelector(`[data-entry="${entry}"]`).closest('article').textContent, /購物/)
+    assert.equal(document.activeElement.textContent, '收支明細')
+    assert.match(document.querySelector('.save-bar').textContent, /未儲存/)
+  })
+}
+
+test('direct bank import with held ledger and history cannot expose an upload form before both finish', async () => {
+  const drive = await splitDrive(quarterly())
+  drive.hold('ledger')
+  drive.hold('history')
+  await open('/bank-transactions/import')
+  assert.equal(document.querySelector('.bank-import form'), null)
+  await drive.release('ledger')
+  assert.equal(document.querySelector('.bank-import form'), null)
+  assert.match(main(), /正在載入往年歷史/)
+  await drive.release('history')
+  assert.ok(document.querySelector('.bank-import form'))
+  assert.ok(ledgerReads(drive).includes(partOf(monthsAgo(15))))
 })

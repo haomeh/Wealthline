@@ -8,6 +8,8 @@
 // is in IndexedDB, a page load that cannot open it stops instead: localStorage would show no
 // data, and what was saved there would later be moved aside as old data.
 
+import { dataVersion, supportedSplitVersion } from './dataVersion'
+import { parseMonthlyReviews } from './monthlyReview'
 import { localDate } from './history'
 import { parseWealthData, type WealthData } from './model'
 import { serializeData } from './storageLimits'
@@ -290,9 +292,15 @@ function locked<T>(task: () => T | Promise<T>): Promise<T> {
   return locks.request(LOCK, () => task())
 }
 
+// Apply the same review allowlist/version floor to local writes and full downloads.
+function storedData(data: WealthData): WealthData {
+  return { ...data, version: dataVersion(data),
+    ...(data.monthlyReviews !== undefined && { monthlyReviews: parseMonthlyReviews(data.monthlyReviews) }) }
+}
+
 let persistAsked = false
 async function write(store: Backend, data: WealthData): Promise<string> {
-  const raw = JSON.stringify(data)
+  const raw = JSON.stringify(storedData(data))
   await store.put(raw)
   // Once per page load, ask the browser not to evict this site's data under storage pressure.
   if (!persistAsked) {
@@ -361,7 +369,7 @@ export async function readDataFile(file: File): Promise<{ data: WealthData; sour
     throw new Error('這個檔案不是有效的 JSON，請選擇 Wealthline 的資料檔。')
   }
   const obj = json as Record<string, unknown> | null
-  if (obj?.version === 15 && typeof obj.datasetId === 'string' && obj.datasetId && obj.summary !== undefined) {
+  if (obj && supportedSplitVersion(obj.version) && typeof obj.datasetId === 'string' && obj.datasetId && obj.summary !== undefined) {
     throw new Error('這是 Google Drive 中的主檔，不含消費明細、銀行流水與往年歷史，不能當作完整備份還原。請用 Google 登入後，在帳號選單中按「下載完整備份」，再上傳那個檔案。')
   }
   const data = parseWealthData(json, 'file')
@@ -371,7 +379,7 @@ export async function readDataFile(file: File): Promise<{ data: WealthData; sour
 
 // Saves `data` as a JSON file, formatted like the Drive data file.
 export function downloadDataFile(data: WealthData, name = `wealthline-data-${localDate(new Date().toISOString())}.json`) {
-  const url = URL.createObjectURL(new Blob([serializeData(data)], { type: 'application/json' }))
+  const url = URL.createObjectURL(new Blob([serializeData(storedData(data))], { type: 'application/json' }))
   const link = document.createElement('a')
   link.href = url
   link.download = name

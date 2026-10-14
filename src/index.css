@@ -3801,3 +3801,24 @@ button.pin-chip:hover:not(:disabled) { background: var(--ink); opacity: 0.85; }
 @media (max-width: 640px) and (prefers-reduced-motion: reduce) {
   .detail-record.bank-record[data-swipe] > .detail-record-details, .detail-record.bank-record[data-swipe] > .detail-record-actions > button { transition: none; }
 }
+/* Query-backed cashflow evidence remains reachable on a narrow keyboard layout. */
+.cashflow-evidence > div { display: flex; flex-wrap: wrap; gap: .5rem; padding: .5rem 0; border-bottom: 1px solid var(--hairline); }
+.cashflow-records-tile h3:focus { outline: 2px solid var(--s2); outline-offset: 4px; }
+.cashflow-category-rows button { text-align: left; }
+
+.monthly-review { margin-block: 1rem; }
+.monthly-review fieldset { border: 1px solid var(--border); border-radius: 8px; padding: 1rem; }
+.review-source-choice { display: inline-flex; align-items: center; gap: .5rem; margin: .4rem 1rem .4rem 0; }
+.review-source-choice input { width: auto; flex-shrink: 0; }
+.monthly-review form { display: flex; flex-wrap: wrap; align-items: end; gap: .5rem; margin-block: .8rem; }
+.review-source-row { display: grid; gap: .6rem; border-top: 1px solid var(--border); padding-block: 1rem; margin-top: .8rem; }
+.review-source-row textarea { display: block; width: 100%; min-height: 5rem; }
+.review-source-row button { justify-self: start; }
+
+.monthly-report { display: grid; gap: 1rem; min-width: 0; }
+.monthly-report .row { flex-wrap: wrap; gap: .75rem; }
+.monthly-report p { overflow-wrap: anywhere; }
+.report-fingerprint { font-size: .75rem; color: var(--muted); }
+.report-entries article { border-top: 1px solid var(--line); padding: 1rem 0; }
+.report-entries h4 { margin: 0; overflow-wrap: anywhere; }
+.monthly-report input[type=file] { max-width: 100%; }
