@@ -1,4 +1,4 @@
-import { GlobalWorkerOptions, getDocument, PasswordException } from 'pdfjs-dist/legacy/build/pdf.mjs';
+import { GlobalWorkerOptions, getDocument, PasswordException, PDFWorker } from 'pdfjs-dist/legacy/build/pdf.mjs';
 import workerUrl from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url';
 import { statementPasswordHandler } from './statements';
 import { BANK_PDF_ERRORS, bankStatementErrorMessage, type BankImportStage } from './bankStatementErrors';
@@ -23,14 +23,83 @@ class LocalBinaryData {
 }
 export type StatementDocumentMode = 'bank' | 'credit-card';
 export type BankPageProgress = { completed: number; total: number };
+type LoadingTask = ReturnType<typeof getDocument>;
+type SharedWorker = { worker: PDFWorker; tasks: Map<LoadingTask, AbortSignal>; idle?: ReturnType<typeof setTimeout>; closed: boolean };
+// Starting a PDF.js worker costs far more than reading a statement's text, so every statement
+// document opened with an AbortSignal shares one worker: the files of one import, and the type
+// detection, card and bank steps of it. Aborting a signal destroys only its own documents; the
+// worker closes when nothing else uses it, at once after an abort and otherwise after a short wait.
+// A worker that does not finish destroying an aborted document in time is retired: new documents
+// get a new worker, and it is terminated once only aborted documents remain on it.
+const WORKER_IDLE_MS = 3000, WARM_IDLE_MS = 15000, ABORT_DESTROY_WAIT_MS = 1000;
+let shared: SharedWorker | undefined;
+// Every worker not yet closed: the shared one, and a retired one that open documents still use.
+const open = new Set<SharedWorker>();
+const listening = new WeakSet<AbortSignal>();
+function closeWorker(worker: SharedWorker) {
+    if (worker.closed) return;
+    worker.closed = true;
+    clearTimeout(worker.idle);
+    open.delete(worker);
+    if (shared === worker) shared = undefined;
+    worker.worker.destroy();
+}
+function idleWorker(worker: SharedWorker, wait = WORKER_IDLE_MS) {
+    if (worker.tasks.size || worker.closed) return;
+    clearTimeout(worker.idle);
+    worker.idle = setTimeout(() => { if (!worker.tasks.size) closeWorker(worker); }, wait);
+}
+function abortDocuments(signal: AbortSignal) {
+    for (const worker of [...open]) {
+        const own = [...worker.tasks].filter(([, owner]) => owner === signal).map(([task]) => task);
+        if (!own.length) { idleWorker(worker, 0); continue; }
+        let ended = false;
+        void Promise.allSettled(own.map(task => task.destroy())).then(() => { ended = true; });
+        setTimeout(() => {
+            if (ended) return;
+            // The worker did not answer: drop these documents and stop handing the worker to new ones.
+            for (const task of own) worker.tasks.delete(task);
+            if (shared === worker) shared = undefined;
+            // Terminating it would also stop imports still reading, which then never settle; it closes when they end.
+            if ([...worker.tasks.values()].every(owner => owner.aborted)) closeWorker(worker);
+        }, ABORT_DESTROY_WAIT_MS);
+    }
+}
+function currentWorker(): SharedWorker {
+    if (shared && !shared.closed) { clearTimeout(shared.idle); return shared; }
+    const worker: SharedWorker = { worker: new PDFWorker({ verbosity: 0 }), tasks: new Map(), closed: false };
+    shared = worker;
+    open.add(worker);
+    // A worker that fails to start is not used for later documents.
+    worker.worker.promise.catch(() => { if (shared === worker) shared = undefined; idleWorker(worker, 0); });
+    return worker;
+}
+function sharedWorker(signal: AbortSignal): SharedWorker {
+    if (!listening.has(signal)) { listening.add(signal); signal.addEventListener('abort', () => abortDocuments(signal), { once: true }); }
+    return currentWorker();
+}
+/** Starts the shared worker while the user is still choosing files; it closes if no document follows. */
+export function warmStatementWorker() {
+    idleWorker(currentWorker(), WARM_IDLE_MS);
+}
 /** Shared loading/resource boundary. Consumers own page processing and always destroy in finally. */
-export function openStatementDocument(mode: StatementDocumentMode, bytes: Uint8Array, password: string | readonly string[]) {
+export function openStatementDocument(mode: StatementDocumentMode, bytes: Uint8Array, password: string | readonly string[], signal?: AbortSignal) {
     if (mode !== 'bank' && mode !== 'credit-card')
         throw new Error('不支援的帳單文件模式');
     if (bytes.byteLength > 20 * 1024 * 1024)
         throw new Error(BANK_PDF_ERRORS.size);
-    const task = getDocument({ data: new Uint8Array(bytes), password: '', BinaryDataFactory: LocalBinaryData, useWorkerFetch: false, useWasm: false, stopAtErrors: true, verbosity: 0 });
+    const worker = signal && !signal.aborted ? sharedWorker(signal) : undefined;
+    let task: LoadingTask;
+    try { task = getDocument({ data: new Uint8Array(bytes), password: '', BinaryDataFactory: LocalBinaryData, useWorkerFetch: false, useWasm: false, stopAtErrors: true, verbosity: 0, ...(worker && { worker: worker.worker }) }); }
+    catch (e) { if (worker) idleWorker(worker); throw e; }
     task.onPassword = statementPasswordHandler(password);
+    if (worker && signal) {
+        worker.tasks.set(task, signal);
+        const destroy = task.destroy.bind(task);
+        let ending: Promise<void> | undefined;
+        // Destroying the document keeps the shared worker for the next document.
+        task.destroy = () => ending ??= destroy().finally(() => { worker.tasks.delete(task); idleWorker(worker, signal.aborted ? 0 : WORKER_IDLE_MS); });
+    }
     return task;
 }
 /** Raw pages are memory-only: do not persist/log them or PDF metadata. Bank mode has no OCR/card filter. */
@@ -45,7 +114,7 @@ export async function readBankDocument(bytes: Uint8Array, password: string | rea
     const pages: BankPage[] = [];
     const cancel = () => { void task?.destroy().catch(() => {}); };
     try {
-        task = openStatementDocument('bank', bytes, password);
+        task = openStatementDocument('bank', bytes, password, signal);
         signal.addEventListener('abort', cancel, { once: true });
         const pdf = await task.promise;
         if (pdf.numPages > 100)
