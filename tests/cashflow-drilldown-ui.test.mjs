@@ -137,3 +137,13 @@ test('review unclassified action and shared filter exclude uncategorized exclude
  assert.match(window.location.search,/category=unclassified/)
  assert.deepEqual([...document.querySelectorAll('[data-entry]')].map(e=>e.dataset.entry),['bank:pending'])
 })
+test('year view lists the months on the page, reviews its last recorded month and keeps the chosen month across ranges',async()=>{
+ const data={...model.emptyData(),expenses:[...Array.from({length:100},(_,i)=>card(`sep${i}`)),{...card('aug'),date:'2026-08-02'}]}
+ await act(()=>site.navigate('/cashflow?range=year&year=2026',{scroll:'preserve'}))
+ await render(Cashflow,props(data))
+ assert.deepEqual([...document.querySelectorAll('.cashflow-month-records .cashflow-month-toggle strong')].map(n=>n.textContent),['9 月'])
+ assert.ok(button('核對 2026-09'))
+ await act(()=>site.navigate('/cashflow?month=2026-08',{scroll:'preserve'}))
+ await click(button('全部期間'));assert.match(window.location.search,/range=all/)
+ await click(button('月份'));assert.match(window.location.search,/month=2026-08/)
+})

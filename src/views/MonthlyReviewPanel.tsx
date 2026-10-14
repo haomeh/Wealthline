@@ -57,7 +57,7 @@ export function MonthlyReviewPanel(props: MonthlyReviewPanelProps) {
     const identity = props, guard = props.captureReviewGuard?.() ?? (() => true)
     setPending(true); setError('')
     try {
-      const fingerprint = await reviewFingerprint(entries, review, source, labels)
+      const fingerprint = await reviewFingerprint(entries, review, source)
       // Never certify a different month, restored revision, session, or save state.
       const current = latest.current
       if (current.data !== identity.data || current.month !== identity.month || current.sessionIdentity !== identity.sessionIdentity || current.readiness !== 'ready' || current.busy || !guard()) return
@@ -76,7 +76,7 @@ export function MonthlyReviewPanel(props: MonthlyReviewPanelProps) {
       <form onSubmit={e => { e.preventDefault(); if (!disabled && card.trim() && !expected.has(reviewSourceKey({ kind: 'card', card }))) { commit({ ...review, expectedSources: [...review.expectedSources, { kind: 'card', card }] }); setCard('') } }}>
         <label>新增預期信用卡<input value={card} maxLength={100} onChange={e => setCard(e.target.value)} /></label><button disabled={!card.trim()}>加入來源</button>
       </form>
-      <button disabled={!previous} onClick={() => previous && commit({ month, expectedSources: previous.expectedSources.map(s => ({ ...s })), confirmations: [] })}>複製上月預期來源</button>
+      <button disabled={!previous} onClick={() => previous && commit(review.confirmations.length ? { ...review, expectedSources: [...review.expectedSources, ...previous.expectedSources.filter(s => !expected.has(reviewSourceKey(s))).map(s => ({ ...s }))] } : { month, expectedSources: previous.expectedSources.map(s => ({ ...s })), confirmations: [] })}>複製上月預期來源</button>
     </fieldset>
     {sources.length === 0 && <p>尚未設定預期來源；無紀錄不代表已核對。</p>}
     {sources.map(source => {

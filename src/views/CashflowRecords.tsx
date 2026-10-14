@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { WealthData } from '../model'
 import type { BankTransaction, BankTransactionAccount } from '../bankTransactions'
 import type { CashflowPeriodState } from '../cashflowPeriod'
@@ -7,14 +7,12 @@ import type { CashflowFxEvidence } from '../cashflowFx'
 import { filterCashflowEntries, cashflowQueryString, type CashflowQuery, type LedgerReadiness } from '../cashflowQuery'
 import { navigate } from '../site'
 import { routePath } from '../routes'
+import { reportDisplay as evidenceFormat, reportDisplayedNumber as displayedNumber } from '../monthlyReport'
 
 import { ExpenseRecords } from './ExpenseRecords'
 import { BankRecord } from './BankTransactions'
 import type { RecordEditing } from './useRecordEditing'
 
-const evidenceFormat = (n:number) => n.toLocaleString('zh-TW',{minimumFractionDigits:2,maximumFractionDigits:2})
-// Match Intl display rounding, including negative half-cent ties.
-const displayedNumber = (n:number) => Number(n.toLocaleString('en-US',{useGrouping:false,minimumFractionDigits:2,maximumFractionDigits:2}))
 
 function bankRecordGroups(rows: readonly BankTransaction[], accounts: readonly BankTransactionAccount[]) {
   const label = (id: string) => accounts.find((a) => a.id === id)?.label ?? '未知帳戶'
@@ -31,7 +29,11 @@ function bankRecordGroups(rows: readonly BankTransaction[], accounts: readonly B
 // The records behind the totals, listed under the tiles: the chosen month, or each month of the year,
 // one open at a time; 全部期間 groups the months by year, the latest year open at first.
 export function CashflowRecords({ editing, period, data: originalData, loading, query, fx, readiness, ledgerError, onRetry, onQuery, focusSelection, onGoExpenses, onGoBankTransactions }: { editing?: RecordEditing; period: CashflowPeriodState; data: WealthData; loading: boolean; query: CashflowQuery; fx: CashflowFxEvidence[]; readiness: LedgerReadiness; ledgerError?: string; onRetry?: () => void; onQuery: (q: CashflowQuery, replace?: boolean) => void; focusSelection?: number; onGoExpenses: () => void; onGoBankTransactions: () => void }) {
-  const evidence = filterCashflowEntries(cashflowEntries({expenses: originalData.expenses, expenseRules: originalData.expenseCategoryRules, bankTransactions: originalData.bankTransactions, bankRules: originalData.bankCategoryRules}), query).sort((a,b)=>b.date.localeCompare(a.date)||a.source.kind.localeCompare(b.source.kind)||a.recordId.localeCompare(b.recordId))
+  const { expenses, expenseCategoryRules, bankTransactions, bankCategoryRules } = originalData
+  const entries = useMemo(() => cashflowEntries({expenses, expenseRules: expenseCategoryRules, bankTransactions, bankRules: bankCategoryRules}), [expenses, expenseCategoryRules, bankTransactions, bankCategoryRules])
+  // The query is a new object on every render; its URL form is its identity.
+  const selectionKey=cashflowQueryString(query)
+  const evidence = useMemo(() => filterCashflowEntries(entries, query).sort((a,b)=>b.date.localeCompare(a.date)||a.source.kind.localeCompare(b.source.kind)||a.recordId.localeCompare(b.recordId)), [entries, selectionKey]) // eslint-disable-line react-hooks/exhaustive-deps
   const pages = Math.max(1, Math.ceil(evidence.length / 100)), page = Math.min(query.page, pages)
   const visible = evidence.slice((page-1)*100,page*100)
   const ids = new Set(visible.map(e=>`${e.source.kind}:${e.recordId}`))
@@ -48,17 +50,30 @@ export function CashflowRecords({ editing, period, data: originalData, loading, 
   }, [])
   useEffect(()=>{if(focusSelection)heading.current?.focus()},[focusSelection])
   useEffect(()=>{if(readiness==='ready'&&query.page>pages)onQuery({...query,page:pages},true)},[readiness,query,pages,onQuery])
-  const rates = new Map(fx.map(f=>[`${f.month}:${f.currency}`,f.rate]))
+  const rates = useMemo(() => new Map(fx.map(f=>[`${f.month}:${f.currency}`,f.rate])), [fx])
   const rate = (e: typeof evidence[number]) => rates.get(`${e.date.slice(0,7)}:${e.currency}`)
-  const converted = readiness==='ready' && evidence.every(e=>rate(e)!==undefined)
-  const total = (key:'income'|'consumption'|'difference')=>evidence.reduce((n,e)=>n+e[key]*(rate(e)??0),0)
-  const rounding = (key:'income'|'consumption'|'difference') => displayedNumber(total(key)) - evidence.reduce((n,e)=>n+displayedNumber(e[key]*(rate(e)??0)),0)
+  const sums = useMemo(() => {
+    const amount = (e: typeof evidence[number]) => rates.get(`${e.date.slice(0,7)}:${e.currency}`)
+    const keys = ['income','consumption','difference'] as const
+    const totals = {income:0,consumption:0,difference:0}, shown = {income:0,consumption:0,difference:0}
+    let complete = true
+    for (const e of evidence) {
+      const r = amount(e)
+      if (r === undefined) { complete = false; continue }
+      for (const k of keys) { totals[k] += e[k]*r; shown[k] += displayedNumber(e[k]*r) }
+    }
+    return {complete, totals, rounding: {income:displayedNumber(totals.income)-shown.income,consumption:displayedNumber(totals.consumption)-shown.consumption,difference:displayedNumber(totals.difference)-shown.difference}}
+  }, [evidence, rates])
+  const converted = readiness==='ready' && sums.complete
+  const total = (key:'income'|'consumption'|'difference')=>sums.totals[key]
+  const rounding = (key:'income'|'consumption'|'difference') => sums.rounding[key]
   const edit = (kind:'card'|'bank', id:string)=>navigate(routePath({tab:kind==='card'?'expenses':'bank-transactions',recordId:id,returnTo:'/cashflow'+cashflowQueryString(query)}))
   const { range, year } = period.selection
   const yearPrefix = `${String(year).padStart(4, '0')}-`
-  const recordMonths = range === 'month' ? [period.endMonth] : period.monthList.filter((m) => range === 'all' || m.startsWith(yearPrefix))
+  // A year or 全部期間 lists the months of the rows on this page, so an opened month is never empty;
+  // while the records load, the months the summary knows.
+  const recordMonths = range === 'month' ? [period.endMonth] : loading ? period.monthList.filter((m) => range === 'all' || m.startsWith(yearPrefix)) : [...new Set(visible.map((e) => e.date.slice(0, 7)))]
   const recordYears = [...new Set(recordMonths.map((m) => m.slice(0, 4)))]
-  const selectionKey=cashflowQueryString(query)
   const [disclosure,setDisclosure]=useState<{key:string;month:string;year:string|null}>({key:'',month:'',year:null})
   const reveal=query.metric!=='all'||!!query.category||query.source!=='all'||query.page>1
   const initialMonth=reveal ? visible[0]?.date.slice(0,7)??'' : ''
@@ -66,7 +81,7 @@ export function CashflowRecords({ editing, period, data: originalData, loading, 
   const openMonth=current.month,openYear=current.year
   const setOpenMonth=(month:string)=>setDisclosure({...current,month})
   const setOpenYear=(year:string)=>setDisclosure({...current,year})
-  const count = (prefix: string) => loading ? null : <span className="muted small">信用卡 {evidence.filter(e=>e.source.kind==='card'&&e.date.startsWith(prefix)).length} 筆 · 銀行 {evidence.filter(e=>e.source.kind==='bank'&&e.date.startsWith(prefix)).length} 筆</span>
+  const count = (prefix: string) => loading ? null : <span className="muted small">信用卡 {visible.filter(e=>e.source.kind==='card'&&e.date.startsWith(prefix)).length} 筆 · 銀行 {visible.filter(e=>e.source.kind==='bank'&&e.date.startsWith(prefix)).length} 筆</span>
   const contribution=(kind:'card'|'bank',id:string)=>{
     const e=visible.find(e=>e.source.kind===kind&&e.recordId===id)
     if(!e)return null

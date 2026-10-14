@@ -34,7 +34,7 @@ function source(raw: unknown): CashflowSource {
   }
   return fail()
 }
-const sourceKey = (value: CashflowSource) => JSON.stringify(value.kind === 'bank' ? ['bank', value.accountId] : ['card', value.card])
+export const reviewSourceKey = (value: CashflowSource): string => JSON.stringify(value.kind === 'bank' ? ['bank', value.accountId] : ['card', value.card])
 function timestamp(raw: unknown): string {
   if (typeof raw !== 'string' || !/^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])T([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\.[0-9]{3})?Z$/.test(raw) || raw.startsWith('0000')) return fail()
   const parsed = new Date(raw)
@@ -53,14 +53,14 @@ export function parseMonthlyReviews(raw: unknown): MonthlyReview[] {
     months.add(month)
     const expected = new Set<string>()
     const expectedSources = collection(value.expectedSources, 200).map(item => {
-      const ref = source(item), key = sourceKey(ref)
+      const ref = source(item), key = reviewSourceKey(ref)
       if (expected.has(key)) return fail()
       expected.add(key)
       return ref
     })
     const confirmed = new Set<string>()
     const confirmations = collection(value.confirmations, 200).map((item): SourceReview => {
-      const entry = object(item), ref = source(entry.source), key = sourceKey(ref)
+      const entry = object(item), ref = source(entry.source), key = reviewSourceKey(ref)
       if (confirmed.has(key)) return fail()
       confirmed.add(key)
       if (entry.decision !== 'reviewed' && entry.decision !== 'no-activity') return fail()

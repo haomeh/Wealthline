@@ -1,9 +1,9 @@
 import type { CashflowEntry, CashflowSource } from './cashflowEntries'
-import type { CashflowFxEvidence } from './cashflowFx'
+import { targetDate as fxTargetDate, type CashflowFxEvidence } from './cashflowFx'
 import { cashflowFingerprint } from './cashflowFingerprint'
 import { parseMonthlyReviews, type MonthlyReview } from './monthlyReview'
 import { monthlyReviewState, reviewSourceKey, type MonthlyReviewState } from './monthlyReviewState'
-import { BANK_EXCLUSION_REASONS } from './bankTransactions'
+import { BANK_EXCLUSION_REASONS, INCOME_CATEGORIES } from './bankTransactions'
 import { CATEGORY_TOKENS } from './cashflowQuery'
 import { isCryptoCurrency } from './historicalFx'
 import { fxSymbol } from './priceHistory'
@@ -34,8 +34,12 @@ function dateOf(v:unknown):string { const s=text(v,10); if(!/^(?!0000)\d{4}-\d{2
 function timestamp(v:unknown):string { const s=text(v,24); if(!/^(?!0000)\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/.test(s)||!Number.isFinite(Date.parse(s))||new Date(s).toISOString()!==(s.length===20?s.slice(0,-1)+'.000Z':s))fail(); return s }
 function source(v:unknown):CashflowSource { const s=keys(v,['kind','accountId','card']); if(s.kind==='bank'&&s.card===undefined&&/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/.test(text(s.accountId,128)))return {kind:'bank',accountId:s.accountId as string}; if(s.kind==='card'&&s.accountId===undefined&&text(s.card,100).trim())return {kind:'card',card:s.card as string}; return fail() }
 function close(actual:unknown, expected:number) { if(Math.abs(num(actual)-num(expected))>1e-9*Math.max(1,Math.abs(expected)))fail() }
-export const reportDisplayedNumber = (n:number):number => Number(n.toLocaleString('en-US',{useGrouping:false,minimumFractionDigits:2,maximumFractionDigits:2}))
-export const reportDisplay = (n:number):string => n.toLocaleString('zh-TW',{minimumFractionDigits:2,maximumFractionDigits:2})
+// Shared formatters: toLocaleString builds a new one per call, which is slow over a whole ledger.
+const plainNumber = new Intl.NumberFormat('en-US',{useGrouping:false,minimumFractionDigits:2,maximumFractionDigits:2})
+const displayNumber = new Intl.NumberFormat('zh-TW',{minimumFractionDigits:2,maximumFractionDigits:2})
+// Match Intl display rounding, including negative half-cent ties.
+export const reportDisplayedNumber = (n:number):number => Number(plainNumber.format(n))
+export const reportDisplay = (n:number):string => displayNumber.format(n)
 const metrics = ['income','consumption','difference'] as const
 function aggregates(entries:MonthlyReportEntry[]) {
  const totals:Totals={income:0,consumption:0,difference:0}, rounding:Totals={income:0,consumption:0,difference:0}
@@ -73,7 +77,7 @@ function parseEntry(raw: unknown, month: string): MonthlyReportEntry {
  }
 
  const category = value.category === undefined ? undefined : text(value.category, 100)
- const incomeCategories = ['薪資', '股利', '利息', '投資回收款', '其他收入', '未分類']
+ const incomeCategories: readonly string[] = INCOME_CATEGORIES
  if (metric !== 'excluded') {
   if (!category || !Object.values(CATEGORY_TOKENS).includes(category)) return fail()
   const categoryMatchesMetric = metric === 'income' ? incomeCategories.includes(category)
@@ -109,20 +113,13 @@ function parseEntry(raw: unknown, month: string): MonthlyReportEntry {
   incomeTwd: num(value.incomeTwd), consumptionTwd: num(value.consumptionTwd), differenceTwd: num(value.differenceTwd),
  }
 }
-function policyTargetDate(month: string, asOfDate: string): string {
- if (month === asOfDate.slice(0, 7)) return asOfDate
- const end = new Date(`${month}-01T00:00:00Z`)
- end.setUTCMonth(end.getUTCMonth() + 1, 0)
- return end.toISOString().slice(0, 10)
-}
-
 function parseFx(raw: unknown, month: string, asOfDate: string): CashflowFxEvidence {
  const value = keys(raw, ['month', 'currency', 'targetDate', 'rate', 'legs'])
  const currency = text(value.currency, 3)
  const targetDate = dateOf(value.targetDate)
  const rate = num(value.rate)
  if (value.month !== month || !/^[A-Z]{3}$/.test(currency) || rate <= 0) return fail()
- if (targetDate !== policyTargetDate(month, asOfDate)) return fail()
+ if (targetDate !== fxTargetDate(month, asOfDate)) return fail()
  if (currency !== 'TWD' && month > asOfDate.slice(0, 7)) return fail()
 
  const legs = array(value.legs).map(raw => {

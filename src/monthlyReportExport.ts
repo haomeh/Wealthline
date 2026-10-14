@@ -2,7 +2,7 @@ import type { WealthData } from './model'
 import { cashflowEntries } from './cashflowEntries'
 import { cashflowSummary } from './cashflow'
 import { cashflowWithFxEvidence } from './cashflowFx'
-import { monthlyReviewState } from './monthlyReviewState'
+import { monthlyReviewState, reviewStatusLabel } from './monthlyReviewState'
 import { buildMonthlyReport, parseMonthlyReport, monthlyReportWarnings, reportDisplay, REPORT_MAX_BYTES, type MonthlyReport } from './monthlyReport'
 import type { HistoryFetcher } from './historicalFx'
 export interface ReportCapture { data: WealthData; isCurrent: () => boolean }
@@ -23,7 +23,7 @@ export async function generateMonthlyReport(capture:ReportCapture,month:string,t
 export const csvText=(value:string):string=>'"'+(/^[\s]*[=+@-]|^[\t\r\n]/.test(value)?"'"+value:value).replaceAll('"','""')+'"'
 const numeric=(n:number):string=>{if(!Number.isFinite(n))throw new Error('報表金額無效');return String(n)}
 export function monthlyReportCsv(report:MonthlyReport):string {
- const status=report.review.state?.status==='reviewed'?(report.review.state.currentMonth?'截至目前已核對':'已人工核對'):report.review.state?.status==='stale'?'需重新核對':'未核對'
+ const status=reviewStatusLabel(report.review.state)
  const prefix=[csvText(report.month),csvText(report.asOfDate),csvText(status),numeric(report.entries.length),...(['income','consumption','difference'] as const).map(k=>report.totals===null?'':numeric(report.totals[k])),...(['income','consumption','difference'] as const).map(k=>numeric(report.rounding[k])),csvText(report.fingerprint),csvText(monthlyReportWarnings(report).join('；'))]
  const headers=['month','as_of_date','review_status','observed_count','total_income_raw','total_consumption_raw','total_difference_raw','rounding_income','rounding_consumption','rounding_difference','fingerprint','warnings','source','source_reference','record_id','source_label','date','description','direction','classification','metric','category','exclusion_reason','basis','rule','currency','amount_raw','income_raw','consumption_raw','difference_raw','fx_key','fx_rate','fx_legs','income_twd_raw','consumption_twd_raw','difference_twd_raw','income_twd_display','consumption_twd_display','difference_twd_display']
  const rows=[headers.map(csvText).join(',')]

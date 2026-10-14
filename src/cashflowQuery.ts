@@ -1,12 +1,16 @@
 import type { CashflowEntry } from './cashflowEntries'
+import { INCOME_CATEGORIES } from './bankTransactions'
+import type { ExpenseCategory } from './expenses'
 export type LedgerReadiness = 'not-loaded' | 'loading' | 'ready' | 'error'
 export interface CashflowQuery {
  range: 'month' | 'year' | 'all'; year?: number; month?: string
  metric: 'all' | 'income' | 'consumption' | 'difference' | 'pending' | 'excluded'
  category?: string; source: 'all' | 'bank' | 'card'; panel: 'records' | 'review' | 'report'; page: number
 }
-export const CATEGORY_TOKENS: Record<string,string> = {salary:'薪資',dividends:'股利',interest:'利息','investment-recovery':'投資回收款','other-income':'其他收入',unclassified:'未分類',dining:'餐飲',transport:'交通',shopping:'購物',travel:'旅遊住宿',entertainment:'娛樂',digital:'數位服務',utilities:'生活繳費',medical:'醫療',government:'政府規費'}
-export const categoryToken = (label:string) => Object.keys(CATEGORY_TOKENS).find(k=>CATEGORY_TOKENS[k]===label)
+// One URL token per category: a category added to either list does not compile without one.
+const TOKEN_BY_CATEGORY: Record<ExpenseCategory | typeof INCOME_CATEGORIES[number], string> = {薪資:'salary',股利:'dividends',利息:'interest',投資回收款:'investment-recovery',其他收入:'other-income',未分類:'unclassified',餐飲:'dining',交通:'transport',購物:'shopping',旅遊住宿:'travel',娛樂:'entertainment',數位服務:'digital',生活繳費:'utilities',醫療:'medical',政府規費:'government'}
+export const CATEGORY_TOKENS: Record<string,string> = Object.fromEntries(Object.entries(TOKEN_BY_CATEGORY).map(([label,token])=>[token,label]))
+export const categoryToken = (label:string):string|undefined => Object.hasOwn(TOKEN_BY_CATEGORY,label)?TOKEN_BY_CATEGORY[label as keyof typeof TOKEN_BY_CATEGORY]:undefined
 const defaults = ():CashflowQuery => ({range:'month',metric:'all',source:'all',panel:'records',page:1})
 export function parseCashflowQuery(search:string): {query:CashflowQuery;corrected:boolean} {
  const p=new URLSearchParams(search), q=defaults()
@@ -21,7 +25,7 @@ export function parseCashflowQuery(search:string): {query:CashflowQuery;correcte
  if(q.range==='year'&&!q.year)return bad()
  if(q.panel!=='records'&&(q.range!=='month'||!q.month))return bad()
  if(page!==null){if(!/^[1-9][0-9]*$/.test(page)||!Number.isSafeInteger(Number(page)))return bad();q.page=Number(page)}
- if(category!==null){if(!Object.hasOwn(CATEGORY_TOKENS,category))return bad();const income=['salary','dividends','interest','investment-recovery','other-income'];if((q.metric==='income'&&!income.includes(category)&&category!=='unclassified')||(q.metric==='consumption'&&income.includes(category))||q.metric==='excluded'||(q.metric==='pending'&&category!=='unclassified'))return bad();q.category=category}
+ if(category!==null){if(!Object.hasOwn(CATEGORY_TOKENS,category))return bad();const income=INCOME_CATEGORIES.filter(c=>c!=='未分類').map(c=>TOKEN_BY_CATEGORY[c]);if((q.metric==='income'&&!income.includes(category)&&category!=='unclassified')||(q.metric==='consumption'&&income.includes(category))||q.metric==='excluded'||(q.metric==='pending'&&category!=='unclassified'))return bad();q.category=category}
  return {query:q,corrected:false}
 }
 export function cashflowQueryString(q:CashflowQuery):string {

@@ -67,12 +67,17 @@ function LiveCashflow({ data, onChange, busy = false, dirty, sessionIdentity, ca
     if(window.location.pathname!=='/cashflow')return
     if(parsed.corrected || (!parsed.query.month && parsed.query.range==='month' && (readiness==='ready'||!!months))) navigate('/cashflow'+cashflowQueryString(query),{replace:true,scroll:'preserve'})
   },[location, readiness, months, defaultMonth]) // eslint-disable-line react-hooks/exhaustive-deps
-  const selection = {range:query.range,year:query.year??Number((query.month??localPeriod.endMonth).slice(0,4)),month:Number((query.month??localPeriod.endMonth).slice(5,7))}
+  // A year or 全部期間 URL names no month: the last month chosen stays in the local selection.
+  const selection = {range:query.range,year:query.year??(query.month?Number(query.month.slice(0,4)):localPeriod.selection.year),month:query.month?Number(query.month.slice(5,7)):localPeriod.selection.month}
   const choose = (next:CashflowQuery)=>{setFocusSelection(n=>n+1);onQuery(next)}
   const period:CashflowPeriodState = {...localPeriod,selection,isCurrentMonth:query.range==='month'&&query.month===currentMonth,endMonth:monthKey(selection.year,selection.range==='year'?12:selection.month),period:selection.range==='all'?'all':selection.range==='year'?12:1,label:selection.range==='all'?'全部期間':`${selection.year} 年${selection.range==='month'?` ${selection.month} 月`:''}`,setSelection: action=>{
     const next=typeof action==='function'?action(selection):action
+    localPeriod.setSelection(next)
     onQuery({...query,range:next.range,month:next.range==='month'?monthKey(next.year,next.month):undefined,year:next.range==='year'?next.year:undefined,panel:'records',page:1})
-  },showMonth: month=>choose({...query,range:'month',month,year:undefined,panel:'records',page:1})}
+  },showMonth: month=>onQuery({...query,range:'month',month,year:undefined,panel:'records',page:1})}
+  // 核對 and 報表 are per month: in a year, its last recorded month up to this one.
+  const yearMonths=localPeriod.monthList.filter(m=>m.startsWith(period.endMonth.slice(0,5))&&m<=currentMonth).sort()
+  const panelMonth=query.range==='month'?query.month:query.range==='year'?yearMonths.at(-1)??(period.endMonth<currentMonth?period.endMonth:currentMonth):period.endMonth
   const selectMetric=(metric:CashflowQuery['metric'], category?:string)=>choose({...query,metric,category,panel:'records',page:1})
   const { rawGroups, groups, fx, needsFx, loading, error, retry } = useTwdCashflow(input, period.endMonth, period.period, period.today)
   const trend = trendWindow(period)
@@ -103,7 +108,7 @@ function LiveCashflow({ data, onChange, busy = false, dirty, sessionIdentity, ca
       <h2>收支總覽</h2>
       <div className="cashflow-page-controls">{!empty && <button onClick={onImport}>匯入帳單</button>}<CashflowPeriodControls state={period} /></div>
     </div>
-    <div className="row"><button aria-pressed={query.panel === 'records'} onClick={() => onQuery({...query,panel:'records'})}>收支明細</button><button aria-pressed={query.panel === 'review'} onClick={() => onQuery({...query,range:'month',month:query.range === 'month' ? query.month : period.endMonth,year:undefined,panel:'review',page:1})}>{query.range === 'month' ? '每月核對' : `核對 ${period.endMonth}`}</button><button onClick={()=>onQuery({...query,range:'month',month:query.range==='month'?query.month:period.endMonth,year:undefined,panel:'report',page:1})}>每月報表</button></div>
+    <div className="row"><button aria-pressed={query.panel === 'records'} onClick={() => onQuery({...query,panel:'records'})}>收支明細</button><button aria-pressed={query.panel === 'review'} onClick={() => onQuery({...query,range:'month',month:panelMonth,year:undefined,panel:'review',page:1})}>{query.range === 'month' ? '每月核對' : `核對 ${panelMonth}`}</button><button onClick={()=>onQuery({...query,range:'month',month:panelMonth,year:undefined,panel:'report',page:1})}>每月報表</button></div>
     {query.panel === 'review' && query.month && <MonthlyReviewPanel key={`${query.month}:${sessionIdentity}`} data={data} month={query.month} today={period.today} readiness={readiness} onChange={onChange} busy={busy} dirty={dirty} sessionIdentity={sessionIdentity} captureReviewGuard={captureReviewGuard} onUnclassified={source => choose({...query,panel:'records',source,metric:'all',category:'unclassified',page:1})} />}
     {empty && readiness!=='ready' && <div role={readiness==='error'?'alert':'status'}>{readiness==='error' ? <>{ledgerError || '無法載入明細'}<button onClick={onRetryLedger}>重試明細</button></> : '正在載入明細…'}</div>}
     {empty ? <section className="panel empty">

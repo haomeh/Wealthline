@@ -1,5 +1,5 @@
 import type { CashflowEntry, CashflowSource } from './cashflowEntries'
-import type { MonthlyReview } from './monthlyReview'
+import { reviewSourceKey, type MonthlyReview } from './monthlyReview'
 import { cashflowFingerprint } from './cashflowFingerprint'
 
 export interface MonthlyReviewState {
@@ -7,19 +7,24 @@ export interface MonthlyReviewState {
   currentMonth: boolean
   sources: { source: CashflowSource; count: number; unclassifiedCount: number; fingerprint: string; current: boolean }[]
 }
-export const reviewSourceKey = (source: CashflowSource): string => JSON.stringify(source.kind === 'bank' ? ['bank', source.accountId] : ['card', source.card])
+export { reviewSourceKey }
+// The status a report shows; an unfinished review reads as 未核對.
+export const reviewStatusLabel = (state: MonthlyReviewState | null | undefined): string => state?.status === 'reviewed' ? (state.currentMonth ? '截至目前已核對' : '已人工核對') : state?.status === 'stale' ? '需重新核對' : '未核對'
 export const isUnclassified = (entry: CashflowEntry): boolean => entry.classification === 'pending' || entry.category === '未分類'
 export function reviewSources(entries: readonly CashflowEntry[], review: MonthlyReview): CashflowSource[] {
   const all = new Map<string, CashflowSource>()
   for (const source of [...review.expectedSources, ...entries.filter(e => e.date.startsWith(review.month + '-')).map(e => e.source)]) all.set(reviewSourceKey(source), source)
   return [...all].sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0).map(([, source]) => source)
 }
-export async function reviewFingerprint(entries: readonly CashflowEntry[], review: MonthlyReview, source: CashflowSource, bankLabels: Readonly<Record<string, string>>): Promise<string> {
+// Binds the stable source fields and the final classification only: labels, rule evidence and
+// derived amounts may change without the reviewed records changing.
+export async function reviewFingerprint(entries: readonly CashflowEntry[], review: MonthlyReview, source: CashflowSource): Promise<string> {
   const key = reviewSourceKey(source)
   const rows = entries.filter(e => e.date.startsWith(review.month + '-') && reviewSourceKey(e.source) === key)
     .slice().sort((a, b) => a.recordId < b.recordId ? -1 : a.recordId > b.recordId ? 1 : 0)
+    .map(e => ({ recordId: e.recordId, date: e.date, description: e.description, amount: e.amount, currency: e.currency, direction: e.direction ?? null,
+      classification: e.classification, category: e.category ?? null, exclusionReason: e.exclusionReason ?? null }))
   return cashflowFingerprint({ policyVersion: 1, month: review.month, source,
-    label: source.kind === 'card' ? source.card : bankLabels[source.accountId] ?? null,
     expectations: review.expectedSources.map(reviewSourceKey).sort(), rows })
 }
 export async function monthlyReviewState(entries: readonly CashflowEntry[], review: MonthlyReview, today: string, bankLabels: Readonly<Record<string, string>>): Promise<MonthlyReviewState> {
@@ -28,7 +33,7 @@ export async function monthlyReviewState(entries: readonly CashflowEntry[], revi
     const key = reviewSourceKey(source)
     const rows = entries.filter(e => e.date.startsWith(review.month + '-') && reviewSourceKey(e.source) === key)
     const unclassifiedCount = rows.filter(isUnclassified).length
-    const fingerprint = await reviewFingerprint(entries, review, source, bankLabels)
+    const fingerprint = await reviewFingerprint(entries, review, source)
     const confirmation = review.confirmations.find(c => reviewSourceKey(c.source) === key)
     const current = !!confirmation && expected.has(key) && confirmation.fingerprint === fingerprint
       && confirmation.decision === (rows.length ? 'reviewed' : 'no-activity')

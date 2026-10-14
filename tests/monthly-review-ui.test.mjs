@@ -56,3 +56,4 @@ test('source groups identify repeated actions and exception edits stay draft unt
  assert.equal(current.monthlyReviews[0].confirmations[0].exceptionNote,'Revised exception')
  assert.doesNotMatch(document.body.textContent,/備註草稿尚未套用/)
 })
+test('copy previous expectations merges into a month that already has confirmations',async()=>{const data=fixture(),kept={source,decision:'reviewed',fingerprint:'a'.repeat(64),confirmedAt:'2026-10-01T00:00:00Z'};data.monthlyReviews[0].confirmations=[kept];data.monthlyReviews.push({month:'2026-08',expectedSources:[source,{kind:'card',card:'Previous'}],confirmations:[]});await render(data);await click('複製上月預期來源');const rev=current.monthlyReviews.find(r=>r.month==='2026-09');assert.deepEqual(rev.expectedSources,[source,{kind:'card',card:'Previous'}]);assert.deepEqual(rev.confirmations,[kept])})

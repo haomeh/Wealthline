@@ -74,7 +74,8 @@ test('zero-row bank review stores only referenced labels and removal remains mis
  const state=await reviewModule.monthlyReviewState([],record,'2026-10-13',labels)
  const report=await reports.buildMonthlyReport({...args(),bankLabels:labels,review:{record,state}})
  assert.deepEqual(report.bankLabels,{bank:'Frozen bank'});assert.deepEqual(await reports.parseMonthlyReport(report),report)
- const bad={...report,bankLabels:{bank:'Renamed'}};await assert.rejects(()=>rehash(bad).then(reports.parseMonthlyReport))
+ // A renamed account is the same reviewed source: the label is not part of the review evidence.
+ const renamed=await rehash({...report,bankLabels:{bank:'Renamed'}});assert.deepEqual(await reports.parseMonthlyReport(renamed),renamed)
  const removed=await reports.buildMonthlyReport({...args(),bankLabels:{},review:{record,state:await reviewModule.monthlyReviewState([],record,'2026-10-13',{})}})
  assert.deepEqual(removed.bankLabels,{});assert.equal(removed.review.state.status,'stale')
  await assert.rejects(()=>rehash({...report,bankLabels:labels}).then(reports.parseMonthlyReport))

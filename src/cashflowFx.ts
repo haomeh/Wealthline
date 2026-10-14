@@ -15,7 +15,7 @@ export interface CashflowConversion {
   fx: CashflowFxEvidence[]
 }
 
-function targetDate(month:string,today:string):string {
+export function targetDate(month:string,today:string):string {
   if(month===today.slice(0,7)) return today
   const end=new Date(`${month}-01T00:00:00Z`)
   end.setUTCMonth(end.getUTCMonth()+1,0)

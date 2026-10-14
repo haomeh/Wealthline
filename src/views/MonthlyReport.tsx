@@ -5,6 +5,7 @@ import { filterCashflowEntries, CATEGORY_TOKENS, type CashflowQuery, type Ledger
 import { generateMonthlyReport, downloadMonthlyReport, readMonthlyReportFile, type CaptureReport } from '../monthlyReportExport'
 import { monthlyReportWarnings, reportDisplay, type MonthlyReport as Report, type MonthlyReportEntry } from '../monthlyReport'
 import { cashflowFingerprint } from '../cashflowFingerprint'
+import { reviewStatusLabel } from '../monthlyReviewState'
 import { navigate } from '../site'
 import { routePath } from '../routes'
 import { cashflowQueryString } from '../cashflowQuery'
@@ -44,14 +45,14 @@ export function MonthlyReport({data,month,today,readiness,dirty,busy,sessionIden
   const captured=latest.current,comparisonGeneration=generation.current
   const [a,b]=await Promise.all([cashflowFingerprint(original),cashflowFingerprint(row)])
   if(comparisonGeneration!==generation.current)return
-  if(latest.current!==captured){setError('目前資料已變更，請重新比對。');return}
+  if(latest.current.data!==captured.data||latest.current.readiness!==captured.readiness||latest.current.sessionIdentity!==captured.sessionIdentity){setError('目前資料已變更，請重新比對。');return}
   const label=row.source.kind==='card'?row.source.card:data.bankTransactionAccounts?.find(a=>a.id===(row.source.kind==='bank'?row.source.accountId:''))?.label??'未知帳戶'
   if(a!==b||sourceLabel!==label){setError('目前紀錄與原始快照不同。請離開快照後從收支明細查看目前資料。');return}
   navigate(routePath({tab:row.source.kind==='card'?'expenses':'bank-transactions',recordId:row.recordId,returnTo:'/cashflow'+cashflowQueryString({...query,panel:'records'})}))
  }
  const filtered=report?filterCashflowEntries(report.entries,query) as MonthlyReportEntry[]:[]
  const pages=Math.max(1,Math.ceil(filtered.length/100)),page=Math.min(query.page,pages)
- const reviewLabel=report?.review.state?.status==='reviewed'?(report.review.state.currentMonth?'截至目前已核對':'已人工核對'):report?.review.state?.status==='stale'?'需重新核對':'未核對'
+ const reviewLabel=reviewStatusLabel(report?.review.state)
  return <section className="panel monthly-report" aria-label="每月報表">
   <div className="row"><h2>{report?.month??month} 每月報表</h2><button onClick={onClose}>{current?.snapshot?'離開快照，查看目前收支資料':'返回收支明細'}</button></div>
   <p>{current?.snapshot?'原始 JSON 快照 · 唯讀，不受目前資料變更影響':dirty?'目前資料預覽 · 包含未儲存修改；匯出前請儲存':'目前資料預覽 · 匯出使用已儲存版本'}</p>
