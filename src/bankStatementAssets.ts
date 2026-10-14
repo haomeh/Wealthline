@@ -15,6 +15,7 @@ const institutions:Record<string,{name:string;country:string;aliases:string[]}> 
  'Taishin':{name:'台新銀行',country:'TW',aliases:['Taishin','台新','台新銀行']},
  'Fubon':{name:'富邦銀行',country:'TW',aliases:['Fubon','富邦','富邦銀行','台北富邦銀行']},
  'E.SUN':{name:'玉山銀行',country:'TW',aliases:['E.SUN','ESUN','玉山','玉山銀行']},
+ 'Wise':{name:'Wise',country:'SG',aliases:['Wise']},
  'Fubon Nano':{name:'富邦奈米投',country:'TW',aliases:['Fubon Nano','奈米投','富邦奈米投']},
 }
 export function bankStatementIdentity(bank:string) {

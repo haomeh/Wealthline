@@ -6,7 +6,8 @@ import { spatialLines, tableHeader, isoDate, money, identifier, labeledAccount, 
 import type { BankDraftRow, BankPage, BankSection, BankStatementMetadata, BankWarning, PositionedItem, SpatialLine, Table } from './bankStatements/common';
 import { layout as taiwan } from './bankStatements/hsbcTaiwan';
 import { layout as singapore } from './bankStatements/hsbcSingapore';
-import { layout as taishin } from './bankStatements/taishin';
+import { parseWiseStatement } from './bankStatements/wise';
+import { layout as taishin, debitLedger as taishinDebit } from './bankStatements/taishin';
 import { layout as fubon, foreignLayout } from './bankStatements/fubon';
 import { layout as esun, ledgerLayout as esunLedger } from './bankStatements/esun';
 import { DBS_UNSUPPORTED, singaporeLayout as dbsSingapore, dbsSingaporeContext } from './bankStatements/dbs';
@@ -65,6 +66,9 @@ export function parseBankStatement(pages: readonly BankPage[], metadata: BankSta
     if (chars > 500000)
         throw new Error('銀行文件文字超過限制');
     const ordered = [...pages].sort((a, b) => a.page - b.page).map(p => ({ page: p.page, lines: spatialLines(p.items), height: p.height ?? p.items.reduce((max, i) => Math.max(max, i.y), 0) + 30 }));
+    const wise = parseWiseStatement(ordered);
+    if (wise)
+        return wise;
     const periods = new Map<string, {
         start: string;
         end: string;
@@ -348,7 +352,7 @@ export function parseBankStatement(pages: readonly BankPage[], metadata: BankSta
             // After the page's carried-forward balance only footer text follows.
             if (continuation)
                 continue;
-            if (boundary.test(l.text) || (layout === esun && l.items.some(i => i.x < 50 && i.text.length > 40 && /對帳單|交易明細/.test(i.text))) || ((layout === taishin || layout === esunLedger) && l.items.some(i => i.x < 60 && i.text.length > 40)) || (layout === fubon && l.items.some(i => i.x < 40 && i.text.length > 40))) {
+            if (boundary.test(l.text) || (layout === esun && l.items.some(i => i.x < 50 && i.text.length > 40 && /對帳單|交易明細/.test(i.text))) || ((layout === taishin || layout === esunLedger) && l.items.some(i => i.x < 60 && i.text.length > 40)) || (layout === taishinDebit && l.items.some(i => i.x < 140 && (/^備註[:：]/.test(i.text) || i.text.length > 30))) || (layout === fubon && l.items.some(i => i.x < 40 && i.text.length > 40))) {
                 discard('section-boundary');
                 table = undefined;
                 section = undefined;

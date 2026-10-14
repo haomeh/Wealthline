@@ -13,3 +13,12 @@ export const profile: BankProfile = {
     fingerprint: currencyLabelAbove,
     acceptTable: ({ table, resolved }) => table.currencyX === undefined && resolved !== 'TWD' ? 'unsupported-taishin-currency' : undefined,
 };
+// Visa debit card e-statement: after the card purchases it lists the whole month of the linked TWD account, without an account column.
+export const debitLedger: Layout = { bank: 'Taishin', dateKind: 'ymd', date: '日期', description: '摘要', debit: '支出', credit: '存入', balance: '餘額', note: '備註', anchors: [143, 191, 239, 291, 342], observedHeader: { anchors: [143, 191, 239, 291, 342], bodyStarts: [131, 185] }, edges: [268, 323], bodyBottom: 0, zeroAmountBlank: true };
+const debitStatement = (pages: readonly { lines: readonly { text: string }[] }[]) => pages.some(p => p.lines.some(l => /金融卡消費\(存款帳號/.test(l.text)));
+export const debitLedgerProfile: BankProfile = {
+    layout: debitLedger, brand: /台新(?:銀行|國際)/,
+    cover: (_, pages) => debitStatement(pages),
+    fingerprint: ({ pages }) => debitStatement(pages),
+    acceptTable: () => ({ account: 'debit-card-account', currency: 'TWD' }),
+};

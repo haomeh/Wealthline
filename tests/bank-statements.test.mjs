@@ -41,6 +41,28 @@ test('Fubon nano-invest trust statement: USD cash ledger with leading-dot cents,
   assert.deepEqual(r.sections[0].rows.map(v=>[v.date,v.currency,v.direction,v.amount,v.description]),[['2031-11-01','USD','credit',300,'申購款匯入'],['2031-11-02','USD','debit',0.25,'付管理費']])
  }
 })
+test('Taishin debit-card statement lists the linked account month: printed 0 is a blank column, the remark joins the summary',()=>{
+ const p=[{page:1,width:595,height:842,items:[item('感謝您使用本行Visa金融卡消費(存款帳號**********0000) ，對帳單期間內之消費明細提供您核對。',137,696,294),item('對帳單期間：2031/01/01 ~ 2031/01/31',137,684)]},
+  {page:2,width:595,height:842,items:[item('日期',143,599),item('摘要',191,599),item('支出',239,599),item('存入',291,599),item('餘額',342,599),item('備註',415,599),
+   item('2031/01/03',131,585,37),item('轉帳支取',185,585,27),right('1,000',268,585),right('0',323,585),item('160,421',349,585),item('合成自動儲值',394,585),
+   item('2031/01/10',131,571,37),item('轉帳存入',185,571,27),right('0',268,571),right('302',323,571),item('160,723',349,571),
+   item('備註：',129,62),item('※ 本通知由合成銀行個人網路銀行提供，若您對以上通知有任何問題，請來電。',129,50,300)]}];
+ const r=bank.parseBankStatement(p);assert.equal(r.bank,'Taishin');assert.equal(r.status,'recognized');
+ assert.deepEqual(r.sections[0].rows.map(v=>[v.date,v.direction,v.amount,v.description]),[['2031-01-03','debit',1000,'轉帳支取 · 合成自動儲值'],['2031-01-10','credit',302,'轉帳存入']])
+})
+test('Wise fund statement: a BUY leaves and a SELL enters the cash balance; an empty month is a proven empty month',()=>{
+ const head=[item('Wise Asia-Pacific Pte Ltd.',75,729),item('Assets Trade Statement',75,625),item('Transactions',73,434)];
+ const p=[{page:1,width:595,height:842,items:[...head,item('Date',74,407),item('Fund Description',122,407),item('Fund ISIN',289,407),item('Units',398,407),item('Amount',473,407),item('Currency',505,407),
+  item('15 Dec',73,387),item('SYNTHETIC MONEY MARKET A',122,387),item('SG0000000000',288,387),item('BUY',352,387),item('67.26',397,387),item('1.49',420,387),item('100.00',472,387),item('SGD',504,387),item('2031',73,374),item('SGD',122,374),
+  item('06 Jan',73,350),item('SYNTHETIC MONEY MARKET A',122,350),item('SG0000000000',288,350),item('SELL',353,350),item('0.11',398,350),item('1.50',420,350),item('0.17',472,350),item('SGD',504,350),item('2032',73,337),
+  item('Portfolio Value',73,300),item('31 Jan 2032',73,280),item('SYNTHETIC MONEY MARKET A SGD',128,280),item('100.83',466,280),item('SGD',501,280)]}];
+ const r=bank.parseBankStatement(p);assert.equal(r.bank,'Wise');assert.equal(r.status,'recognized');
+ assert.deepEqual(r.sections[0].rows.map(v=>[v.date,v.currency,v.direction,v.amount,v.description]),[['2031-12-15','SGD','debit',100,'BUY SYNTHETIC MONEY MARKET A'],['2032-01-06','SGD','credit',0.17,'SELL SYNTHETIC MONEY MARKET A']]);
+ const empty=[{page:1,width:595,height:842,items:[...head,item('Portfolio Value',73,366),item('31 Aug 2031',73,332),item('SYNTHETIC MONEY MARKET A SGD',128,332),item('100.83',466,332),item('SGD',501,332)]}];
+ const none=bank.parseBankStatement(empty);assert.equal(none.status,'recognized');assert.equal(none.sections[0].noTransactions,true);assert.equal(none.sections[0].currency,'SGD');
+ // A layout that settles in another currency is not guessed.
+ p[0].items.push(item('Amount settled',380,415));assert.equal(bank.parseBankStatement(p).status,'unsupported')
+})
 test('HSBC prints the amount on the last line: narration after a completed row begins the next undated row',()=>{
  for(const sg of [false,true]){
   const p=hsbc(sg);p[0].items.push(item('Second payment line',103,655),item('Second ref detail',103,640),right('7.00',482,640));
