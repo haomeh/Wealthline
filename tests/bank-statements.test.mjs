@@ -491,3 +491,48 @@ test('Taishin note column joins the summary: shared balance item, wrapped lines 
  assert.equal(d[0],'轉帳支取 · 午餐費');assert.match(d[1],/^CD轉出 · 數位跨行/);assert.ok(d[1].endsWith('**9012'));assert.equal(d[2],'存款息');assert.equal(d[3],'手續費')
  assert.deepEqual(r.sections[0].rows.map(w=>w.amount),[1200,300,7,15])
 })
+test('HSBC Taiwan reads every currency balance from the account summary, apart from the transactions',()=>{
+ const summary=(rows,date='31/07/2031')=>[item('對帳單日期',321,810),item(date,527,810),item('一般活存/支存帳戶概要',59,800),item('帳戶種類',59,792),item('幣別/帳戶號碼',213,792),item('結餘',463,792),item('等值新臺幣',530,792),...rows,item('信用卡繳款概要',59,730)]
+ const row=(y,cell,amount,twd)=>[item(cell,213,y),...(amount?[right(amount,473,y)]:[]),right(twd,572,y)]
+ const rows=[item('活期存款',52,784),...row(784,'TWD 716-00XXXX-111','1,234,567','1,234,567'),item('新臺幣',213,778),item('外幣綜合存款',52,772),...row(772,'JPY 716-00XXXX-222','10,000','1,980'),...row(764,'SGD 716-00XXXX-222','2,500.25','62,000'),...row(756,'USD 716-00XXXX-222','0.00','0')]
+ const parse=(extra)=>{const p=hsbc();p[0].items.push(...extra);return bank.parseBankStatement(p)}
+ const r=parse(summary(rows))
+ assert.equal(r.recognizedCount,1)
+ assert.deepEqual(r.balances,[{bank:'HSBC Taiwan',date:'2031-07-31',currency:'TWD',quantity:1234567},{bank:'HSBC Taiwan',date:'2031-07-31',currency:'JPY',quantity:10000},{bank:'HSBC Taiwan',date:'2031-07-31',currency:'SGD',quantity:2500.25},{bank:'HSBC Taiwan',date:'2031-07-31',currency:'USD',quantity:0}])
+ // Any unreadable row, or no single statement date, drops every summary balance.
+ assert.equal(parse(summary([...rows,...row(748,'USD 716-00XXXX-333','','5')])).balances,undefined,'missing balance cell')
+ // The block can end without another summary title: later lines are not part of it.
+ assert.equal(parse([...summary(rows).filter(i=>i.text!=='信用卡繳款概要'),item('公告事項 2031年1月1日起調整提款限額，詳情請參閱首頁公告',52,740,504),right('9.99',473,735)]).balances.length,4,'untitled end')
+ assert.equal(parse(summary(rows,'2031/07/31')).balances,undefined,'unreadable date')
+ assert.equal(parse([...summary(rows),item('對帳單日期',321,60),item('30/06/2031',527,60)]).balances,undefined,'conflicting dates')
+})
+test('Fubon reads demand deposit balances from 資產持有明細, apart from the transactions',async()=>{
+ const header=y=>[item('帳戶種類',21,y),item('分行',74,y),item('帳號',131,y),item('幣別',179,y),item('存單號碼',208,y),item('餘額',281,y),item('起存日',345,y),item('到期日',396,y)]
+ const row=(y,kind,currency,amount)=>[item(kind,21,y),item('分行',74,y),item('00011122****33',110,y),item(currency,179,y),...(amount?[right(amount,332,y)]:[])]
+ const holdings=(rows,period='對帳單期間：2031/03/01~2031/03/31')=>[page(1,[...mast('台北富邦銀行'),item(period,363,744)]),page(2,[item('台幣存款',14,714),...header(701),...rows.twd,item('台幣存款總計',14,678),right('9,999.99',332,678),item('外幣存款',14,630),...header(617),...rows.fx,item('外幣存款總計(折合台幣金額)',14,593)])]
+ const {summaryBalances}=await server.ssrLoadModule('/src/bankStatements/balances.ts'),{spatialLines}=await server.ssrLoadModule('/src/bankStatements/common.ts')
+ const summary=pages=>summaryBalances('Fubon',pages.map(p=>({lines:spatialLines(p.items)})))
+ const ok={twd:[...row(690,'活期存款','TWD','1,234.50'),...row(684,'定期存款','TWD','50,000.00')],fx:row(605,'外幣活期','USD','3.38')}
+ assert.deepEqual(summary(holdings(ok)),[{bank:'Fubon',date:'2031-03-31',currency:'TWD',quantity:1234.5},{bank:'Fubon',date:'2031-03-31',currency:'USD',quantity:3.38}])
+ assert.equal(summary(holdings({...ok,fx:row(605,'外幣活期','USD','')})),undefined,'missing balance')
+ assert.equal(summary(holdings(ok,'對帳單期間：2031/03/01~2031/13/31')),undefined,'invalid date')
+})
+test('account summaries of Taishin, HSBC Singapore and E.SUN give demand deposit balances per currency',async()=>{
+ const {summaryBalances}=await server.ssrLoadModule('/src/bankStatements/balances.ts'),{spatialLines}=await server.ssrLoadModule('/src/bankStatements/common.ts')
+ const read=(bank,items,end)=>summaryBalances(bank,[{lines:spatialLines(items)}],end)
+ const date='現 值 參 考 日 : 2 0 3 1 / 0 3 / 3 1'
+ // Taishin since 2021-07: the foreign code is printed beside its row, above or below.
+ const taishin=[item('新臺幣帳戶概要區',47,800),item(date,452,800),item('帳號類別',78,790),item('帳戶號碼',163,790),item('帳戶餘額',433,790),item('備註',509,790),item('新臺幣活存',50,780),item('100200****3456',150,780),right('$12,345',485,780),item('合計',47,770,10),
+  item('外幣帳戶概要區',47,700),item(date,452,700),item('帳戶餘額',404,690),item('帳戶餘額',459,690),item('帳號類別',56,683),item('幣別/匯率',356,683),item('備註',529,683),item('(原幣)',410,676),item('(新臺幣)',460,676),
+  item('JPY',367,664),item('外幣活存',56,658),right('$10,000',445,658),right('$2,000',499,658),item('0.200000',358,651),item('USD',366,640),item('外幣活存',56,634),right('$3.38',445,634),right('$100',499,634),item('外幣定存',56,620),right('$9,999',445,620),item('USD',366,626),item('合計',47,610,10)]
+ assert.deepEqual(read('Taishin',taishin),[{bank:'Taishin',date:'2031-03-31',currency:'TWD',quantity:12345},{bank:'Taishin',date:'2031-03-31',currency:'JPY',quantity:10000},{bank:'Taishin',date:'2031-03-31',currency:'USD',quantity:3.38}])
+ // Before 2021-07: the code has its own column and the amount sits under 原幣別/金額.
+ const older=[item('外幣帳戶概要區',47,700),item(date,452,700),item('原幣別',262,690),item('定存',321,690),item('帳號類別',56,684),item('幣別',221,684),item('備註',529,684),item('金額',266,676),item('外幣活存',56,661),item('USD',221,661),right('$9.99',301,661),right('$300',497,661),item('合計',47,644,10)]
+ assert.deepEqual(read('Taishin',older),[{bank:'Taishin',date:'2031-03-31',currency:'USD',quantity:9.99}])
+ const sg=[item('Statement Date',321,669),item('30APR2031',526,669),item('DEPOSITS AND INVESTMENTS',59,496),item('CCY/Unit',192,496),item('Balance (DR=Debit)',408,496,74),item('SGD Equivalent',513,496),item('SAVINGS ACCOUNT',52,475),item('SGD',202,475),right('12,345.67',483,475),right('12,345.67',573,475),item('UNIT TRUST',52,468),item('USD',202,468),right('500.00',483,468),item('TOTAL DEPOSITS AND INVESTMENTS',230,465)]
+ assert.deepEqual(read('HSBC Singapore',sg),[{bank:'HSBC Singapore',date:'2031-04-30',currency:'SGD',quantity:12345.67}])
+ const esun=[item('項目',35,766),item('銀行帳號',218,766),item('幣別',364,766),item('存款餘額(元)',524,766,51),item('臺幣活存',35,746),item('TWD',363,746),right('1,000.50',575,746),item('臺幣活存',35,726),item('TWD',363,726),right('2.00',575,726),item('外幣活存',35,705),item('USD',365,705),right('3.00',575,705),item('幣別說明：新臺幣(TWD)、美元(USD)',35,686,521)]
+ assert.deepEqual(read('E.SUN',esun,'2031-04-30'),[{bank:'E.SUN',date:'2031-04-30',currency:'TWD',quantity:1002.5},{bank:'E.SUN',date:'2031-04-30',currency:'USD',quantity:3}])
+ assert.equal(read('E.SUN',esun),undefined,'no statement date')
+ assert.equal(read('E.SUN',esun.filter(i=>i.text!=='3.00'),'2031-04-30'),undefined,'unreadable row')
+})

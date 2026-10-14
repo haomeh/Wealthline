@@ -67,7 +67,8 @@ export function BankStatementImport({data,accounts,existing,rules,passwords,pass
  ...(r.ambiguousNarration && {narration:{leading:r.ambiguousNarration.leading.map(t=>protectBankText(t)),trailing:r.ambiguousNarration.trailing.map(t=>protectBankText(t))}})}))})
  })
  // Commit one file only after every section has been prepared successfully.
- const fileBalances=(result.balances??[]).map(b=>{const section=fileSections.find(s=>s.bank===b.bank&&s.currency===b.currency);if(!section)throw new Error('balance section');return {...b,fileHash:hash,ledgerAccountId:section.newId,sectionId:section.id}})
+ const fileBalances=(result.balances??[]).map(b=>{// A currency without activity has no section of its own: its balance goes with the same bank's first section.
+ const section=fileSections.find(s=>s.bank===b.bank&&s.currency===b.currency)??fileSections.find(s=>s.bank===b.bank);if(!section)throw new Error('balance section');return {...b,fileHash:hash,ledgerAccountId:section.newId,sectionId:section.id}})
  next.push(...fileSections);nextBalances.push(...fileBalances);outcomes.push(...fileReports)
  if(result.status==='unsupported')failures++;else successes++
  }catch(e){if(abort.signal.aborted)return;failures++;outcomes.push(`${name} · 無法解析：${bankStatementErrorMessage(e,stage).replace(/。$/, '')}。未加入任何此檔資料。`)}

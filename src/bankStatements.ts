@@ -1,4 +1,4 @@
-import { statementClosingDate, closingCashAmount } from './bankStatements/balances';
+import { statementClosingDate, closingCashAmount, summaryBalances } from './bankStatements/balances';
 import type { StatementCashBalance } from './bankStatementAssets';
 import { BANK_PDF_ERRORS } from './bankStatementErrors';
 import { protectBankText } from './bankTextPrivacy';
@@ -610,6 +610,10 @@ export function parseBankStatement(pages: readonly BankPage[], metadata: BankSta
         warnings.push(warning(ordered[0]?.page ?? 1, 'unsupported-activity-layout'));
     const balances:StatementCashBalance[]=[];
     if(balanceDate)for(const curr of new Set(cashScopes.values())){const scopes=[...cashScopes].filter(([,c])=>c===curr).map(([key])=>key);if(scopes.length&&scopes.every(key=>closing.has(key)&&!invalidClosing.has(key)))balances.push({bank:layout.bank,date:balanceDate,currency:curr,quantity:scopes.reduce((n,key)=>n+closing.get(key)!.quantity,0)});}
+    // The account summary is read apart from the transaction tables.
+    // The summary carries its own statement date, so it does not depend on the printed periods.
+    if (!balances.length)
+        balances.push(...summaryBalances(layout.bank, ordered, period?.end) ?? []);
     return { ...(balances.length&&{balances}), status: !supported ? 'unsupported' : layout.partial || rejectedCount ? 'partial' : 'recognized', bank: layout.bank, sections, warnings, recognizedCount, rejectedCount };
 }
 /** Lazy browser-local neutral reader; never enters the card OCR/scoping adapter. */
