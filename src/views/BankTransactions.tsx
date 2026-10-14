@@ -112,8 +112,8 @@ export function BankTransactions({data,onChange,busy,passwordScope,historyReady=
  const result=mergeBankTransactions(current.data.bankTransactions??[],review.rows,mappedAccounts,review.context,{keepSuspectedDuplicates:keep})
  // Don't retain preview-only new labels when all of their rows were deduplicated.
  const used=new Set([...result.transactions.map(r=>r.accountId),...review.balances.map(b=>b.ledgerAccountId)])
- change({accounts:mappedAccounts.filter(a=>accountIds.has(a.id)||used.has(a.id)),transactions:result.transactions,balances:review.balances,balanceRevision:review.balanceRevision})
- const done=`已新增 ${result.added} 筆，略過 ${result.duplicates} 筆。期末餘額補入 ${review.balanceCount} 筆。請按「儲存變更」。`
+ change({accounts:mappedAccounts.filter(a=>accountIds.has(a.id)||used.has(a.id)),transactions:result.transactions,balances:review.balances,balanceRevision:review.balanceRevision,createAssets:review.createAssets})
+ const done=`已新增 ${result.added} 筆，略過 ${result.duplicates} 筆。期末餘額補入 ${review.balanceCount} 筆。${review.createAssets?`建立資產帳戶 ${review.newAssets.length} 個。`:''}請按「儲存變更」。`
  setMessage(done)
  // In a detected batch the batch screen shows the result, so the import does not close.
  if(!onImported?.(done))setImporting(false)
