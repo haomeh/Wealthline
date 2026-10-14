@@ -378,3 +378,9 @@ test('Drive ledger displays before archived history is requested; import blocks 
  window.history.replaceState(null,'','/bank-transactions');await renderApp();assert.equal(document.querySelectorAll('.bank-record').length,1);assert.equal(archiveReads,0);assert.ok(fake.log.slice(before).some(r=>r.url.includes('alt=media')));
  await click('匯入銀行帳單');await settle(()=>!!document.querySelector('[role="alert"]'));assert.match(document.querySelector('[role="alert"]').textContent,/往年歷史/);assert.equal(document.querySelector('.bank-import form'),null);assert.ok(button('取消匯入'));await click('重試');await settle(()=>archiveReads===2);assert.equal(document.querySelector('.bank-import form'),null);await act(()=>resolveArchive());await settle(()=>!!document.querySelector('.bank-import form'));assert.equal(appHook.data.history.snapshots.some(s=>s.date==='2025-09-30'),true);await click('取消匯入');assert.equal(document.querySelectorAll('.bank-record').length,1);
 })
+test('the kind switch of the import screen locks once a bank preview exists, and closing returns to the bank page',async()=>{
+ window.history.replaceState(null,'','/bank-transactions');drive(appData());await renderApp();pdf.reset([parsed()]);await click('匯入銀行帳單');assert.equal(window.location.pathname,'/bank-transactions/import')
+ const kinds=()=>[...document.querySelectorAll('[aria-label="帳單類型"] button')].map(b=>b.disabled)
+ assert.deepEqual(kinds(),[false,false]);pdf.pause();await files();await submitImport();assert.equal(document.querySelector('.bank-preview-row'),null);assert.deepEqual(kinds(),[true,true],'switching kinds would abandon the parse');await act(()=>pdf.release());await settle(()=>!!document.querySelector('.bank-preview-row'));assert.deepEqual(kinds(),[true,true],'switching kinds would silently discard the preview')
+ await click('取消匯入');assert.equal(window.location.pathname,'/bank-transactions');assert.ok(button('匯入銀行帳單'))
+})

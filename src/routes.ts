@@ -31,8 +31,8 @@ export type Route =
   | { tab: 'accounts'; page: 'detail'; id: string }
   | { tab: 'liabilities' }
   | { tab: 'cashflow'; query?: CashflowQuery }
-  | { tab: 'expenses'; recordId?: string; returnTo?: string }
-  | { tab: 'bank-transactions'; recordId?: string; returnTo?: string }
+  | { tab: 'expenses'; importing?: boolean; recordId?: string; returnTo?: string }
+  | { tab: 'bank-transactions'; importing?: boolean; recordId?: string; returnTo?: string }
   | { tab: 'history'; date?: string }
   | { tab: 'rates' }
   | { tab: 'more' }
@@ -49,6 +49,7 @@ export function parseRoute(path: string): Route {
     const returnTo = url.searchParams.getAll('returnTo').length === 1 ? cashflowReturnTo(url.searchParams.get('returnTo')) : undefined
     return {tab:first,...(recordId ? {recordId}:{}),...(returnTo ? {returnTo}:{})}
   }
+  if ((first === 'expenses' || first === 'bank-transactions') && second === 'import' && !third) return { tab: first, importing: true }
   if (first === 'history' && !third && !rest.length) {
     if (!second) return { tab: 'history' }
     if (validDate(second)) return { tab: 'history', date: second }
@@ -74,6 +75,7 @@ export function routePath(r: Route): string {
     case 'cashflow': return '/cashflow' + (r.query ? cashflowQueryString(r.query) : '')
     case 'expenses':
     case 'bank-transactions': {
+      if (r.importing) return `/${r.tab}/import`
       const p = new URLSearchParams()
       if(r.recordId)p.set('recordId',r.recordId)
       const back=cashflowReturnTo(r.returnTo ?? null);if(back)p.set('returnTo',back)

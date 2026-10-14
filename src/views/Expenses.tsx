@@ -2,7 +2,7 @@ import { cashflowReturnTo } from '../cashflowQuery'
 import { navigate } from '../site'
 import { ExpenseRecords } from './ExpenseRecords'
 import { ExpenseEditor } from './ExpenseEditor'
-import { ImportSteps } from './ImportSteps'
+import { ImportKind, ImportSteps } from './ImportSteps'
 import { DetailRecord } from './DetailRecord'
 import { fmt } from '../format'
 import { dataVersion } from '../dataVersion'
@@ -16,11 +16,13 @@ import { mergeStatementPasswords, parseStatementPasswords, statementPasswordStat
 import type { WealthData } from '../model'
 import { removeExpense, saveExpense, saveExpenseRule } from '../ledgerEdits'
 
-export function Expenses({data,onChange,busy,passwordScope,recordId,returnTo}: {recordId?:string;returnTo?:string;passwordScope?:string;data:WealthData;onChange:(next:WealthData)=>void;busy:boolean}) {
+export function Expenses({data,onChange,busy,passwordScope,recordId,returnTo,importing:routed,onImporting,onImportBank}: {recordId?:string;returnTo?:string;passwordScope?:string;data:WealthData;onChange:(next:WealthData)=>void;busy:boolean;importing?:boolean;onImporting?:(open:boolean)=>void;onImportBank?:()=>void}) {
  const back = cashflowReturnTo(returnTo??null)
  const returnLink = back && <button type="button" className="link" onClick={()=>navigate(back,{scroll:'preserve',focus:'cashflow-records'})}>返回收支明細</button>
  const missingRecord = recordId && !data.expenses?.some(e=>e.id===recordId) ? <p role="status">找不到指定紀錄，可能已移除。</p> : null
-  const [importing,setImporting] = useState(false)
+  // The app keeps the open import in the URL; mounted on its own, the page keeps it itself.
+  const [opened,setOpened] = useState(false)
+  const importing = routed ?? opened, setImporting = onImporting ?? setOpened
   const [editing,setEditing] = useState<Expense|null>(()=>data.expenses?.find(e=>e.id===recordId)??null)
   const [message,setMessage] = useState('')
   const [managingPasswords,setManagingPasswords] = useState(false)
@@ -34,7 +36,7 @@ export function Expenses({data,onChange,busy,passwordScope,recordId,returnTo}: {
     onChange(saveExpenseRule(data,rule,ruleExpense.index))
     setRuleExpense(null)
   }}/>
-  if(importing) return <>{ruleDialog}{passwordDialog}<StatementImport passwords={passwords} passwordScope={passwordScope} onManagePasswords={()=>setManagingPasswords(true)} onAddRule={(expense,index)=>setRuleExpense({expense,index})} rules={rules} existing={expenses} busy={busy} onCancel={()=>setImporting(false)} onImport={(rows,context)=>{
+  if(importing) return <>{ruleDialog}{passwordDialog}<StatementImport onSwitchKind={onImportBank} passwords={passwords} passwordScope={passwordScope} onManagePasswords={()=>setManagingPasswords(true)} onAddRule={(expense,index)=>setRuleExpense({expense,index})} rules={rules} existing={expenses} busy={busy} onCancel={()=>setImporting(false)} onImport={(rows,context)=>{
     const result = mergeExpenses(expenses,rows,context)
     if(result.added) onChange({...data,version:dataVersion(data, {minimumVersion:10}),expenses:result.expenses})
     setMessage(`已加入 ${result.added} 筆，略過 ${result.duplicates} 筆重複。`)
@@ -62,7 +64,7 @@ export function Expenses({data,onChange,busy,passwordScope,recordId,returnTo}: {
 }
 
 type Draft = Expense & {selected:boolean;amountText:string;needsReview?:boolean;sourceFile?:number}
-function StatementImport({existing,busy,onCancel,onImport,rules,onAddRule,passwords,passwordScope,onManagePasswords}: {passwords:StatementPassword[];passwordScope?:string;onManagePasswords:()=>void;onAddRule:(expense:Expense,index?:number)=>void;rules:ExpenseCategoryRule[];existing:Expense[];busy:boolean;onCancel:()=>void;onImport:(rows:Expense[],context:Expense[])=>void}) {
+function StatementImport({existing,busy,onCancel,onImport,rules,onAddRule,passwords,passwordScope,onManagePasswords,onSwitchKind}: {onSwitchKind?:()=>void;passwords:StatementPassword[];passwordScope?:string;onManagePasswords:()=>void;onAddRule:(expense:Expense,index?:number)=>void;rules:ExpenseCategoryRule[];existing:Expense[];busy:boolean;onCancel:()=>void;onImport:(rows:Expense[],context:Expense[])=>void}) {
   const [files,setFiles] = useState<File[]>([])
   const [reports,setReports] = useState<{name:string;bank?:string;month?:string;source?:string;currency?:string;count?:number;error?:string;ocr?:boolean;warning?:string}[]>([])
   const [password,setPassword] = useState('')
@@ -146,7 +148,8 @@ function StatementImport({existing,busy,onCancel,onImport,rules,onAddRule,passwo
   }
 
   return <section className="panel statement-import">
-    <div className="panel-head"><h2>匯入信用卡帳單</h2><ImportSteps step={drafts ? 2 : 1} /><button onClick={()=>{controller.current?.abort();onCancel()}}>取消匯入</button></div>
+    <div className="panel-head"><h2>匯入帳單</h2><ImportSteps step={drafts ? 2 : 1} /><button onClick={()=>{controller.current?.abort();onCancel()}}>取消匯入</button></div>
+    <ImportKind kind="card" disabled={locked || !!drafts} onSwitch={onSwitchKind} />
     <p className="statement-privacy">PDF 與解密都只在瀏覽器處理，原始帳單不保存、不上傳。選擇保存的密碼會加密；密碼設定與確認匯入的消費明細，儲存後才會存於本機或自己的 Google Drive。</p>
     {passwordScope && !drafts && <div className="statement-password-summary"><span className="muted small">{available.length?`已設定 ${available.length} 組密碼，解析時自動套用。`:'可先設定常用帳單密碼。'}{passwords.length>available.length?` ${passwords.length-available.length} 組需在此瀏覽器重新設定。`:''}</span><button disabled={locked} onClick={onManagePasswords}>管理帳單密碼</button></div>}
     {passwordNotice && <p role="status" className="notice">{passwordNotice}</p>}

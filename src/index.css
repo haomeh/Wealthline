@@ -3288,7 +3288,7 @@ dialog.expense-rule-dialog { max-width: 440px; }
 /* Wraps the page so an open record editor can hide it without unmounting it. */
 .cashflow-body { display: contents; }
 .cashflow-body[hidden] { display: none; }
-.cashflow-page-controls { position: relative; display: flex; justify-content: flex-end; }
+.cashflow-page-controls { position: relative; display: flex; justify-content: flex-end; align-items: center; gap: 8px; }
 .cashflow-page-controls .cashflow-period { margin: 0; justify-content: flex-end; }
 .cashflow-page-controls .cashflow-stepper button { min-height: 40px; }
 .cashflow-page-controls .cashflow-period-trigger { font-size: 15px; }
@@ -3449,6 +3449,8 @@ button.pin-chip:hover:not(:disabled) { background: var(--ink); opacity: 0.85; }
 .import-steps { display: flex; gap: 6px; list-style: none; margin: 0 0 0 auto; padding: 0; font-size: 13px; }
 .import-steps li { padding: 6px 12px; border-radius: 999px; background: var(--surface-2); color: var(--ink-2); white-space: nowrap; }
 .import-steps li.on { background: var(--ink); color: var(--page); font-weight: 700; }
+/* The statement kind of the shared import screen: card or bank. */
+.import-kind { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; margin: 0 0 12px; }
 .statement-preview-layout { display: grid; grid-template-columns: minmax(0, 3fr) minmax(220px, 1fr); gap: 20px; align-items: start; }
 .statement-preview-main { min-width: 0; }
 .statement-preview-summary { position: sticky; top: 16px; display: grid; gap: 12px; }
@@ -3647,10 +3649,11 @@ button.pin-chip:hover:not(:disabled) { background: var(--ink); opacity: 0.85; }
   .add-holding .row > input { flex: 1 1 140px; min-width: 0; }
 
   /* 2d 收支: the title with a month pill; the range choice moves into the picker. */
-  .cashflow-page-head { position: relative; flex-direction: row; flex-wrap: nowrap; justify-content: space-between; align-items: center; }
+  .cashflow-page-head { position: relative; flex-direction: row; flex-wrap: wrap; justify-content: space-between; align-items: center; }
   .cashflow-page-head .cashflow-page-controls { position: static; }
   .cashflow-page-controls .cashflow-picker { left: 0; right: 0; width: auto; }
-  .cashflow-page-head h2 { font-size: 22px; }
+  .cashflow-page-head h2 { font-size: 22px; white-space: nowrap; }
+  .cashflow-page-controls > button { flex: none; min-height: 36px; padding: 6px 12px; font-size: 13px; white-space: nowrap; }
   .cashflow-page-controls .cashflow-period, .cashflow-page-controls .cashflow-stepper { width: auto; }
   .cashflow-page-controls .cashflow-step { display: none; }
   .cashflow-page-controls .cashflow-period-trigger, .cashflow-all-trigger { flex: none; gap: 6px; min-height: 36px; padding: 6px 12px; font-size: 13px; font-weight: 700; border: 0 !important; }

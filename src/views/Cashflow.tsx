@@ -29,6 +29,8 @@ interface Props {
   months?: CashflowMonthTotals[]
   onGoExpenses: () => void
   onGoBankTransactions: () => void
+  // Opens the statement import, the one entry for card and bank statements.
+  onImport: () => void
 }
 
 const signed = (n: number) => `${n > 0 ? '+' : ''}${fmt(n, 0)}`
@@ -43,7 +45,7 @@ export function Cashflow(props:Props) {
  return <LiveCashflow {...props}/>
 }
 
-function LiveCashflow({ data, onChange, busy = false, dirty, sessionIdentity, captureReviewGuard, months, readiness = months ? 'loading' : 'ready', ledgerError, onRetryLedger, onGoExpenses, onGoBankTransactions }: Props) {
+function LiveCashflow({ data, onChange, busy = false, dirty, sessionIdentity, captureReviewGuard, months, readiness = months ? 'loading' : 'ready', ledgerError, onRetryLedger, onGoExpenses, onGoBankTransactions, onImport }: Props) {
   const now = useCalendarNow()
   const editing = useRecordEditing({ data, onChange, busy, loading: readiness !== 'ready' })
   const input = { expenses: data.expenses, expenseRules: data.expenseCategoryRules, bankTransactions: data.bankTransactions, bankRules: data.bankCategoryRules, months }
@@ -99,14 +101,14 @@ function LiveCashflow({ data, onChange, busy = false, dirty, sessionIdentity, ca
     {editing.error && <p role="alert">{editing.error}</p>}
     <div className="page-head cashflow-page-head">
       <h2>收支總覽</h2>
-      <div className="cashflow-page-controls"><CashflowPeriodControls state={period} /></div>
+      <div className="cashflow-page-controls">{!empty && <button onClick={onImport}>匯入帳單</button>}<CashflowPeriodControls state={period} /></div>
     </div>
     <div className="row"><button aria-pressed={query.panel === 'records'} onClick={() => onQuery({...query,panel:'records'})}>收支明細</button><button aria-pressed={query.panel === 'review'} onClick={() => onQuery({...query,range:'month',month:query.range === 'month' ? query.month : period.endMonth,year:undefined,panel:'review',page:1})}>{query.range === 'month' ? '每月核對' : `核對 ${period.endMonth}`}</button><button onClick={()=>onQuery({...query,range:'month',month:query.range==='month'?query.month:period.endMonth,year:undefined,panel:'report',page:1})}>每月報表</button></div>
     {query.panel === 'review' && query.month && <MonthlyReviewPanel key={`${query.month}:${sessionIdentity}`} data={data} month={query.month} today={period.today} readiness={readiness} onChange={onChange} busy={busy} dirty={dirty} sessionIdentity={sessionIdentity} captureReviewGuard={captureReviewGuard} onUnclassified={source => choose({...query,panel:'records',source,metric:'all',category:'unclassified',page:1})} />}
     {empty && readiness!=='ready' && <div role={readiness==='error'?'alert':'status'}>{readiness==='error' ? <>{ledgerError || '無法載入明細'}<button onClick={onRetryLedger}>重試明細</button></> : '正在載入明細…'}</div>}
     {empty ? <section className="panel empty">
-      <p className="muted">還沒有收支紀錄。匯入信用卡帳單或銀行流水後，這裡會合併成同一套收支。</p>
-      <div className="row center"><button className="primary" onClick={onGoExpenses}>匯入信用卡帳單</button><button onClick={onGoBankTransactions}>匯入銀行流水</button></div>
+      <p className="muted">還沒有收支紀錄。匯入信用卡帳單或銀行帳單後，這裡會合併成同一套收支。</p>
+      <div className="row center"><button className="primary" onClick={onImport}>匯入帳單</button></div>
     </section> : <>
       {converting && <p role="status" className="notice">正在換算每月匯率…</p>}
       {failed && <div role="alert" className="notice"><p>無法完成 TWD 換算：{(!shown && needsFx && error) || bars.error}。未顯示部分合計。</p><button onClick={() => { retry(); bars.retry() }}>重試匯率</button></div>}

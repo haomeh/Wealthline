@@ -22,6 +22,9 @@ test('each signed-in page has its own URL that parses back to the same page', ()
     [{ tab: 'cashflow' }, '/cashflow'],
     [{ tab: 'more' }, '/more'],
     [{ tab: 'expenses' }, '/expenses'],
+    [{ tab: 'expenses', importing: true }, '/expenses/import'],
+    [{ tab: 'bank-transactions' }, '/bank-transactions'],
+    [{ tab: 'bank-transactions', importing: true }, '/bank-transactions/import'],
     [{ tab: 'rates' }, '/rates'],
     [{ tab: 'history' }, '/history'],
     [{ tab: 'history', date: '2026-09-01' }, '/history/2026-09-01'],
@@ -37,7 +40,7 @@ test('each signed-in page has its own URL that parses back to the same page', ()
 })
 
 test('unknown paths fall back to the overview', () => {
-  for (const path of ['/nope', '/history/x', '/history/2026-02-30', '/history/2026-09-01/x', '/accounts/abc/delete', '/accounts/abc/edit/x']) {
+  for (const path of ['/nope', '/history/x', '/history/2026-02-30', '/history/2026-09-01/x', '/accounts/abc/delete', '/accounts/abc/edit/x', '/expenses/x', '/expenses/import/x', '/bank-transactions/x', '/cashflow/import']) {
     assert.deepEqual(routes.parseRoute(path), { tab: 'overview' })
   }
 })
