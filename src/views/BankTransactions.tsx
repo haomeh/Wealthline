@@ -1,9 +1,10 @@
-import { bankStatementIdentity, statementAccountLabel, importStatementBalances, statementBalanceRevision, type StatementBalanceCandidate } from '../bankStatementAssets'
+import { bankStatementIdentity } from '../bankStatementAssets'
+import { applyBankLedger, bankDisplayAccounts, type BankLedgerPatch } from '../ledgerEdits'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { WealthData } from '../model'
 import type { LedgerScope } from '../google/driveStore'
 import { dataVersion } from '../dataVersion'
-import { bankCategoryRuleIndex, classifyBankTransaction, mergeBankTransactions, validateBankLedger, type BankTransaction, type BankTransactionAccount, type BankCategoryRule } from '../bankTransactions'
+import { bankCategoryRuleIndex, classifyBankTransaction, mergeBankTransactions, type BankTransaction, type BankTransactionAccount, type BankCategoryRule } from '../bankTransactions'
 import { protectBankText } from '../bankTextPrivacy'
 import { mergeStatementPasswords, parseStatementPasswords } from '../statementPasswords'
 import { StatementPasswordSettings } from './StatementPasswordSettings'
@@ -38,7 +39,7 @@ export function BankTransactions({data,onChange,busy,passwordScope,historyReady=
  const [revealed,setRevealed]=useState<string|null>(null)
  const accounts=data.bankTransactionAccounts??[],rows=data.bankTransactions??[],rules=data.bankCategoryRules??[],passwords=data.statementPasswords??[]
  // Keep legacy mapping identities unchanged; presentation follows the bank and country recognized from the PDF.
- const displayAccounts=useMemo(()=>(data.bankTransactionAccounts??[]).map(a=>{const identity=bankStatementIdentity(a.bank);if(!identity)return a;const label=statementAccountLabel(a.bank),multiple=(data.bankTransactionAccounts??[]).some(other=>other.id!==a.id&&bankStatementIdentity(other.bank)?.label===identity.label);return {...a,label:multiple&&a.label!==label?`${label} · ${a.label}`:label}}),[data.bankTransactionAccounts])
+ const displayAccounts=useMemo(()=>bankDisplayAccounts(data.bankTransactionAccounts??[]),[data.bankTransactionAccounts])
  // Rows still to classify, counted once per change of the rows or rules.
  const pendingIds=useMemo(()=>new Set((data.bankTransactions??[]).filter(r=>classifyBankTransaction(r,data.bankCategoryRules??[]).kind==='pending').map(r=>r.id)),[data.bankTransactions,data.bankCategoryRules])
  // Months with records: those loaded, and those the summary lists in quarters not loaded yet.
@@ -73,13 +74,9 @@ export function BankTransactions({data,onChange,busy,passwordScope,historyReady=
   return groups
  },[filtered,currentPage])
  const setFilter=(set:(value:string)=>void)=>(e:{target:{value:string}})=>{set(e.target.value);setPage(0)}
- function change(patch:{accounts?:BankTransactionAccount[];transactions?:BankTransaction[];rules?:BankCategoryRule[];balances?:readonly StatementBalanceCandidate[];balanceRevision?:string}) {
+ function change(patch:BankLedgerPatch) {
  const current=latest.current;if(current.busy)return
- const validated=validateBankLedger(patch.accounts??current.data.bankTransactionAccounts??[],patch.transactions??current.data.bankTransactions??[],patch.rules??current.data.bankCategoryRules??[])
- if(patch.balances?.length&&patch.balanceRevision!==statementBalanceRevision(current.data))throw new Error('資產歷史已變更，請重新預覽')
- const next={...current.data,bankTransactionAccounts:validated.accounts,bankTransactions:validated.transactions,bankCategoryRules:validated.rules}
- const imported=importStatementBalances(next,patch.balances??[])
- current.onChange({...imported.data,version:dataVersion(imported.data)})
+ current.onChange(applyBankLedger(current.data,patch))
  }
  const dialogs=<>{ruleEditor && <BankRuleDialog key={ruleEditor.index??'new'} rule={ruleEditor.rule} busy={busy} onCancel={()=>setRuleEditor(null)} onSave={rule=>{const current=latest.current.data.bankCategoryRules??[];change({rules:ruleEditor.index===undefined?[...current,rule]:current.map((r,i)=>i===ruleEditor.index?rule:r)});setRuleEditor(null)}}/>}{managingPasswords && passwordScope && <StatementPasswordSettings scope={passwordScope} passwords={passwords} busy={busy} onClose={()=>setManagingPasswords(false)} onSave={rows=>{const current=latest.current;if(current.busy)return;current.onChange({...current.data,version:dataVersion(current.data,{minimumVersion:12}),statementPasswords:parseStatementPasswords(mergeStatementPasswords(current.data.statementPasswords??[],rows))})}} onRemove={id=>{const current=latest.current;if(!current.busy)current.onChange({...current.data,version:dataVersion(current.data,{minimumVersion:12}),statementPasswords:(current.data.statementPasswords??[]).filter(s=>s.id!==id)})}} onRemoveAll={()=>{const current=latest.current;if(!current.busy)current.onChange({...current.data,version:dataVersion(current.data,{minimumVersion:12}),statementPasswords:[]})}}/>}</>
  function removeAccount(id:string){const current=latest.current.data;if(current.bankTransactions?.some(r=>r.accountId===id)||current.bankStatementBalances?.some(b=>b.ledgerAccountId===id)){setMessage('帳戶仍被流水引用，請先清除流水。');return}change({accounts:(current.bankTransactionAccounts??[]).filter(v=>v.id!==id)})}
@@ -184,9 +181,10 @@ function AccountLabel({account,automatic,count,partial,referenced,busy,onRename,
 
 // `date`: show the day, account and category under the description (the ledger page lists
 // rows by month); without it the caller's group heading already says the date and account.
+// `showTag`: without `date`, still show the category under the description.
 // `onReveal`: on narrow screens the buttons stay hidden until a left swipe (or focus) shows them.
-export function BankRecord({row,account,rules,busy=false,date,revealed=false,onReveal,onEdit,onRule}:{row:BankTransaction;account:string;rules:BankCategoryRule[];busy?:boolean;date?:string;revealed?:boolean;onReveal?:(open:boolean)=>void;onEdit?:()=>void;onRule?:()=>void}) {
- const category=classificationLabel(row,rules),direction=row.direction==='debit'?'支出':'入帳',tag=date?classificationTag(row,rules):null
+export function BankRecord({row,account,rules,busy=false,date,showTag=false,revealed=false,onReveal,onEdit,onRule}:{row:BankTransaction;account:string;rules:BankCategoryRule[];busy?:boolean;date?:string;showTag?:boolean;revealed?:boolean;onReveal?:(open:boolean)=>void;onEdit?:()=>void;onRule?:()=>void}) {
+ const category=classificationLabel(row,rules),direction=row.direction==='debit'?'支出':'入帳',tag=date||showTag?classificationTag(row,rules):null
  // A touch drag moves the row with the finger (--swipe, set without re-rendering); on release
  // it settles open (buttons showing) past half of their width, else closed.
  const drag=useRef<{x:number;y:number;base:number;dx:number;horizontal?:boolean}|null>(null),swiped=useRef(false)
@@ -206,7 +204,7 @@ export function BankRecord({row,account,rules,busy=false,date,revealed=false,onR
   onFocusCapture:e=>{if((e.target as HTMLElement).closest('.detail-record-actions'))onReveal(true)},
  }
  return <DetailRecord className="bank-record" title={row.description} label={`查看流水 ${row.id}`} articleProps={swipe}
-  subtitle={date&&tag&&<><time dateTime={date}>{Number(date.slice(8))} 日</time><span className="bank-record-account">{account}</span><span className={`tag${tag.tone?` ${tag.tone}`:''}`}>{tag.text}</span></>}
+  subtitle={tag&&<>{date&&<><time dateTime={date}>{Number(date.slice(8))} 日</time><span className="bank-record-account">{account}</span></>}<span className={`tag${tag.tone?` ${tag.tone}`:''}`}>{tag.text}</span></>}
   value={<span className="record-money" data-direction={row.direction} aria-label={`${direction} ${row.currency} ${fmt(row.amount)}`}><small>{row.currency}</small><strong>{row.direction==='credit'?'+':'−'}{fmt(row.amount)}</strong></span>}
   actions={onEdit && onRule && <>
    <button type="button" className="bank-record-rule" data-pending={classifyBankTransaction(row,rules).kind==='pending'||undefined} disabled={busy} aria-label={`分類規則：${category}`} title="編輯匹配規則／新增規則" onClick={onRule}><span className="swipe-icon"><ActionIcon name="tag"/></span></button>

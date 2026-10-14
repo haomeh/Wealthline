@@ -3285,6 +3285,9 @@ dialog.expense-rule-dialog { max-width: 440px; }
 
 /* Cashflow page */
 .cashflow-page-head { align-items: flex-start; }
+/* Wraps the page so an open record editor can hide it without unmounting it. */
+.cashflow-body { display: contents; }
+.cashflow-body[hidden] { display: none; }
 .cashflow-page-controls { position: relative; display: flex; justify-content: flex-end; align-items: center; gap: 8px; }
 .cashflow-page-controls .cashflow-period { margin: 0; justify-content: flex-end; }
 .cashflow-page-controls .cashflow-stepper button { min-height: 40px; }

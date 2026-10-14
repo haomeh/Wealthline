@@ -216,12 +216,19 @@ export function parseBankStatement(pages: readonly BankPage[], metadata: BankSta
     for (const p of ordered) {
         const previousAccount = account, previousCurrency = currency;
         const mayContinue = layout === singapore && continuation && !!lastDate && !!previousAccount && p.page === lastPage + 1;
-        table = undefined;
+        // A table cut by the page end continues only when the next page opens with a dated row of the same own account.
+        const open = layout.headerlessContinuation && !closed && !pending && p.page === lastPage + 1 ? table : undefined;
+        // Wrapped cell text of the first row may be printed above it.
+        const first = open && p.lines.slice(0, 3).find(l => l.items.some(i => i.x < open.descriptionX - 8 * open.scale));
+        const firstAccount = first && open?.accountX !== undefined ? identifier(first.items.find(i => Math.abs(i.x - open.accountX!) < 20 * open.scale)?.text ?? '') : undefined;
+        const carried = open && first && firstAccount && (section ? firstAccount === account : !account)
+            && isoDate(first.items.filter(i => i.x >= open.dateX - 10 * open.scale && i.x < open.descriptionX - 8 * open.scale).map(i => i.text).join(' '), layout.dateKind) ? open : undefined;
+        table = carried;
         context = [];
         contextAccount = undefined;
         orphans = [];
         lastPage = p.page;
-        if (!mayContinue) {
+        if (!mayContinue && !carried) {
             discard('unfinished-transaction');
             pending = undefined;
             lastDate = undefined;
@@ -389,7 +396,7 @@ export function parseBankStatement(pages: readonly BankPage[], metadata: BankSta
                 orphans = [];
                 continue;
             }
-            if (l.y < 100) {
+            if (l.y < (layout.bodyBottom ?? 100)) {
                 // Footer geometry is an exclusion, not evidence that no activity was lost.
                 // Warn only; never build a transaction from below the boundary.
                 const dateText = l.items.filter(i => i.x >= table!.dateX - 10 * table!.scale && i.x < table!.descriptionX - 8 * table!.scale).map(i => i.text).join(' ');
@@ -458,9 +465,23 @@ export function parseBankStatement(pages: readonly BankPage[], metadata: BankSta
                 createSection(currency);
             }
             const debitItems = l.items.filter(i => Math.abs(i.x + i.width - t.debitEdge) < 18 * t.scale), creditItems = l.items.filter(i => Math.abs(i.x + i.width - t.creditEdge) < 18 * t.scale);
-            const debit = debitItems.flatMap(i => { const v = money(i.text, !!activeLayout.decimalOnly); return v === undefined ? [] : [v]; }), credit = creditItems.flatMap(i => { const v = money(i.text, !!activeLayout.decimalOnly); return v === undefined ? [] : [v]; });
+            const debit = debitItems.flatMap(i => { const v = money(i.text, !!activeLayout.decimalOnly); return v === undefined || (v === 0 && layout.zeroAmountBlank) ? [] : [v]; }), credit = creditItems.flatMap(i => { const v = money(i.text, !!activeLayout.decimalOnly); return v === undefined || (v === 0 && layout.zeroAmountBlank) ? [] : [v]; });
             // Only narrative geometry, not own-account, date, reference, currency or balance cells.
-            const narrative = l.items.filter(i => i.x >= t.descriptionX - 4 * t.scale && i.x < t.descriptionEnd - 4 * t.scale && i.x + i.width < Math.min(t.debitEdge, t.creditEdge) - 25 * t.scale).map(i => i.text).join(' ');
+            const narrativeOf = (row: SpatialLine) => row.items.filter(i => i.x >= t.descriptionX - 4 * t.scale && i.x < t.descriptionEnd - 4 * t.scale && i.x + i.width < Math.min(t.debitEdge, t.creditEdge) - 25 * t.scale).map(i => i.text).join(' ');
+            let narrative = narrativeOf(l);
+            // A two-line summary is centered on its row: one line just above, one just below, none on the row.
+            if (layout.splitDescription && dateText && !narrative)
+                narrative = [p.lines[n - 1], p.lines[n + 1]].filter(r => r && Math.abs(r.y - l.y) < 9 && !r.items.some(i => i.x < t.descriptionX - 8 * t.scale)).map(r => narrativeOf(r!)).filter(Boolean).join('');
+            if (t.noteX !== undefined && dateText) {
+                // The note cell starts right of the balance, may share an item with it and may wrap above and below the row.
+                // A wrapped line belongs to this row only when no other row is as near.
+                const rowLike = (r: SpatialLine) => r.items.some(i => i.x < t.descriptionX - 8 * t.scale);
+                const mine = (k: number, step: number) => { for (let j = k; p.lines[j] && Math.abs(p.lines[j].y - l.y) < 30 * t.scale; j += step) if (rowLike(p.lines[j])) return Math.abs(p.lines[j].y - p.lines[k].y) > Math.abs(p.lines[k].y - l.y); return true; };
+                const wrapped = (k: number, step: number) => { const r = p.lines[k]; return r && !rowLike(r) && Math.abs(r.y - l.y) < 16 * t.scale && mine(k, step) ? [r] : []; };
+                const note = [...wrapped(n - 2, -1), ...wrapped(n - 1, -1), l, ...wrapped(n + 1, 1), ...wrapped(n + 2, 1)].flatMap(r => r.items.filter(i => i.x > t.creditEdge + 30 * t.scale)).map(i => { const [head, ...rest] = i.text.split(' '); return money(head) === undefined ? i.text : rest.join(' '); }).join('').slice(0, 120);
+                if (note && note !== narrative)
+                    narrative = narrative ? `${narrative} · ${note}` : note;
+            }
             if (!dateText && !debit.length && !credit.length && !narrative)
                 continue;
             if (dateText) {
@@ -514,9 +535,16 @@ export function parseBankStatement(pages: readonly BankPage[], metadata: BankSta
                     else {
                         emitted = { sectionKey: section.key, page: pending.page, rowKey: pending.rowKey, date: pending.date, description, currency: rowCurrency, direction: debit.length ? 'debit' : 'credit', amount: (debit[0] ?? credit[0]), ...(pending.leading && { ambiguousNarration: { leading: pending.leading, trailing: [] } }) };
                         section.rows.push(emitted);
+                        section.noTransactions = false;
                     }
                 }
                 pending = undefined;
+            }
+            else if (layout.zeroAmountBlank && [...debitItems, ...creditItems].some(i => money(i.text) === 0)) {
+                // A row whose amounts are all a printed 0 is not activity.
+                pending = undefined;
+                if (section && !section.rows.length && !section.warnings.length)
+                    section.noTransactions = true;
             }
             else if (!activeLayout.wrapped) {
                 discard('missing-explicit-amount');

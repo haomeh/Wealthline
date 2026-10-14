@@ -9,11 +9,16 @@ import { monthKey, useCashflowPeriod, useTwdCashflow, type CashflowPeriodState }
 import { CashflowPeriodControls } from './CashflowPeriodControls'
 import { ExpenseRecords } from './ExpenseRecords'
 import { BankRecord } from './BankTransactions'
+import { useRecordEditing, type RecordEditing } from './useRecordEditing'
 
 interface Props {
   data: WealthData
   // When transactions are not loaded: their monthly totals (dataSummary.ts).
   months?: CashflowMonthTotals[]
+  // Without onChange the record lists are read-only. With it, a row's category rule and details can be edited
+  // once every record is loaded; the changes are saved with the app's save bar.
+  onChange?: (next: WealthData) => void
+  busy?: boolean
   onGoExpenses: () => void
   onGoBankTransactions: () => void
   // Opens the statement import, the one entry for card and bank statements.
@@ -24,8 +29,9 @@ const signed = (n: number) => `${n > 0 ? '+' : ''}${fmt(n, 0)}`
 const count = (categories: { count: number }[]) => categories.reduce((n, c) => n + c.count, 0)
 
 // Card spending and bank rows as one set of income and spending, one period at a time.
-export function Cashflow({ data, months, onGoExpenses, onGoBankTransactions, onImport }: Props) {
+export function Cashflow({ data, months, onChange, busy = false, onGoExpenses, onGoBankTransactions, onImport }: Props) {
   const now = useCalendarNow()
+  const editing = useRecordEditing({ data, onChange, busy, loading: !!months })
   const input = { expenses: data.expenses, expenseRules: data.expenseCategoryRules, bankTransactions: data.bankTransactions, bankRules: data.bankCategoryRules, months }
   const period = useCashflowPeriod(input, now)
   const { rawGroups, groups, needsFx, loading, error, retry } = useTwdCashflow(input, period.endMonth, period.period, period.today)
@@ -47,7 +53,10 @@ export function Cashflow({ data, months, onGoExpenses, onGoBankTransactions, onI
   const failed = (!shown && needsFx && error) || (!shownBars && bars.needsFx && bars.error)
   const empty = !period.monthList.length
 
+  // The editor replaces the page while open; the page stays mounted underneath, so the open month and chosen period survive.
   return <>
+    {editing.editor}{editing.dialogs}
+    <div className="cashflow-body" hidden={editing.editing}>
     <div className="page-head cashflow-page-head">
       <h2>收支總覽</h2>
       {!empty && <div className="cashflow-page-controls"><button onClick={onImport}>匯入帳單</button><CashflowPeriodControls state={period} /></div>}
@@ -112,12 +121,13 @@ export function Cashflow({ data, months, onGoExpenses, onGoBankTransactions, onI
           </section>
 
           {/* Keyed by the selection so the open year and month reset when it changes. */}
-          <RecordsTile key={period.label} period={period} data={data} loading={!!months} onGoExpenses={onGoExpenses} onGoBankTransactions={onGoBankTransactions} />
+          <RecordsTile key={period.label} period={period} data={data} loading={!!months} editing={editing} onGoExpenses={onGoExpenses} onGoBankTransactions={onGoBankTransactions} />
         </>}
       </div>}
       {shown?.investmentRecovery.hasRecords && <p className="notice small" role="note">投資回收款：可能包含投入本金，不代表投資收益</p>}
       <p className="cashflow-footnote muted small">依已匯入紀錄，不代表完整月份。{period.isCurrentMonth ? '本月尚未結束。' : ''}金額統一換算 TWD，依各月月底已完成匯率；本月採最新已完成匯率（最多回溯 7 日）。</p>
     </>}
+    </div>
   </>
 }
 
@@ -150,7 +160,7 @@ function bankRecordGroups(rows: readonly BankTransaction[], accounts: readonly B
 
 // The records behind the totals, listed under the tiles: the chosen month, or each month of the year,
 // one open at a time; 全部期間 groups the months by year, the latest year open at first.
-function RecordsTile({ period, data, loading, onGoExpenses, onGoBankTransactions }: { period: CashflowPeriodState; data: WealthData; loading: boolean; onGoExpenses: () => void; onGoBankTransactions: () => void }) {
+function RecordsTile({ period, data, loading, editing, onGoExpenses, onGoBankTransactions }: { period: CashflowPeriodState; data: WealthData; loading: boolean; editing: RecordEditing; onGoExpenses: () => void; onGoBankTransactions: () => void }) {
   const { range, year } = period.selection
   const yearPrefix = `${String(year).padStart(4, '0')}-`
   const recordMonths = range === 'month' ? [period.endMonth] : period.monthList.filter((m) => range === 'all' || m.startsWith(yearPrefix))
@@ -158,8 +168,10 @@ function RecordsTile({ period, data, loading, onGoExpenses, onGoBankTransactions
   const [openMonth, setOpenMonth] = useState('')
   const [openYear, setOpenYear] = useState<string | null>(null)
   const count = (prefix: string) => loading ? null : <span className="muted small">信用卡 {(data.expenses ?? []).filter((e) => e.date.startsWith(prefix)).length} 筆 · 銀行 {(data.bankTransactions ?? []).filter((t) => t.date.startsWith(prefix)).length} 筆</span>
-  const records = (month: string) => <MonthRecords month={month} data={data} loading={loading} onGoExpenses={onGoExpenses} onGoBankTransactions={onGoBankTransactions} />
+  const records = (month: string) => <MonthRecords month={month} data={data} loading={loading} editing={editing} onGoExpenses={onGoExpenses} onGoBankTransactions={onGoBankTransactions} />
   return <section className="panel span-4 cashflow-records-tile" aria-label={`${period.label}明細`}>
+    {editing.error && <p role="alert" className="banner error">{editing.error}</p>}
+    {editing.on && <><p className="muted small">每筆明細都能改分類或編輯；修改後請儲存變更。</p><p className="bank-swipe-hint muted small">向左滑一筆銀行流水可編輯或設定分類。</p></>}
     {range === 'month' ? records(period.endMonth) : recordYears.map((y) => {
       const yearOpen = range === 'year' || (openYear ?? recordYears[0]) === y
       return <div key={y} className="cashflow-year-records">
@@ -179,7 +191,7 @@ function RecordsTile({ period, data, loading, onGoExpenses, onGoBankTransactions
 }
 
 // One month's card and bank records, each behind a disclosure.
-function MonthRecords({ month, data, loading, onGoExpenses, onGoBankTransactions }: { month: string; data: WealthData; loading: boolean; onGoExpenses: () => void; onGoBankTransactions: () => void }) {
+function MonthRecords({ month, data, loading, editing, onGoExpenses, onGoBankTransactions }: { month: string; data: WealthData; loading: boolean; editing: RecordEditing; onGoExpenses: () => void; onGoBankTransactions: () => void }) {
   const cardRows = (data.expenses ?? []).filter((e) => e.date.startsWith(month))
   const bankGroups = bankRecordGroups((data.bankTransactions ?? []).filter((t) => t.date.startsWith(month)), data.bankTransactionAccounts ?? [])
   const bankCount = bankGroups.reduce((n, g) => n + g.rows.length, 0)
@@ -188,7 +200,8 @@ function MonthRecords({ month, data, loading, onGoExpenses, onGoBankTransactions
     <details className="cashflow-records">
       <summary><strong>信用卡消費{count(cardRows.length)}</strong><span className="muted small">依原交易日期；退款扣除消費</span></summary>
       {loading ? <p className="muted small">正在載入明細…</p> : cardRows.length
-        ? <ExpenseRecords expenses={cardRows} rules={data.expenseCategoryRules ?? []} />
+        ? <ExpenseRecords expenses={cardRows} rules={data.expenseCategoryRules ?? []} showCategory={editing.on} busy={editing.busy}
+          onEdit={editing.on ? editing.editExpense : undefined} onRule={editing.on ? editing.editExpenseRule : undefined} />
         : <p className="muted small">這個月沒有信用卡消費</p>}
       <button className="link" onClick={onGoExpenses}>前往信用卡消費頁編輯 →</button>
     </details>
@@ -197,7 +210,8 @@ function MonthRecords({ month, data, loading, onGoExpenses, onGoBankTransactions
       {loading ? <p className="muted small">正在載入明細…</p> : bankGroups.length
         ? <div className="bank-records record-groups">{bankGroups.map((g) => <section key={g.key} className="bank-record-group">
           <header className="record-group-head"><time dateTime={g.date}>{g.date}</time><span title={g.account}>{g.account}</span></header>
-          {g.rows.map((row) => <BankRecord key={row.id} row={row} account={g.account} rules={data.bankCategoryRules ?? []} />)}
+          {g.rows.map((row) => <BankRecord key={row.id} row={row} account={g.account} rules={data.bankCategoryRules ?? []} busy={editing.busy} showTag={editing.on}
+            {...(editing.on ? { revealed: editing.revealed === row.id, onReveal: (open: boolean) => editing.setRevealed(open ? row.id : null), onEdit: () => editing.editBank(row), onRule: () => editing.editBankRule(row) } : {})} />)}
         </section>)}</div>
         : <p className="muted small">這個月沒有銀行流水</p>}
       <button className="link" onClick={onGoBankTransactions}>前往銀行流水頁編輯 →</button>
