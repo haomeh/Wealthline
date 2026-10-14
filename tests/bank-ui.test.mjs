@@ -390,3 +390,10 @@ test('a balance for a currency without transactions imports with the same bank s
  await click('匯入銀行帳單');await files();await submitImport();assert.match(document.body.textContent,/USD 12.5/);await click('檢查匯入');await click('確認銀行匯入')
  assert.deepEqual(latest().history.quantityDays[0].entries.map(e=>[e.currency,e.quantity]).sort(),[['SGD',888.5],['USD',12.5]]);assert.equal(latest().bankStatementBalances.length,2)
 })
+test('balances from a statement with only an account summary import under the bank ledger account',async()=>{
+ const r=parsed();r.bank='DBS Singapore';r.sections=[];r.recognizedCount=0;r.balances=[{bank:r.bank,date:'2025-09-30',currency:'SGD',quantity:888.5},{bank:r.bank,date:'2025-09-30',currency:'USD',quantity:12.5}];pdf.reset([r])
+ const latest=await render({...model.emptyData(),bankTransactionAccounts:[],bankTransactions:[],bankCategoryRules:[]})
+ await click('匯入銀行帳單');await files();await submitImport();await click('檢查匯入');await click('確認銀行匯入')
+ assert.deepEqual(latest().bankTransactionAccounts.map(a=>a.label),['DBS (SG)']);assert.equal(latest().bankTransactions.length,0)
+ assert.deepEqual(latest().history.quantityDays[0].entries.map(e=>[e.currency,e.quantity]).sort(),[['SGD',888.5],['USD',12.5]])
+})

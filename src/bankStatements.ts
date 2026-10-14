@@ -610,10 +610,11 @@ export function parseBankStatement(pages: readonly BankPage[], metadata: BankSta
         warnings.push(warning(ordered[0]?.page ?? 1, 'unsupported-activity-layout'));
     const balances:StatementCashBalance[]=[];
     if(balanceDate)for(const curr of new Set(cashScopes.values())){const scopes=[...cashScopes].filter(([,c])=>c===curr).map(([key])=>key);if(scopes.length&&scopes.every(key=>closing.has(key)&&!invalidClosing.has(key)))balances.push({bank:layout.bank,date:balanceDate,currency:curr,quantity:scopes.reduce((n,key)=>n+closing.get(key)!.quantity,0)});}
-    // The account summary is read apart from the transaction tables.
-    // The summary carries its own statement date, so it does not depend on the printed periods.
-    if (!balances.length)
-        balances.push(...summaryBalances(layout.bank, ordered, period?.end) ?? []);
+    // A complete account summary, read apart from the transaction tables, lists every currency and replaces the
+    // table closing lines; those stay only when the statement has no readable summary.
+    const summarized = summaryBalances(layout.bank, ordered, period?.end);
+    if (summarized)
+        balances.splice(0, balances.length, ...summarized);
     return { ...(balances.length&&{balances}), status: !supported ? 'unsupported' : layout.partial || rejectedCount ? 'partial' : 'recognized', bank: layout.bank, sections, warnings, recognizedCount, rejectedCount };
 }
 /** Lazy browser-local neutral reader; never enters the card OCR/scoping adapter. */

@@ -536,3 +536,11 @@ test('account summaries of Taishin, HSBC Singapore and E.SUN give demand deposit
  assert.equal(read('E.SUN',esun),undefined,'no statement date')
  assert.equal(read('E.SUN',esun.filter(i=>i.text!=='3.00'),'2031-04-30'),undefined,'unreadable row')
 })
+test('a complete account summary replaces table closing lines, so no currency is left out',()=>{
+ const closingLine=[item('as at 31 Jul 2031',321,560),item('Closing Balance',103,620),right('999.00',580,620)]
+ const p=hsbc();p[0].items.push(...closingLine)
+ assert.deepEqual(bank.parseBankStatement(p).balances,[{bank:'HSBC Taiwan',date:'2031-07-31',currency:'TWD',quantity:999}],'table closing line alone')
+ const summary=[item('對帳單日期',321,810),item('31/07/2031',527,810),item('一般活存/支存帳戶概要',59,800),item('帳戶種類',59,792),item('幣別/帳戶號碼',213,792),item('結餘',463,792),item('活期存款',52,784),item('TWD 716-00XXXX-111',213,784),right('100',473,784),item('USD 716-00XXXX-222',213,772),right('50.00',473,772),item('信用卡繳款概要',59,730)]
+ const both=hsbc();both[0].items.push(...closingLine,...summary)
+ assert.deepEqual(bank.parseBankStatement(both).balances.map(b=>[b.currency,b.quantity]),[['TWD',100],['USD',50]])
+})

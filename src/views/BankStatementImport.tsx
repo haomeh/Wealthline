@@ -67,8 +67,9 @@ export function BankStatementImport({data,accounts,existing,rules,passwords,pass
  ...(r.ambiguousNarration && {narration:{leading:r.ambiguousNarration.leading.map(t=>protectBankText(t)),trailing:r.ambiguousNarration.trailing.map(t=>protectBankText(t))}})}))})
  })
  // Commit one file only after every section has been prepared successfully.
- const fileBalances=(result.balances??[]).map(b=>{// A currency without activity has no section of its own: its balance goes with the same bank's first section.
- const section=fileSections.find(s=>s.bank===b.bank&&s.currency===b.currency)??fileSections.find(s=>s.bank===b.bank);if(!section)throw new Error('balance section');return {...b,fileHash:hash,ledgerAccountId:section.newId,sectionId:section.id}})
+ const fileBalances=(result.balances??[]).map(b=>{// A currency without activity has no section of its own: its balance goes with the same bank's first section,
+ // or, when the statement has no transaction section at all, maps to the bank's ledger account when prepared.
+ const section=fileSections.find(s=>s.bank===b.bank&&s.currency===b.currency)??fileSections.find(s=>s.bank===b.bank);return {...b,fileHash:hash,ledgerAccountId:section?.newId??'',sectionId:section?.id??''}})
  next.push(...fileSections);nextBalances.push(...fileBalances);outcomes.push(...fileReports)
  if(result.status==='unsupported')failures++;else successes++
  }catch(e){if(abort.signal.aborted)return;failures++;outcomes.push(`${name} · 無法解析：${bankStatementErrorMessage(e,stage).replace(/。$/, '')}。未加入任何此檔資料。`)}
@@ -101,7 +102,11 @@ export function BankStatementImport({data,accounts,existing,rules,passwords,pass
  }
  const current=latest.current
  // Preview the correspondence, then require one explicit final confirmation before any write.
- const cashBalances=balances.map(({sectionId,...balance})=>{const s=sections.find(s=>s.id===sectionId)!,confirmation=statementBalanceConfirmation(balance.bank,current.data.accounts);return {...balance,ledgerAccountId:s.accountId==='new'?s.newId:s.accountId,...(confirmation&&{confirmedAccountId:confirmation.accountId})}})
+ const ledgerFor=(bank:string)=>{const known=[...current.accounts,...additions],matched=statementLedgerAccount(bank,known);if(matched)return matched.id
+  // Several ledger accounts of this bank and none named after it: the user must map a section first.
+  if(known.some(a=>bankStatementIdentity(a.bank)?.label===bankStatementIdentity(bank)?.label))throw new Error('mapping')
+  const added={id:crypto.randomUUID(),label:statementAccountLabel(bank),bank};additions.push(added);return added.id}
+ const cashBalances=balances.map(({sectionId,...balance})=>{const s=sections.find(s=>s.id===sectionId),confirmation=statementBalanceConfirmation(balance.bank,current.data.accounts);return {...balance,ledgerAccountId:!s?ledgerFor(balance.bank):s.accountId==='new'?s.newId:s.accountId,...(confirmation&&{confirmedAccountId:confirmation.accountId})}})
  if(!rows.length&&!cashBalances.length)throw new Error('empty')
  const validated=validateBankLedger([...current.accounts,...additions],[...current.existing,...rows],rules)
  const balanceResult=importStatementBalances({...current.data,bankTransactionAccounts:validated.accounts},cashBalances)
@@ -186,7 +191,7 @@ export function BankStatementImport({data,accounts,existing,rules,passwords,pass
   <div className="bank-import-actions">
    {!!sections.length && <span className="muted small">已選 {selectedCount}／{previewCount} 筆</span>}
    <button disabled={locked} onClick={()=>{const draft:BankTransaction={id:crypto.randomUUID(),accountId:'',date:'',description:'',currency:'TWD',direction:'debit',amount:0};setSections(list=>[...list,{id:crypto.randomUUID(),bank:'手動輸入',currency:'TWD',hash:'0'.repeat(64),accountId:'',newId:crypto.randomUUID(),label:'',noTransactions:false,partial:true,warnings:[],rows:[{draft,original:draft,provenance:{page:1,sectionKey:'manual',rowKey:'manual'},selected:true,manual:true}]}]);setReview(null);setSectionIndex(sections.length);setRowPage(0)}}>手動補登區段</button>
-   {!!sections.length && <button className="primary" disabled={locked} onClick={()=>void prepare()}>檢查匯入</button>}
+   {(!!sections.length||!!balances.length) && <button className="primary" disabled={locked} onClick={()=>void prepare()}>檢查匯入</button>}
   </div>
   {review && result && <section className="notice bank-import-review" aria-label="銀行重複核對">{review.balances.length>0 && <p>期末餘額可補入 {review.balanceCount} 筆 · 已匯入的帳單餘額會略過。</p>}<p>可新增 {result.added} 筆 · 略過 {result.duplicates} 筆 · 疑似重複 {result.suspectedDuplicates} 筆。跨帳單同值交易沒有銀行 reference 時無法保證準確。</p>{narrationCount>0 && <p>{narrationCount} 筆有補充敘述；確認匯入會使用目前摘要，可返回預覽修改。</p>}{result.suspectedDuplicateRows.length>0 && <><ul>{result.suspectedDuplicateRows.map(r=><li key={r.id}>{r.date} · {r.description} · {r.direction} · {r.currency} {r.amount}</li>)}</ul><label className="bank-summary-check"><input type="checkbox" aria-label="保留疑似重複" disabled={locked} checked={keep} onChange={e=>setKeep(e.target.checked)}/><span>我已核對，保留疑似重複（相同文件位置仍略過）</span></label></>}{review.balanceConfirmations.length>0 && <div aria-label="餘額帳戶對應"><p><strong>銀行名稱不同，請確認是同一個帳戶</strong></p><ul>{review.balanceConfirmations.map(c=><li key={c.accountId}><strong>{c.statementLabel}</strong> → {c.assetLabel}</li>)}</ul><p className="muted small">確認後補入右側帳戶的歷史餘額；既有帳戶名稱不變。若不是同一帳戶，可先只匯入流水。</p></div>}<div className="row bank-import-confirm-actions">{review.balanceConfirmations.length>0 && result.added>0 && <button disabled={locked} onClick={()=>finishImport(true)}>只匯入流水</button>}<button disabled={locked||(!result.added&&!review.balanceCount)} className="primary" onClick={()=>finishImport()}>{review.balanceConfirmations.length?'確認對應並匯入':'確認銀行匯入'}</button></div></section>}
  </section>
