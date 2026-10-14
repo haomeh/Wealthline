@@ -170,6 +170,8 @@ export function parseStatement(lines:string[], month:string, currency:string, fi
     if(bank === 'hsbc' && !posting) {skipped.push(original);continue}
     const amountMatch = line.match(/(?:^|\s+)(?:NT\$|TWD|\$)?\s*(\(?[+-]?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d{1,2})?\)?)(?:\s*(CR|DR))?$/i)
     if(!validDate(date) || !amountMatch) {skipped.push(original);continue}
+    // Verified card layouts label extra columns with a posting date or currency code; bank-account rows end in bare counterpart/amount/balance numbers.
+    const cardColumns = !!posting || /\s\d{3,4}[/.-]\d{1,2}[/.-]\d{1,2}(?:\s|$)|(?:^|\s)(?:NT\$|\$|TWD|NTD|USD|SGD|HKD|JPY|EUR)\s*[(+-]?\d/i.test(line)
     let description = line.slice(0,amountMatch.index).trim()
     if(bank === 'fubon') {
       // The posting date separates the merchant from original-currency metadata.
@@ -185,7 +187,7 @@ export function parseStatement(lines:string[], month:string, currency:string, fi
       skipped.push(original);continue
     }
     // shortcut: unknown bank layouts require a single unambiguous amount; add verified layouts when samples are available.
-    if(!description || (!bank && /\s[+-]?\d[\d,.]*\s*$/.test(description))) {skipped.push(original);continue}
+    if(!description || ((!bank || !cardColumns) && /\s[+-]?\d[\d,.]*\s*$/.test(description))) {skipped.push(original);continue}
     let amount = Number(amountMatch[1].replace(/[(),]/g,''))
     if(amountMatch[1].startsWith('(') || amountMatch[2]?.toUpperCase() === 'CR') amount = -Math.abs(amount)
     if(!Number.isFinite(amount)) {skipped.push(original);continue}

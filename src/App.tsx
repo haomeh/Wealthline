@@ -39,7 +39,7 @@ import { Landing } from './views/Landing'
 import { Opening, type OpeningStep } from './views/Opening'
 import { LegalPage } from './views/Legal'
 import { PAGES, goBack, navigate, usePage, usePath } from './site'
-import { MOBILE_TABS, NAV_GROUPS, TABS, parseRoute, routePath, tabPath, type Route } from './routes'
+import { MOBILE_TABS, NAV_GROUPS, TABS, parseRoute, routePath, tabPath, type Route, type Tab } from './routes'
 import { Link, Logo, PrivacyNotice, SiteFooter } from './views/Site'
 import { DeviceIcon, UploadButton } from './views/LocalData'
 import { StorageMeter, StorageNotice } from './views/StorageMeter'
@@ -663,6 +663,13 @@ export default function App() {
 
   const go = (r: Route, replace = false) => navigate(routePath(r), { replace })
   const goAccounts = (view: AccountsView, replace = false) => go({ tab: 'accounts', ...view }, replace)
+  // Card and bank statements share one import screen, opened on the page its rows land on. Coming from
+  // another page adds a history entry; a page's own button, the kind switch and closing replace it.
+  const goImport = (kind: 'expenses' | 'bank-transactions', importing = true, replace = true) => go({ tab: kind, importing }, replace)
+  // The nav item of the page already open does nothing while its import is open: the parsed preview
+  // lives only in the import screen, and leaving it would discard the preview without asking.
+  const importingStatements = (route.tab === 'expenses' || route.tab === 'bank-transactions') && !!route.importing
+  const goTab = (t: Tab) => { if (t !== tab || !importingStatements) navigate(tabPath(t)) }
 
   // The account menu's parts, shared by the sidebar menu and the phone's 更多 page.
   const avatar = user
@@ -747,7 +754,7 @@ export default function App() {
                   key={t}
                   className={t === tab ? 'active' : ''}
                   aria-current={t === tab ? 'page' : undefined}
-                  onClick={() => navigate(tabPath(t))}
+                  onClick={() => goTab(t)}
                 >
                   {TABS[t]}
                   {t === 'bank-transactions' && unclassified > 0 && <span className="nav-badge" title={`${unclassified} 筆銀行流水未分類`}>{unclassified}</span>}
@@ -840,7 +847,7 @@ export default function App() {
         {(tab === 'overview' || tab === 'cashflow' || tab === 'expenses' || tab === 'bank-transactions') && <StorageNotice bytes={storedBytes} browser={local ? browserStorage : undefined} />}
 
         {data && (tab === 'cashflow' || tab === 'expenses' || tab === 'bank-transactions') && <div className="segmented cashflow-tabs mobile-only" role="group" aria-label="收支分頁">
-          {([['cashflow', '總覽'], ['expenses', '信用卡'], ['bank-transactions', '銀行流水']] as const).map(([t, label]) => <button key={t} className={t === tab ? 'on' : ''} aria-pressed={t === tab} onClick={() => go({ tab: t })}>{label}{t === 'bank-transactions' && unclassified > 0 && <span className="nav-badge" title={`${unclassified} 筆銀行流水未分類`}>{unclassified}</span>}</button>)}
+          {([['cashflow', '總覽'], ['expenses', '信用卡'], ['bank-transactions', '銀行流水']] as const).map(([t, label]) => <button key={t} className={t === tab ? 'on' : ''} aria-pressed={t === tab} onClick={() => goTab(t)}>{label}{t === 'bank-transactions' && unclassified > 0 && <span className="nav-badge" title={`${unclassified} 筆銀行流水未分類`}>{unclassified}</span>}</button>)}
         </div>}
         {data && tab === 'more' && <More
           who={<>{avatar}<div><strong>{user ? user.name : '本機模式'}</strong><span className="muted small">{user ? user.email : '資料只存在這個瀏覽器'}</span></div>{syncPill}</>}
@@ -882,6 +889,7 @@ export default function App() {
             busy={busy}
             onGoExpenses={() => go({ tab: 'expenses' })}
             onGoBankTransactions={() => go({ tab: 'bank-transactions' })}
+            onImport={() => goImport('expenses', true, false)}
           />
         )}
         {data && route.tab === 'history' && missing('history') && waiting('history')}
@@ -907,8 +915,10 @@ export default function App() {
         {data && tab === 'liabilities' && <Liabilities data={data} onChange={update} />}
         {data && tab === 'expenses' && missing('ledger') && waiting('ledger')}
         {data && tab === 'bank-transactions' && !bankShown && waiting('ledger', ledgerWanted)}
-        {data && tab === 'expenses' && !missing('ledger') && <Expenses key={local?'local':user?.sub} passwordScope={local?'local':user?`google:${user.sub}`:undefined} data={data} onChange={update} busy={busy} />}
+        {data && tab === 'expenses' && !missing('ledger') && <Expenses key={local?'local':user?.sub} passwordScope={local?'local':user?`google:${user.sub}`:undefined} data={data} onChange={update} busy={busy}
+          importing={route.tab === 'expenses' && !!route.importing} onImporting={(open) => goImport('expenses', open)} onImportBank={() => goImport('bank-transactions')} />}
         {data && tab === 'bank-transactions' && bankShown && <BankTransactions key={local?'local':user?.sub} passwordScope={local?'local':user?`google:${user.sub}`:undefined} data={data} onChange={update} busy={busy} historyReady={!missing('history')} historyStatus={groupLoad.history} onLoadHistory={()=>void loadGroup('history')}
+          importing={route.tab === 'bank-transactions' && !!route.importing} onImporting={(open) => goImport('bank-transactions', open)} onImportCard={() => goImport('expenses')}
           ledger={ledger ? { ...ledger, status: groupLoad.ledger, onLoadEarlier: () => loadEarlier(ledger.next), onLoadAll: () => loadEarlier(''), onLoadMonth: (month) => void loadGroup('ledger', [ledgerPart(`${month}-01`)]) } : undefined} />}
         {data && tab === 'rates' && <Rates data={data} onChange={update} onRefresh={async () => void (await refreshRates(data))} error={ratesError} />}
       </main>

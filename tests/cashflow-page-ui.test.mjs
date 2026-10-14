@@ -33,11 +33,12 @@ const data = {
   bankTransactions: [bank('apr', '2026-04-10', 100), bank('may', '2026-05-10', 300)],
 }
 const wait = (ms) => act(() => new Promise((r) => setTimeout(r, ms)))
-async function open() {
+async function open(props = {}) {
   root = createRoot(document.getElementById('root'))
-  await act(() => root.render(createElement(Cashflow, { data, onGoExpenses() {}, onGoBankTransactions() {} })))
+  await act(() => root.render(createElement(Cashflow, { data, onGoExpenses() {}, onGoBankTransactions() {}, onImport() {}, ...props })))
   await wait(300)
 }
+const buttons = (text) => [...document.querySelectorAll('button')].filter((b) => b.textContent === text)
 const bar = (month) => [...document.querySelectorAll('.cashflow-bar')].find((el) => el.getAttribute('aria-label').includes(` ${month} 月：`))
 const income = () => document.querySelector('[aria-label="收入"] strong')?.textContent
 // The sections that must not blink out while a period changes.
@@ -75,4 +76,19 @@ test('a month without records keeps the year chart and says it is empty', async 
     await act(() => bar(5).click())
     assert.equal(income(), '6,000')
   } finally { Date.now = realNow }
+})
+
+test('the page has one statement import entry, with records and without', async () => {
+  let opened = 0
+  await open({ onImport: () => opened++ })
+  assert.equal(buttons('匯入帳單').length, 1)
+  await act(() => buttons('匯入帳單')[0].click())
+  assert.equal(opened, 1)
+  await act(() => root.unmount())
+  await open({ data: { ...data, bankTransactions: [] }, onImport: () => opened++ })
+  assert.match(document.body.textContent, /還沒有收支紀錄/)
+  assert.equal(buttons('匯入帳單').length, 1)
+  assert.deepEqual([...document.querySelectorAll('button')].map((b) => b.textContent).filter((t) => /匯入/.test(t)), ['匯入帳單'], 'no second, kind-specific import button')
+  await act(() => buttons('匯入帳單')[0].click())
+  assert.equal(opened, 2)
 })
