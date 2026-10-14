@@ -78,6 +78,9 @@ function StatementImport({existing,busy,onCancel,onImport,rules,onAddRule,passwo
   const [currency,setCurrency] = useState('TWD')
   const [parsing,setParsing] = useState(false)
   const [progress,setProgress] = useState('')
+  // Files done of the run, and the one being read; `progress` is that file's current step.
+  const [count,setCount] = useState<{processed:number;total:number;current:string;failures:number}|null>(null)
+  const [fromEntry,setFromEntry] = useState(false)
   const [drafts,setDrafts] = useState<Draft[]|null>(null)
   const [skipped,setSkipped] = useState<string[]>([])
   const [error,setError] = useState('')
@@ -86,6 +89,7 @@ function StatementImport({existing,busy,onCancel,onImport,rules,onAddRule,passwo
   // Files the import entry detected as card statements are parsed at once, with the password typed there.
   useEffect(()=>{
     if(!queued) return
+    setFromEntry(true)
     void run(queued.files,queued.password)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   },[])
@@ -108,11 +112,12 @@ function StatementImport({existing,busy,onCancel,onImport,rules,onAddRule,passwo
     if(locked || !files.length) return
     const secret = password
     setPassword('')
+    setFromEntry(false)
     void run(files,secret)
   }
   async function run(files:File[],secret:string) {
     controller.current?.abort()
-    setError('');setReports([]);setProgress('');setParsing(true)
+    setError('');setReports([]);setProgress('');setCount(null);setParsing(true)
     const abort = new AbortController()
     controller.current = abort
     const previews:Draft[] = [], ignored:string[] = []
@@ -122,8 +127,9 @@ function StatementImport({existing,busy,onCancel,onImport,rules,onAddRule,passwo
       if(abort.signal.aborted)return
       const candidates = passwords.length ? [...stored.values,...secret.split(',').map(p=>p.trim()).filter(Boolean)] : secret
       setPasswordNotice(stored.unavailable?`${stored.unavailable} 組密碼無法在此瀏覽器解鎖；請重新設定或手動輸入。`:'')
-      for(const file of files) {
+      for(const [index,file] of files.entries()) {
         if(abort.signal.aborted) return
+        setProgress('');setCount({processed:index,total:files.length,current:file.name?.trim() || `檔案 ${index+1}`,failures:outcomes.filter(r=>r.error).length})
         try {
           assertCreditCardFile(file.name)
           if(file.size > 20*1024*1024) throw new Error('帳單超過 20 MB，請拆分後再匯入')
@@ -168,10 +174,10 @@ function StatementImport({existing,busy,onCancel,onImport,rules,onAddRule,passwo
     <p className="statement-privacy">PDF 與解密都只在瀏覽器處理，原始帳單不保存、不上傳。選擇保存的密碼會加密；密碼設定與確認匯入的消費明細，儲存後才會存於本機或自己的 Google Drive。</p>
     {passwordScope && !drafts && <div className="statement-password-summary"><span className="muted small">{available.length?`已設定 ${available.length} 組密碼，解析時自動套用。`:'可先設定常用帳單密碼。'}{passwords.length>available.length?` ${passwords.length-available.length} 組需在此瀏覽器重新設定。`:''}</span><button disabled={locked} onClick={onManagePasswords}>管理帳單密碼</button></div>}
     {passwordNotice && <p role="status" className="notice">{passwordNotice}</p>}
-    {parsing && progress && <p role="status">{progress}</p>}
+    {parsing && count && <div className="notice bank-progress" role="status" aria-label="信用卡帳單解析進度" aria-live="polite"><progress value={count.processed} max={count.total} aria-label="信用卡帳單處理進度"/><p>正在本機解析 · 第 {count.processed+1}／{count.total} 份{count.processed?` · 完成 ${count.processed} 份${count.failures?`（${count.failures} 份未匯入）`:''}`:''}</p><p>目前檔案：{count.current} · {progress || '讀取 PDF…'}</p></div>}
     {error && <p className="banner error" role="alert">{error}</p>}
     {!!reports.length && <ul className="notice" aria-label="各帳單解析結果">{reports.map((r,i)=><li key={i}><strong>{r.name}</strong>：{r.error || `${r.bank} · ${r.month}（${r.source}）· ${r.count} 筆待核對${r.ocr?' · OCR 商家請核對':''}${r.warning?` · ${r.warning}`:''}`}</li>)}</ul>}
-    {!drafts ? <form onSubmit={parse}>
+    {!drafts ? <form onSubmit={parse} hidden={parsing && fromEntry}>
       <fieldset className="statement-upload-fields" disabled={locked}>
         <label className="field statement-upload"><span>帳單 PDF（可選多份）</span><small className="muted">選擇信用卡帳單 · 每份最多 20 MB</small><input type="file" multiple accept=".pdf,application/pdf" required onChange={e=>{setFiles(Array.from(e.target.files??[]));setPassword('');setError('');setReports([])}}/></label>
         <label className="field statement-password"><span>PDF 密碼（多組以逗號 , 分隔）</span><input type="password" autoComplete="off" placeholder="未加密的帳單可留空" value={password} onChange={e=>setPassword(e.target.value)}/><small className="muted">僅供本次解析，不會保存。不同帳單的密碼以逗號分隔。</small></label>
