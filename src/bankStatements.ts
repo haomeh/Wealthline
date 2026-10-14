@@ -3,12 +3,13 @@ import type { StatementCashBalance } from './bankStatementAssets';
 import { BANK_PDF_ERRORS } from './bankStatementErrors';
 import { protectBankText } from './bankTextPrivacy';
 import { spatialLines, tableHeader, isoDate, money, identifier, labeledAccount, currencies } from './bankStatements/common';
-import type { BankDraftRow, BankPage, BankSection, BankStatementMetadata, BankWarning, SpatialLine, Table } from './bankStatements/common';
+import type { BankDraftRow, BankPage, BankSection, BankStatementMetadata, BankWarning, PositionedItem, SpatialLine, Table } from './bankStatements/common';
 import { layout as taiwan } from './bankStatements/hsbcTaiwan';
 import { layout as singapore } from './bankStatements/hsbcSingapore';
-import { layout as taishin } from './bankStatements/taishin';
+import { parseWiseStatement } from './bankStatements/wise';
+import { layout as taishin, debitLedger as taishinDebit } from './bankStatements/taishin';
 import { layout as fubon, foreignLayout } from './bankStatements/fubon';
-import { layout as esun } from './bankStatements/esun';
+import { layout as esun, ledgerLayout as esunLedger } from './bankStatements/esun';
 import { DBS_UNSUPPORTED, singaporeLayout as dbsSingapore, dbsSingaporeContext } from './bankStatements/dbs';
 import type { BankProfile } from './bankStatements/profile';
 import { BANK_PROFILES } from './bankStatements/profiles';
@@ -34,7 +35,7 @@ const tableHeaderOf = (line: SpatialLine, profile: BankProfile): Table | undefin
     }
 };
 const nonActivity = /^(?:期初|期末|開戶|Closing Balance|Opening Balance|Balance Brought Forward|Balance Carried Forward|結餘|餘額|合計|總計|交易筆數|Transaction (?:total|count)|Total (?:deposits|withdrawals))/i;
-const boundary = /^(?:帳戶摘要|存款總覽|投資摘要|信用卡摘要|證券|Investment Summary|Relationship Summary|Credit Card Summary|重要事項|注意事項|Disclosure)/i;
+const boundary = /^(?:帳戶摘要|存款總覽|投資摘要|信用卡摘要|證券|費用支付明細表|交易明細表|重\s*要\s*訊\s*息|Investment Summary|Relationship Summary|Credit Card Summary|重要事項|注意事項|Disclosure)/i;
 interface Pending {
     date?: string;
     description: string[];
@@ -42,6 +43,8 @@ interface Pending {
     rowKey: string;
     invalid: boolean;
     leading?: string[];
+    /** Opened by an undated narration line: the row is located at its amount line. */
+    floating?: boolean;
 }
 /**
  * Pure, synchronous positional parser. Input pages and all identifier evidence are transient.
@@ -63,6 +66,9 @@ export function parseBankStatement(pages: readonly BankPage[], metadata: BankSta
     if (chars > 500000)
         throw new Error('銀行文件文字超過限制');
     const ordered = [...pages].sort((a, b) => a.page - b.page).map(p => ({ page: p.page, lines: spatialLines(p.items), height: p.height ?? p.items.reduce((max, i) => Math.max(max, i.y), 0) + 30 }));
+    const wise = parseWiseStatement(ordered);
+    if (wise)
+        return wise;
     const periods = new Map<string, {
         start: string;
         end: string;
@@ -194,6 +200,8 @@ export function parseBankStatement(pages: readonly BankPage[], metadata: BankSta
     // Unowned narration since the last completed transaction, and that transaction
     // when it was emitted. Both are review candidates only, never description text.
     let orphans: string[] = [], emitted: BankDraftRow | undefined;
+    // Sections whose table printed its opening balance: with no row after it, the month is empty.
+    const opened = new Set<BankSection>();
     const issue = (page: number, code: string) => {
         (section?.warnings ?? warnings).push(warning(page, code));
     };
@@ -215,7 +223,7 @@ export function parseBankStatement(pages: readonly BankPage[], metadata: BankSta
     };
     for (const p of ordered) {
         const previousAccount = account, previousCurrency = currency;
-        const mayContinue = layout === singapore && continuation && !!lastDate && !!previousAccount && p.page === lastPage + 1;
+        const mayContinue = (layout === singapore || layout === taiwan || layout === dbsSingapore) && continuation && !!lastDate && !!previousAccount && p.page === lastPage + 1;
         // A table cut by the page end continues only when the next page opens with a dated row of the same own account.
         const open = layout.headerlessContinuation && !closed && !pending && p.page === lastPage + 1 ? table : undefined;
         // Wrapped cell text of the first row may be printed above it.
@@ -223,6 +231,12 @@ export function parseBankStatement(pages: readonly BankPage[], metadata: BankSta
         const firstAccount = first && open?.accountX !== undefined ? identifier(first.items.find(i => Math.abs(i.x - open.accountX!) < 20 * open.scale)?.text ?? '') : undefined;
         const carried = open && first && firstAccount && (section ? firstAccount === account : !account)
             && isoDate(first.items.filter(i => i.x >= open.dateX - 10 * open.scale && i.x < open.descriptionX - 8 * open.scale).map(i => i.text).join(' '), layout.dateKind) ? open : undefined;
+        // A table still open at the page end may have lost rows: its opening balance no longer proves an empty month.
+        if (section && table && !closed)
+            opened.delete(section);
+        // The previous page ended on a carried-forward balance: this page must resume that table.
+        const promised = continuation && !closed;
+        let resumed = false;
         table = carried;
         context = [];
         contextAccount = undefined;
@@ -275,7 +289,7 @@ export function parseBankStatement(pages: readonly BankPage[], metadata: BankSta
                         contextAccount = ids[0];
                 }
                 const cs = currencies(before + ' ' + below);
-                const brought = p.lines.slice(n + 1, n + 4).some(r => /Balance Brought Forward/i.test(r.text));
+                const brought = p.lines.slice(n + 1, n + 4).some(r => /Balance Brought Forward|承上頁結餘/i.test(r.text));
                 const continuing = mayContinue && contextAccount === previousAccount && brought;
                 let resolved = cs.length === 1 ? cs[0] : continuing ? previousCurrency : '';
                 const accepted = profile.acceptTable?.({ lines: p.lines, index: n, table: candidate, before, resolved, continuing, contextAccount, summary });
@@ -296,6 +310,8 @@ export function parseBankStatement(pages: readonly BankPage[], metadata: BankSta
                 if (mayContinue && pending) {
                     if (contextAccount !== previousAccount || resolved !== previousCurrency) {
                         discard('unproven-page-continuity');
+                        // Reported here: the page-end check must not count it twice.
+                        resumed = true;
                         section = undefined;
                         lastDate = undefined;
                     }
@@ -315,6 +331,8 @@ export function parseBankStatement(pages: readonly BankPage[], metadata: BankSta
                 if (!continuing || !section)
                     closed = false;
                 table = candidate;
+                continuation = false;
+                resumed ||= continuing;
                 activeLayout = layout === fubon && candidate.currencyX !== undefined ? foreignLayout : layout;
                 account = contextAccount;
                 currency = resolved;
@@ -331,7 +349,10 @@ export function parseBankStatement(pages: readonly BankPage[], metadata: BankSta
                     context.push(l.text);
                 continue;
             }
-            if (boundary.test(l.text) || (layout === esun && l.items.some(i => i.x < 50 && i.text.length > 40 && /對帳單|交易明細/.test(i.text))) || (layout === taishin && l.items.some(i => i.x < 60 && i.text.length > 40)) || (layout === fubon && l.items.some(i => i.x < 40 && i.text.length > 40))) {
+            // After the page's carried-forward balance only footer text follows.
+            if (continuation)
+                continue;
+            if (boundary.test(l.text) || (layout === esun && l.items.some(i => i.x < 50 && i.text.length > 40 && /對帳單|交易明細/.test(i.text))) || ((layout === taishin || layout === esunLedger) && l.items.some(i => i.x < 60 && i.text.length > 40)) || (layout === taishinDebit && l.items.some(i => i.x < 140 && (/^備註[:：]/.test(i.text) || i.text.length > 30))) || (layout === fubon && l.items.some(i => i.x < 40 && i.text.length > 40))) {
                 discard('section-boundary');
                 table = undefined;
                 section = undefined;
@@ -347,6 +368,8 @@ export function parseBankStatement(pages: readonly BankPage[], metadata: BankSta
             const role = l.items.find(i => i.x >= table!.descriptionX - 4 && i.x < table!.descriptionEnd)?.text ?? '';
             // Fubon's own account is printed on the opening-balance row only.
             // Retain that structural identity while discarding every balance value.
+            if (layout === fubon && role === '承轉結餘' && section)
+                opened.add(section);
             if (layout === fubon && /^(?:[\u3400-\u9fff]{2})?結餘$/.test(role) && table.accountX !== undefined) {
                 const id = identifier(l.items.find(i => Math.abs(i.x - table!.accountX!) < 20)?.text ?? '');
                 if (id) {
@@ -381,13 +404,16 @@ export function parseBankStatement(pages: readonly BankPage[], metadata: BankSta
                 continue;
             }
             if (layout === dbsSingapore && /^Total Balance Carried Forward in SGD:/i.test(role)) {
+                // A dated line with only the closing balance is not a transaction.
+                if (pending && !pending.invalid && !pending.description.length)
+                    pending = undefined;
                 discard('unfinished-transaction');
                 closed = true;
                 orphans = [];
                 continue;
             }
-            if (nonActivity.test(l.text) || /^(?:[\u3400-\u9fff]{2}結餘|結餘|交易總額|交易筆數|交易次數|交易數目|交易宗數|交易件數|交易總數|Balance (?:Brought|Carried) Forward|Closing Balance|Opening Balance|Transaction (?:total|count))/i.test(role) || l.items.some(i => /^(?:期初.*結餘|期末.*結餘|結餘|餘額)$/.test(i.text))) {
-                if (/Carried Forward/i.test(role || l.text))
+            if (nonActivity.test(l.text) || /^(?:[\u3400-\u9fff]{2}結餘|承上頁結餘|結餘|交易總額|交易筆數|交易次數|交易數目|交易宗數|交易件數|交易總數|Balance (?:Brought|Carried) Forward|Closing Balance|Opening Balance|Transaction (?:total|count))/i.test(role) || l.items.some(i => /^(?:期初.*結餘|期末.*結餘|結餘|餘額)$/.test(i.text))) {
+                if (/Carried Forward|本頁結餘/i.test(role || l.text))
                     continuation = true;
                 if (/Closing|期末|合計|總計|Total |Transaction (?:total|count)|^結餘$|^交易總額|^交易筆數/i.test(role || l.text)) {
                     discard('unfinished-transaction');
@@ -464,7 +490,9 @@ export function parseBankStatement(pages: readonly BankPage[], metadata: BankSta
                 currency = rowCurrency;
                 createSection(currency);
             }
-            const debitItems = l.items.filter(i => Math.abs(i.x + i.width - t.debitEdge) < 18 * t.scale), creditItems = l.items.filter(i => Math.abs(i.x + i.width - t.creditEdge) < 18 * t.scale);
+            // A six-decimal number is an exchange rate, never an amount.
+            const rate = (i: PositionedItem) => /^\d+\.\d{6}$/.test(i.text);
+            const debitItems = l.items.filter(i => Math.abs(i.x + i.width - t.debitEdge) < 18 * t.scale && !rate(i)), creditItems = l.items.filter(i => Math.abs(i.x + i.width - t.creditEdge) < 18 * t.scale && !rate(i));
             const debit = debitItems.flatMap(i => { const v = money(i.text, !!activeLayout.decimalOnly); return v === undefined || (v === 0 && layout.zeroAmountBlank) ? [] : [v]; }), credit = creditItems.flatMap(i => { const v = money(i.text, !!activeLayout.decimalOnly); return v === undefined || (v === 0 && layout.zeroAmountBlank) ? [] : [v]; });
             // Only narrative geometry, not own-account, date, reference, currency or balance cells.
             const narrativeOf = (row: SpatialLine) => row.items.filter(i => i.x >= t.descriptionX - 4 * t.scale && i.x < t.descriptionEnd - 4 * t.scale && i.x + i.width < Math.min(t.debitEdge, t.creditEdge) - 25 * t.scale).map(i => i.text).join(' ');
@@ -495,7 +523,15 @@ export function parseBankStatement(pages: readonly BankPage[], metadata: BankSta
             // proven owner: it may trail that row or begin a new undated row.
             // Never silently attach it to either; keep it as a review candidate on
             // both neighbours and leave the ownership decision to the preview.
-            if (!pending && !dateText && narrative && !debit.length && !credit.length && activeLayout.wrapped && lastDate) {
+            if (!pending && !dateText && narrative && !debit.length && !credit.length && activeLayout.wrapped && lastDate && !activeLayout.amountLast) {
+                // Every row of this layout starts with a date, so later narration can only trail the row just emitted.
+                if (activeLayout.datedRowsOnly && emitted && section?.rows.at(-1) === emitted && emitted.description.length + narrative.length < 500) {
+                    // A card number printed under a card transaction is never kept.
+                    const kept = narrative.replace(/\b\d{4}(?:[- ]\d{4}){3}\b/g, '').trim();
+                    if (kept)
+                        emitted.description = `${emitted.description} ${protectBankText(kept, privacy)}`.trim();
+                    continue;
+                }
                 issue(p.page, 'ambiguous-trailing-narration');
                 const candidate = protectBankText(narrative, privacy);
                 orphans.push(candidate);
@@ -504,7 +540,7 @@ export function parseBankStatement(pages: readonly BankPage[], metadata: BankSta
                 continue;
             }
             if (!pending && (date || ((debit.length || credit.length || narrative) && activeLayout.wrapped && !activeLayout.datedRowsOnly && lastDate))) {
-                pending = { date: date ?? lastDate, description: [], page: p.page, rowKey: `row-${n + 1}`, invalid: false, ...(orphans.length && { leading: orphans }) };
+                pending = { date: date ?? lastDate, description: [], page: p.page, rowKey: `row-${n + 1}`, invalid: false, ...(orphans.length && { leading: orphans }), ...(activeLayout.amountLast && !date && { floating: true }) };
                 orphans = [];
             }
             if (!pending) {
@@ -533,7 +569,7 @@ export function parseBankStatement(pages: readonly BankPage[], metadata: BankSta
                     if ((!description && !pending.leading) || description.length > 500)
                         issue(p.page, 'invalid-description');
                     else {
-                        emitted = { sectionKey: section.key, page: pending.page, rowKey: pending.rowKey, date: pending.date, description, currency: rowCurrency, direction: debit.length ? 'debit' : 'credit', amount: (debit[0] ?? credit[0]), ...(pending.leading && { ambiguousNarration: { leading: pending.leading, trailing: [] } }) };
+                        emitted = { sectionKey: section.key, page: pending.floating ? p.page : pending.page, rowKey: pending.floating ? `row-${n + 1}` : pending.rowKey, date: pending.date, description, currency: rowCurrency, direction: debit.length ? 'debit' : 'credit', amount: (debit[0] ?? credit[0]), ...(pending.leading && { ambiguousNarration: { leading: pending.leading, trailing: [] } }) };
                         section.rows.push(emitted);
                         section.noTransactions = false;
                     }
@@ -552,15 +588,22 @@ export function parseBankStatement(pages: readonly BankPage[], metadata: BankSta
         }
         // A page can end after a complete row but before the section's closing total.
         // Warn even when there is no pending row; a headerless next page cannot be verified.
-        if (layout === dbsSingapore && table && !closed)
-            issue(p.page, 'unproven-page-continuity');
         if (mayContinue && pending && !table)
             discard('unproven-page-continuity');
+        else if ((layout === dbsSingapore || layout === esunLedger) && table && !closed && !continuation || promised && !resumed)
+            issue(p.page, 'unproven-page-continuity');
     }
     discard('unfinished-transaction');
+    // The last page promised a next page that is not there.
+    if (continuation && !closed)
+        issue(lastPage, 'unproven-page-continuity');
     for (const s of sections)
-        if (!s.rows.length && !s.noTransactions && !s.warnings.length)
-            s.warnings.push(warning(lastPage, 'no-supported-activity-evidence'));
+        if (!s.rows.length && !s.noTransactions && !s.warnings.length) {
+            if (opened.has(s))
+                s.noTransactions = true;
+            else
+                s.warnings.push(warning(lastPage, 'no-supported-activity-evidence'));
+        }
     const recognizedCount = sections.reduce((n, s) => n + s.rows.length, 0), rejectedCount = [...warnings, ...sections.flatMap(s => s.warnings)].filter(w => !w.code.startsWith('partial-')).reduce((n, w) => n + w.count, 0);
     const supported = recognizedCount > 0 || sections.some(s => s.noTransactions);
     if (!supported)

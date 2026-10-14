@@ -1570,12 +1570,28 @@ test('multiple file import isolates failures and leaves financial data untouched
   assert.equal(drive.writes,0)
 })
 
+test('an HSBC row with an unreadable merchant enters the preview as an unselected draft instead of failing the file',async()=>{
+  window.history.replaceState(null,'','/expenses')
+  setupDrive({...fixture(),version:10,expenses:[]})
+  const pdf=await server.ssrLoadModule('/src/statementPdf.ts')
+  pdf.setResults([{lines:['HSBC','04/01 04/02 1200','04/03 04/04 SYNTHETIC SHOP 320'],title:'',ocrUsed:true,transactionIndexes:[1,2]}])
+  await render(App)
+  await click(button('匯入信用卡帳單'))
+  const input=document.querySelector('input[type="file"]')
+  Object.defineProperty(input,'files',{value:[{name:'HSBC-2026-04.pdf',size:100,arrayBuffer:async()=>new TextEncoder().encode('%PDF-fixture').buffer}]})
+  await act(async()=>input.dispatchEvent(new Event('change',{bubbles:true})))
+  await act(async()=>document.querySelector('form').dispatchEvent(new Event('submit',{bubbles:true,cancelable:true})))
+  for(let i=0;i<100 && !document.querySelector('[aria-label="各帳單解析結果"]');i++) await act(async()=>new Promise(resolve=>setTimeout(resolve,10)))
+  const report=document.querySelector('[aria-label="各帳單解析結果"]').textContent
+  assert.match(report,/2 筆/);assert.ok(!report.includes('請填寫商家'))
+  assert.match(document.querySelector('.statement-import').textContent,/編輯第 2 筆交易 · 商家待填寫核對2026-04-01/)
+})
 for(const {ocrError,currency} of [{currency:'TWD'},{currency:'TWD',ocrError:'OCR 等待逾時，請重試或手動補上商家'},{currency:'SGD'}]) {
   test(`zero recognized HSBC rows allow inspection and manual recovery (${currency} ${ocrError ?? 'unreadable'})`,async()=>{
     window.history.replaceState(null,'','/expenses')
     const drive=setupDrive({...fixture(),version:10,expenses:[]})
     const pdf=await server.ssrLoadModule('/src/statementPdf.ts')
-    pdf.setResults([{lines:[currency==='SGD'?'HSBC AMOUNT(SGD)':'HSBC','04/01 04/02 1200','04/03 04/04 I 320'],title:'',ocrUsed:true,ocrError,transactionIndexes:[1,2]}])
+    pdf.setResults([{lines:[currency==='SGD'?'HSBC AMOUNT(SGD)':'HSBC','04/01 1200','04/03 I 320'],title:'',ocrUsed:true,ocrError,transactionIndexes:[1,2]}])
     await render(App)
     await click(button('匯入信用卡帳單'))
     const input=document.querySelector('input[type="file"]')
@@ -1584,7 +1600,7 @@ for(const {ocrError,currency} of [{currency:'TWD'},{currency:'TWD',ocrError:'OCR
     await act(async()=>document.querySelector('form').dispatchEvent(new Event('submit',{bubbles:true,cancelable:true})))
     for(let i=0;i<100 && !document.querySelector('[aria-label="各帳單解析結果"]');i++) await act(async()=>new Promise(resolve=>setTimeout(resolve,10)))
     assert.ok(button('＋ 補上一筆交易'),document.querySelector('[aria-label="各帳單解析結果"]')?.textContent)
-    assert.match(document.querySelector('.statement-import details').textContent,/04\/01 04\/02 1200/)
+    assert.match(document.querySelector('.statement-import details').textContent,/04\/01 1200/)
     assert.equal(document.querySelector('[aria-label="交易 1"]'),null)
     const report=document.querySelector('[aria-label="各帳單解析結果"]').textContent
     assert.match(report,ocrError ? /OCR 等待逾時/ : /沒有辨識到可匯入的交易/)

@@ -123,7 +123,7 @@ export function BankStatementImport({data,accounts,existing,rules,passwords,pass
   <p className="bank-import-intro muted">PDF 在本機解析，不上傳原始文件。核對並匯入後，請按「儲存變更」。</p>
   <details className="bank-help"><summary>支援範圍與資料保護</summary>
    <p className="muted">不保存原始文件或完整擷取文字；確認後保存收支明細，並將已辨識的期末餘額補入資產歷史。{BANK_TEXT_NOTICE}</p>
-   <p>辨識到的交易不代表完整月流水。新加坡星展目前支援 SGD 收支明細；玉山僅局部轉出明細。未知或歧義列不自動推算，請核對並手動補登。</p>
+   <p>辨識到的交易不代表完整月流水。新加坡星展目前支援 SGD 收支明細；玉山舊版綜合對帳單僅局部轉出明細，2023 年起的版型為完整活存明細。Wise 與奈米投記錄的是基金買賣的款項進出。未知或歧義列不自動推算，請核對並手動補登。</p>
   </details>
   <form onSubmit={parse}>
    <fieldset disabled={locked} className="bank-fields bank-upload-fields">

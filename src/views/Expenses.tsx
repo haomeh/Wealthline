@@ -130,11 +130,14 @@ function StatementImport({existing,busy,onCancel,onImport,rules,onAddRule,passwo
           if(!statementCard.trim()) throw new Error('無法辨識銀行，請填寫備用銀行／卡片名稱後重試')
           const parsed = parseStatement(pdf.lines,statementMonth,info.currency || currency || 'TWD',info.bank || file.name,pdf.transactionIndexes)
           if(!parsed.rows.length && !(info.bank === '匯豐' && parsed.skipped.length)) throw new Error(pdf.ocrError || '沒有辨識到交易。此帳單的排版暫不支援，尚未匯入任何資料。')
-          const rows = await prepareExpenses(parsed.rows,statementCard,fileHash,info.bank === '匯豐' ? parsed.sourceIndexes : undefined)
+          // A row whose merchant could not be read is a draft to complete, like a manually added one.
+          const named = parsed.rows.flatMap((r,i)=>r.description ? [i] : [])
+          const rows = await prepareExpenses(named.map(i=>parsed.rows[i]),statementCard,fileHash,info.bank === '匯豐' ? named.map(i=>parsed.sourceIndexes[i]) : undefined)
           if(abort.signal.aborted) return
           previews.push(...rows.map(r=>({...r,selected:!pdf.ocrUsed,needsReview:pdf.ocrUsed,amountText:String(r.amount),sourceFile:outcomes.length})))
+          previews.push(...parsed.rows.filter(r=>!r.description).map(r=>({...r,id:crypto.randomUUID(),card:statementCard,selected:false,needsReview:true,amountText:String(r.amount),sourceFile:outcomes.length})))
           ignored.push(...parsed.skipped.map(line=>`${file.name}：${line}`))
-          outcomes.push({name:file.name,bank:statementCard,month:statementMonth,source:info.monthSource || '手動備用',currency:info.currency || currency || 'TWD',count:rows.length,ocr:pdf.ocrUsed,warning:pdf.ocrError || (!rows.length ? '沒有辨識到可匯入的交易，請核對下方未匯入文字列並手動補登。' : undefined)})
+          outcomes.push({name:file.name,bank:statementCard,month:statementMonth,source:info.monthSource || '手動備用',currency:info.currency || currency || 'TWD',count:parsed.rows.length,ocr:pdf.ocrUsed,warning:pdf.ocrError || (!parsed.rows.length ? '沒有辨識到可匯入的交易，請核對下方未匯入文字列並手動補登。' : undefined)})
         } catch(e) {
           if(abort.signal.aborted) return
           outcomes.push({name:file.name,error:e instanceof Error?e.message:'無法解析帳單'})
@@ -193,7 +196,7 @@ function StatementImport({existing,busy,onCancel,onImport,rules,onAddRule,passwo
       <button className="primary" disabled={busy || !!validation || !result?.added} onClick={()=>{try{onImport(selected.map(r=>({...r,amount:Number(r.amountText)})),drafts)}catch(e){setError(e instanceof Error?e.message:'匯入失敗')}}}>確認匯入 {result?.added ?? 0} 筆</button>
       <p className="muted small">原始帳單不保存；臨時密碼只留在記憶體。</p>
     </aside></div>}
-    <details className="statement-help"><summary>支援格式與注意事項</summary><p className="muted small">支援富邦、玉山文字帳單與 SG 匯豐 SGD 帳單；匯豐圖片商家欄以本機 OCR 補上。OCR 交易預設不勾選，請核對商家、日期、金額並排除繳款。證券帳單不支援，其他排版可能漏辨識。退款以負數記錄，繳款與總計不當作消費。</p></details>
+    <details className="statement-help"><summary>支援格式與注意事項</summary><p className="muted small">支援富邦、玉山、台新文字帳單與 SG 匯豐 SGD 帳單；匯豐圖片商家欄以本機 OCR 補上。OCR 交易預設不勾選，請核對商家、日期、金額並排除繳款。證券帳單不支援，其他排版可能漏辨識。退款以負數記錄，繳款與總計不當作消費。</p></details>
   </section>
 }
 
