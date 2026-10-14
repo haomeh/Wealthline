@@ -90,7 +90,7 @@ test('equal warning codes aggregate into one actionable Chinese line and a non-p
  const text=section(1).textContent,count=(value,part)=>value.split(part).length-1
  assert.equal(count(text,'ambiguous-trailing-narration'),1);assert.match(text,/摘要可能不完整.*2 個事件/);assert.match(text,/逐筆核對/);assert.match(text,/未匯入.*金額/);assert.match(text,/synthetic-future-code/);assert.match(text,/不是漏列筆數/);
  assert.ok(box('區段 1 解析警告'));assert.equal(count(box('銀行解析結果').textContent,'unanchored-transaction'),1);assert.match(box('銀行解析結果').textContent,/2 個事件/)
- const ui=await server.ssrLoadModule('/src/views/bankUiHelpers.ts');for(const code of ['ambiguous-trailing-narration','invalid-description','activity-below-table-boundary','ambiguous-transaction'])assert.match(ui.bankWarningText(code),/[\u3400-\u9fff]{6}/,code);assert.match(ui.bankWarningText('synthetic-future-code'),/synthetic-future-code/)
+ const ui=await server.ssrLoadModule('/src/views/bankUiHelpers.ts');for(const code of ['ambiguous-trailing-narration','invalid-description','activity-below-table-boundary','ambiguous-transaction'])assert.match(ui.bankWarningText(code),/[\u3400-\u9fff]{6}/,code);assert.match(ui.bankWarningText('synthetic-future-code'),/synthetic-future-code/);assert.doesNotMatch(ui.bankWarningText('unsupported-bank-layout'),/尚無中文說明/)
  pdf.reset([parsed()]);globalThis.confirm=()=>true;await files();await submitImport();await settle(()=>!box('區段 1 解析警告'));assert.equal(box('區段 1 解析警告'),null)
 })
 test('one import selection accepts the current summary; empty selected summaries block and candidates stay optional',async()=>{

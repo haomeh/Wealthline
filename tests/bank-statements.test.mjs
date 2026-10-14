@@ -411,8 +411,46 @@ test('Taishin rows run to the page bottom and continue headerless only for the s
  const next=[item('數位跨行 備註',450,826),...taishinRow(820,'2031/04/11','CD轉出','$90',''),item('公告事項一二三四五六七八九十一二三四五六七八九十一二三四五六七八九十一二三四五六七八九十',46,700),...taishinRow(680,'2031/04/12','轉帳支取','$5','')]
  const r=bank.parseBankStatement([page(1,[...head,...taishinRow(680,'2031/04/08','轉帳支取','$1,200',''),...taishinRow(40,'2031/04/10','轉帳存入','','$70')]),page(2,next)])
  assert.equal(r.status,'recognized');assert.deepEqual(r.sections[0].rows.map(w=>w.amount),[1200,70,90])
+ // Another own account of the same table continues as its own section; rows after the notice boundary stay out.
  const other=bank.parseBankStatement([page(1,[...head,...taishinRow(40,'2031/04/10','轉帳存入','','$70')]),page(2,next.map(i=>i.text==='100200****3456'?{...i,text:'900800****7654'}:i))])
- assert.deepEqual(other.sections.flatMap(s=>s.rows).map(w=>w.amount),[70])
+ assert.equal(other.status,'recognized');assert.deepEqual(other.sections.map(s=>s.rows.map(w=>w.amount)),[[70],[90]])
+})
+test('Taishin continuation tolerates a page heading; an unproven one is warned, never dropped silently',()=>{
+ const head=[...mast('台新銀行綜合對帳單'),item('新臺幣帳戶的往來明細',49,720),...taishinHeader(700,[135,185,272,331,396])],first=page(1,[...head,...taishinRow(40,'2031/04/10','轉帳存入','','$70')])
+ const heading=bank.parseBankStatement([first,page(2,[item('第 2 頁',49,858),item('備註上',450,833),item('跨行轉帳',177,827),...taishinRow(820,'2031/04/11','','$90',''),item('手續費',181,813)])])
+ assert.equal(heading.status,'recognized');assert.deepEqual(heading.sections[0].rows.map(w=>[w.amount,w.description]),[[70,'轉帳存入'],[90,'跨行轉帳手續費 · 備註上']])
+ const unproven=r=>{assert.equal(r.status,'partial');assert.deepEqual(r.sections.flatMap(s=>s.rows).map(w=>w.amount),[70]);assert.ok(r.warnings.some(w=>w.code==='unproven-page-continuity'&&w.page!==1))}
+ // The first row is too far down the page, or the page is not the next one.
+ unproven(bank.parseBankStatement([first,page(2,[...[840,833,826,819,812,805].map(y=>item('其他文字',300,y)),...taishinRow(780,'2031/04/11','CD轉出','$90','')])]))
+ unproven(bank.parseBankStatement([first,page(3,taishinRow(820,'2031/04/11','CD轉出','$90',''))]))
+ // A dated line without an own account proves nothing, and a closed table is not continued.
+ const noAccount=bank.parseBankStatement([first,page(2,taishinRow(820,'2031/04/11','CD轉出','$90','').slice(1))]);assert.deepEqual(noAccount.sections.flatMap(s=>s.rows).map(w=>w.amount),[70])
+ const ended=bank.parseBankStatement([page(1,[...head,...taishinRow(60,'2031/04/10','轉帳存入','','$70'),item('合計',177,40)]),page(2,taishinRow(820,'2031/04/11','CD轉出','$90',''))]);assert.deepEqual(ended.sections.flatMap(s=>s.rows).map(w=>w.amount),[70])
+})
+const taishinFx=(y,text,currency,debit,credit,old=false)=>[...taishinRow(y,'2031/04/21',text,debit,credit,old?[353,422]:[317,377],old?[61,134,186]:[57,124,175]),item(currency,old?248:231,y)]
+test('Taishin foreign table of 2020-01 to 2021-11, with either balance label',()=>{
+ for(const balance of ['餘額','帳戶餘額']){
+  const r=bank.parseBankStatement([page(1,[...mast('台新銀行綜合對帳單'),item('外幣帳戶的往來明細',49,720),item('帳號',78,700),item('日期',145,700),item('摘要',197,700),item('幣別',247,700),item('支出金額',301,700),item('存入金額',372,700),item(balance,balance==='餘額'?477:469,700),
+   ...taishinFx(680,'INTEREST','USD','$0','$0.12',true),...taishinFx(40,'DRAW','USD','$20.00','$0',true)])])
+  assert.equal(r.status,'recognized',balance);assert.deepEqual(r.sections.map(s=>[s.currency,...s.rows.map(w=>w.direction+w.amount+w.description)]),[['USD','credit0.12INTEREST','debit20DRAW']])
+ }
+})
+test('Taishin zero amounts: a malformed amount is warned, zero rows are no-activity evidence only in a clean foreign section',()=>{
+ const parse=(...rows)=>bank.parseBankStatement([page(1,[...mast('台新銀行綜合對帳單'),item('外幣帳戶的往來明細',49,620),...taishinHeader(600,[135,185,272,331,396],'帳戶餘額',true),...rows])])
+ for(const amount of ['-5.00','(5.00)']){
+  const r=parse(...taishinFx(580,'DRAW','USD',amount,'$0'));assert.equal(r.status,'unsupported',amount);assert.equal(r.sections[0].noTransactions,false);assert.ok(r.sections[0].warnings.some(w=>w.code==='missing-explicit-amount'))
+  const after=parse(...taishinFx(580,'DEP','USD','$0','$9.00'),...taishinFx(563,'DRAW','USD',amount,'$0'));assert.equal(after.status,'partial');assert.equal(after.recognizedCount,1)
+ }
+ const real=parse(...taishinFx(580,'INTEREST','USD','$0','$0'),...taishinFx(563,'INTEREST','USD','$0','$0.12'));assert.equal(real.status,'recognized');assert.deepEqual(real.sections.map(s=>[s.noTransactions,s.rows.length,s.rows[0].description]),[[false,1,'INTEREST']])
+ const rejected=parse(...taishinFx(580,'INTEREST','USD','$0','$0'),...taishinFx(563,'DRAW','USD','$1.00','$2.00'));assert.equal(rejected.sections[0].noTransactions,false);assert.equal(rejected.status,'unsupported')
+ const twd=bank.parseBankStatement([page(1,[...mast('台新銀行綜合對帳單'),item('新臺幣帳戶的往來明細',49,720),...taishinHeader(700,[135,185,272,331,396]),...taishinRow(680,'2031/04/08','存款息','$0','$0')])])
+ assert.equal(twd.status,'unsupported');assert.equal(twd.sections[0].noTransactions,false)
+})
+test('Taishin note: a wrapped line goes to the nearest row; a note may touch the balance or begin with digits',()=>{
+ const r=bank.parseBankStatement([page(1,[...mast('台新銀行綜合對帳單'),item('新臺幣帳戶的往來明細',49,720),...taishinHeader(700,[135,185,272,331,396]),
+  ...taishinRow(680,'2031/04/08','轉帳支取','$1,200',''),item('$8,800',418,680),item('較近下一列',450,669),...taishinRow(663,'2031/04/09','CD轉出','$300',''),item('$8,500',418,663),
+  ...taishinRow(620,'2031/04/10','轉帳存入','','$7'),item('$8,507午餐費',414,620),...taishinRow(590,'2031/04/11','媒體轉帳','','$500'),item('$9,007 500 元回饋',414,590)])])
+ assert.deepEqual(r.sections[0].rows.map(w=>w.description),['轉帳支取','CD轉出 · 較近下一列','轉帳存入 · 午餐費','媒體轉帳 · 500 元回饋'])
 })
 test('Taishin two-line summary around a row and the foreign table with printed zero amounts',()=>{
  const fx=(y,text,currency,debit,credit)=>[...taishinRow(y,'2031/04/21',text,debit,credit,[317,377],[57,124,175]),item(currency,231,y)]

@@ -196,6 +196,9 @@ export function parseBankStatement(pages: readonly BankPage[], metadata: BankSta
     let orphans: string[] = [], emitted: BankDraftRow | undefined;
     const issue = (page: number, code: string) => {
         (section?.warnings ?? warnings).push(warning(page, code));
+        // Zero-amount rows are no proof of an empty section once something in it was rejected.
+        if (section && layout.zeroAmountBlank)
+            section.noTransactions = false;
     };
     const discard = (code: string) => {
         if (pending) {
@@ -216,13 +219,15 @@ export function parseBankStatement(pages: readonly BankPage[], metadata: BankSta
     for (const p of ordered) {
         const previousAccount = account, previousCurrency = currency;
         const mayContinue = layout === singapore && continuation && !!lastDate && !!previousAccount && p.page === lastPage + 1;
-        // A table cut by the page end continues only when the next page opens with a dated row of the same own account.
-        const open = layout.headerlessContinuation && !closed && !pending && p.page === lastPage + 1 ? table : undefined;
-        // Wrapped cell text of the first row may be printed above it.
-        const first = open && p.lines.slice(0, 3).find(l => l.items.some(i => i.x < open.descriptionX - 8 * open.scale));
-        const firstAccount = first && open?.accountX !== undefined ? identifier(first.items.find(i => Math.abs(i.x - open.accountX!) < 20 * open.scale)?.text ?? '') : undefined;
-        const carried = open && first && firstAccount && (section ? firstAccount === account : !account)
-            && isoDate(first.items.filter(i => i.x >= open.dateX - 10 * open.scale && i.x < open.descriptionX - 8 * open.scale).map(i => i.text).join(' '), layout.dateKind) ? open : undefined;
+        // A table cut by the page end continues when the next page opens with a dated own-account row. Another
+        // account of the same table continues too: the account boundary below starts its section.
+        const open = layout.headerlessContinuation && !closed && !pending ? table : undefined;
+        const datedRow = (l: SpatialLine, t: Table) => t.accountX !== undefined && !!identifier(l.items.find(i => Math.abs(i.x - t.accountX!) < 20 * t.scale)?.text ?? '')
+            && !!isoDate(l.items.filter(i => i.x >= t.dateX - 10 * t.scale && i.x < t.descriptionX - 8 * t.scale).map(i => i.text).join(' '), layout.dateKind);
+        // Wrapped cell text of the first row or a page heading may be printed above it.
+        const carried = open && p.page === lastPage + 1 && p.lines.slice(0, 6).some(l => datedRow(l, open)) ? open : undefined;
+        // Not proven: rows of the cut table before the next header are reported, never dropped silently.
+        let cut = carried ? undefined : open;
         table = carried;
         context = [];
         contextAccount = undefined;
@@ -261,6 +266,7 @@ export function parseBankStatement(pages: readonly BankPage[], metadata: BankSta
             }
             const candidate = tableHeaderOf(l, profile);
             if (candidate) {
+                cut = undefined;
                 let before = context.join(' ');
                 if (layout !== singapore && layout !== esun) {
                     const nearby = p.lines.slice(Math.max(0, n - 4), n).filter(r => r.y - l.y < 40 && r.items.some(i => i.x < 110 && i.text.length < 30 && /活期|存款|台幣|臺幣|外幣/.test(i.text))).at(-1);
@@ -324,6 +330,10 @@ export function parseBankStatement(pages: readonly BankPage[], metadata: BankSta
                 continue;
             }
             if (!table) {
+                if (cut && datedRow(l, cut)) {
+                    issue(p.page, 'unproven-page-continuity');
+                    cut = undefined;
+                }
                 // A cash section, not the earlier relationship summary, owns currency context.
                 if (/活期|Savings Account|轉出.*交易明細|^(?:TWD|USD|SGD|JPY|新臺幣|新台幣|臺幣|台幣).*交易明細/i.test(l.text))
                     context = [l.text];
@@ -478,7 +488,7 @@ export function parseBankStatement(pages: readonly BankPage[], metadata: BankSta
                 const rowLike = (r: SpatialLine) => r.items.some(i => i.x < t.descriptionX - 8 * t.scale);
                 const mine = (k: number, step: number) => { for (let j = k; p.lines[j] && Math.abs(p.lines[j].y - l.y) < 30 * t.scale; j += step) if (rowLike(p.lines[j])) return Math.abs(p.lines[j].y - p.lines[k].y) > Math.abs(p.lines[k].y - l.y); return true; };
                 const wrapped = (k: number, step: number) => { const r = p.lines[k]; return r && !rowLike(r) && Math.abs(r.y - l.y) < 16 * t.scale && mine(k, step) ? [r] : []; };
-                const note = [...wrapped(n - 2, -1), ...wrapped(n - 1, -1), l, ...wrapped(n + 1, 1), ...wrapped(n + 2, 1)].flatMap(r => r.items.filter(i => i.x > t.creditEdge + 30 * t.scale)).map(i => { const [head, ...rest] = i.text.split(' '); return money(head) === undefined ? i.text : rest.join(' '); }).join('').slice(0, 120);
+                const note = [...wrapped(n - 2, -1), ...wrapped(n - 1, -1), l, ...wrapped(n + 1, 1), ...wrapped(n + 2, 1)].flatMap(r => r.items.filter(i => i.x > t.creditEdge + 30 * t.scale)).map(i => i.text.replace(/^\$[\d,]+(?:\.\d+)?\s*/, '')).join('').slice(0, 120);
                 if (note && note !== narrative)
                     narrative = narrative ? `${narrative} · ${note}` : note;
             }
@@ -540,10 +550,10 @@ export function parseBankStatement(pages: readonly BankPage[], metadata: BankSta
                 }
                 pending = undefined;
             }
-            else if (layout.zeroAmountBlank && [...debitItems, ...creditItems].some(i => money(i.text) === 0)) {
-                // A row whose amounts are all a printed 0 is not activity.
+            else if (layout.zeroAmountBlank && !malformed && debitItems.length + creditItems.length > 0 && [...debitItems, ...creditItems].every(i => money(i.text) === 0)) {
+                // A row whose amounts are all a printed 0 is not activity. Only the foreign table prints such rows as its no-activity evidence.
                 pending = undefined;
-                if (section && !section.rows.length && !section.warnings.length)
+                if (t.currencyX !== undefined && section && !section.rows.length && !section.warnings.length)
                     section.noTransactions = true;
             }
             else if (!activeLayout.wrapped) {
