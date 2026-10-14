@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { cashflowMonthList, cashflowSummary, type CashflowCurrencySummary, type CashflowInput, type CashflowPeriod } from './cashflow'
-import { cashflowInTwd } from './cashflowFx'
+import { cashflowWithFxEvidence, twdCashflowEvidence, type CashflowFxEvidence } from './cashflowFx'
 import { fetchHistory } from './priceHistory'
 
 // The period the cashflow views show, the picker that changes it, and the totals converted to TWD.
@@ -37,19 +37,21 @@ export function useTwdCashflow(input: CashflowInput, endMonth: string, period: C
   const rawGroups = useMemo(() => cashflowSummary({ expenses, expenseRules, bankTransactions, bankRules, months }, endMonth, period), [expenses, expenseRules, bankTransactions, bankRules, months, endMonth, period])
   const needsFx = rawGroups.some((group) => group.currency !== 'TWD')
   const [attempt, setAttempt] = useState(0)
-  const [conversion, setConversion] = useState<{ source: typeof rawGroups; today: string; attempt: number; group?: CashflowCurrencySummary; error?: string }>()
+  const [conversion, setConversion] = useState<{ source: typeof rawGroups; today: string; attempt: number; group?: CashflowCurrencySummary; fx: CashflowFxEvidence[]; error?: string }>()
   useEffect(() => {
     if (!needsFx) return
     let active = true
-    cashflowInTwd(rawGroups, today, (symbol, from) => fetchHistory(symbol, from, attempt > 0)).then((group) => {
-      if (active) setConversion({ source: rawGroups, today, attempt, group })
+    cashflowWithFxEvidence(rawGroups, today, (symbol, from) => fetchHistory(symbol, from, attempt > 0)).then(({group, fx}) => {
+      if (active) setConversion({ source: rawGroups, today, attempt, group, fx })
     }, (error) => {
-      if (active) setConversion({ source: rawGroups, today, attempt, error: error instanceof Error ? error.message : '匯率查詢失敗' })
+      if (active) setConversion({ source: rawGroups, today, attempt, fx: [], error: error instanceof Error ? error.message : '匯率查詢失敗' })
     })
     return () => { active = false }
   }, [rawGroups, today, attempt, needsFx])
   const current = conversion?.source === rawGroups && conversion.today === today && conversion.attempt === attempt ? conversion : undefined
   const groups = needsFx ? (current?.group ? [current.group] : []) : rawGroups
-  return { rawGroups, groups, needsFx, loading: needsFx && !current, error: needsFx ? current?.error : undefined, retry: () => setAttempt(attempt + 1) }
+  const localFx = useMemo(() => needsFx ? [] : twdCashflowEvidence(rawGroups, today), [rawGroups, today, needsFx])
+  const fx = needsFx ? current?.fx ?? [] : localFx
+  return { rawGroups, groups, fx, needsFx, loading: needsFx && !current, error: needsFx ? current?.error : undefined, retry: () => setAttempt(attempt + 1) }
 }
 

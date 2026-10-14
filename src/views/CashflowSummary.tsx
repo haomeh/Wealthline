@@ -1,3 +1,5 @@
+import { cashflowQueryString, categoryToken, type CashflowQuery } from '../cashflowQuery'
+import { navigate } from '../site'
 import type { CashflowInput, CashflowReviewTotals } from '../cashflow'
 import { fmt } from '../format'
 import { CashflowChart } from './CashflowChart'
@@ -16,6 +18,7 @@ export function CashflowSummary({now,onGoExpenses,onGoBankTransactions,...input}
   const period=useCashflowPeriod(input,now)
   const {rawGroups,groups,needsFx,loading,error,retry}=useTwdCashflow(input,period.endMonth,period.period,period.today)
   const {latestMonth}=period
+  const drill=(metric:CashflowQuery['metric'],category?:string)=>navigate('/cashflow'+cashflowQueryString({range:period.selection.range,month:period.selection.range==='month'?period.endMonth:undefined,year:period.selection.range==='year'?period.selection.year:undefined,metric,category:category?categoryToken(category):undefined,source:'all',panel:'records',page:1}))
   return <section className="panel span-2 cashflow-summary" aria-label="統一收支總覽">
     <div className="panel-head"><h3>收支總覽</h3><div className="row cashflow-source-links">
       {onGoBankTransactions && <button onClick={onGoBankTransactions}>銀行流水</button>}
@@ -29,7 +32,7 @@ export function CashflowSummary({now,onGoExpenses,onGoBankTransactions,...input}
     </div>:groups.map(group=><section className="cashflow-currency" key={group.currency} aria-label={`${group.currency} 收支`}>
       <div className="cashflow-currency-heading"><strong>{group.currency}</strong><span className="muted small">{group.coverage.recordCount} 筆紀錄</span></div>
       {group.pending.count>0 && <p className="notice small cashflow-pending" role="note" data-cashflow-pending><span>{group.pending.count} 筆銀行流水未分類，已依入帳／支出計入收支；轉帳或繳卡費請設為不計收支。</span>{onGoBankTransactions && <button className="link" onClick={onGoBankTransactions}>前往分類</button>}</p>}
-      <CashflowChart group={group}/>
+      <CashflowChart group={group} onSelect={drill}/>
       {group.investmentRecovery.hasRecords && <p className="notice small" role="note">投資回收款：可能包含投入本金，不代表投資收益</p>}
       <details className="cashflow-review"><summary>未分類 {group.pending.count} 筆 · 不計收支 {group.excluded.count} 筆</summary>
         <Review label="未分類" total={group.pending} currency={group.currency}/>

@@ -2144,3 +2144,55 @@ test('both language versions of the privacy policy show the date the in-app noti
   const month=new Date(Date.UTC(y,m-1,d)).toLocaleString('en-US',{month:'long',timeZone:'UTC'})
   assert.ok(text.includes(`Last updated: ${month} ${d}, ${y}`), 'English date matches')
 })
+
+
+test('monthly review uses normal Save Changes and a later edit remains dirty after deferred save',async()=>{
+  window.history.replaceState(null,'','/cashflow?month=2026-09&panel=review')
+  const source={kind:'card',card:'Card'}
+  const original={...fixture(),expenses:[{id:'review-meal',date:'2026-09-02',card:'Card',description:'Meal',currency:'TWD',amount:20,category:'餐飲'}],monthlyReviews:[{month:'2026-09',expectedSources:[source],confirmations:[]}]}
+  const drive=setupDrive(original)
+  await render(App)
+  for(let i=0;i<100 && (!button('確認已核對') || button('確認已核對').disabled);i++)await act(()=>new Promise(r=>setTimeout(r,5)))
+  await click(button('確認已核對'))
+  for(let i=0;i<100 && !document.body.textContent.includes('待儲存');i++)await act(()=>new Promise(r=>setTimeout(r,5)))
+  assert.match(document.body.textContent,/待儲存/);assert.equal(drive.writes,0)
+  await click(button('儲存變更'))
+  assert.equal(drive.uploaded.monthlyReviews[0].confirmations.length,1)
+  assert.deepEqual(drive.uploaded.expenses,original.expenses)
+  await act(()=>{window.history.pushState(null,'','/rates');window.dispatchEvent(new PopStateEvent('popstate'))})
+  await editRate('USD','33');await drive.finish()
+  assert.ok(button('儲存變更'))
+  assert.equal(document.querySelector('[aria-label="USD 匯率"]').value,'33')
+  await click(button('儲存變更'));assert.equal(drive.uploaded.fxRates.USD,33)
+  assert.equal(drive.uploaded.monthlyReviews[0].confirmations.length,1);await drive.finish()
+})
+
+
+test('monthly report export uses ready saved ledger without loading archived asset history',async()=>{
+ const store=await server.ssrLoadModule('/src/google/driveStore.ts'),fake=createFakeDrive()
+ fake.seed({...fixture(),expenses:[{id:'report-row',date:'2026-09-02',card:'Card',description:'Saved row',currency:'TWD',amount:12,category:'餐飲'}],history:{changes:[],liabilityChanges:[],snapshots:[{date:'2025-06-01',at:'2025-06-01T00:00:00Z',total:10,accounts:[],categories:{}}]}})
+ globalThis.fetch=fake.fetch
+ const opened=await store.loadDrive(token,model.parseWealthData);await store.saveDrive(token,opened.data,opened.state,'2026-10-12T04:00:00.000Z')
+ const from=fake.log.length
+ globalThis.fetch=async(url,init={})=>String(url).includes('userinfo')?Response.json(profile):fake.fetch(url,init)
+ auth.storeSession({token,profile});window.history.replaceState(null,'','/cashflow?month=2026-09&panel=report')
+ await render(App)
+ for(let i=0;i<100&&(!button('匯出 JSON')||button('匯出 JSON').disabled);i++)await act(()=>new Promise(r=>setTimeout(r,5)))
+ const oldCreate=URL.createObjectURL,oldRevoke=URL.revokeObjectURL,oldClick=dom.window.HTMLAnchorElement.prototype.click
+ let blob
+ URL.createObjectURL=value=>{blob=value;return 'blob:report'};URL.revokeObjectURL=()=>{};dom.window.HTMLAnchorElement.prototype.click=()=>{}
+ try{await click(button('匯出 JSON'));for(let i=0;i<100&&!blob;i++)await act(()=>new Promise(r=>setTimeout(r,5)));assert.ok(blob);const report=JSON.parse(await blob.text());assert.equal(report.entries[0].description,'Saved row');assert.equal(report.totals.consumption,12);assert.equal(report.review.state,null)}finally{URL.createObjectURL=oldCreate;URL.revokeObjectURL=oldRevoke;dom.window.HTMLAnchorElement.prototype.click=oldClick}
+ const reads=fake.log.slice(from).filter(r=>r.url.includes('alt=media')).map(r=>fake.files.get(r.url.match(/files\/([^?]+)/)[1]).appProperties.part??'main')
+ assert.ok(reads.includes('ledger-2026-Q3'));assert.ok(!reads.some(p=>p.startsWith('history-')))
+})
+
+test('App logout during report hashing cannot download an obsolete account snapshot',async()=>{
+ window.history.replaceState(null,'','/cashflow?month=2026-09&panel=report')
+ setupDrive({...fixture(),expenses:[{id:'report-logout',date:'2026-09-02',card:'Card',description:'Saved row',currency:'TWD',amount:12,category:'餐飲'}]})
+ await render(App);for(let i=0;i<100&&(!button('匯出 JSON')||button('匯出 JSON').disabled);i++)await act(()=>new Promise(r=>setTimeout(r,5)))
+ const digest=crypto.subtle.digest.bind(crypto.subtle),create=URL.createObjectURL
+ let finish,downloads=0
+ crypto.subtle.digest=(...args)=>new Promise((resolve,reject)=>{finish=()=>digest(...args).then(resolve,reject)})
+ URL.createObjectURL=()=>{downloads++;return 'blob:obsolete'}
+ try{await click(button('匯出 JSON'));for(let i=0;i<30&&!finish;i++)await act(()=>new Promise(r=>setTimeout(r,2)));assert.ok(finish);await click(button('登出'));crypto.subtle.digest=digest;await act(async()=>finish());assert.equal(downloads,0)}finally{crypto.subtle.digest=digest;URL.createObjectURL=create}
+})

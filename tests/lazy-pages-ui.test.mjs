@@ -176,7 +176,10 @@ test('cashflow loads summary-backed ledger details and month navigation reaches 
   assert.doesNotMatch(main(), /Salary transfer 0/)
   await click(month(7))
   assert.equal(document.querySelectorAll('.cashflow-bar').length, 12)
-  assert.equal(document.querySelectorAll('.bank-record').length, 120)
+  assert.equal(document.querySelectorAll('.bank-record').length, 100)
+  assert.match(document.querySelector('[data-filtered-total]').textContent, /收入 600.00/)
+  await click(document.querySelector('[aria-label="明細分頁"] button:last-child'))
+  assert.equal(document.querySelectorAll('.bank-record').length, 20)
   await click(button('前往銀行流水頁編輯 →'))
   assert.equal(window.location.pathname, '/bank-transactions')
   assert.equal(document.querySelectorAll('.bank-record').length, 100)
@@ -436,4 +439,23 @@ test('deleting an account loads every quarter first, and keeps an account an ear
   await click(button('刪除帳戶 Unused ledger'))
   assert.equal(button('刪除帳戶 Unused ledger'), undefined)
   assert.match(document.querySelector('.save-bar')?.textContent ?? '', /未儲存/)
+})
+
+
+test('a focused old bank record loads the complete ledger before deciding it is missing, with no archived history read', async () => {
+  const data = fixture()
+  data.version = 16
+  data.monthlyReviews = [{month:'2025-01',expectedSources:[{kind:'bank',accountId:'acct'}],confirmations:[]}]
+  data.bankTransactions.push({...data.bankTransactions[0],id:'old-target',date:'2025-01-03',description:'Old focused record'})
+  const drive = await splitDrive(data)
+  drive.hold('ledger')
+  await open('/bank-transactions?recordId=old-target&returnTo='+encodeURIComponent('/cashflow?month=2025-01'))
+  assert.match(main(), /正在載入/)
+  assert.doesNotMatch(main(), /找不到指定紀錄/)
+  await drive.release('ledger')
+  assert.ok(drive.reads.includes('ledger-2025-Q1'))
+  assert.ok(document.querySelector('.bank-editor'))
+  assert.equal(document.querySelector('[aria-label="流水摘要"]').value, 'Old focused record')
+  assert.ok(button('返回收支明細'))
+  assert.ok(!drive.reads.some(name=>name.startsWith('history-')))
 })

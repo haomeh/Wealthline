@@ -1,3 +1,4 @@
+import type { ClassificationEvidence } from './cashflowEntries'
 import { validDate } from './quantityHistory'
 
 export const EXPENSE_CATEGORIES = ['餐飲','交通','購物','旅遊住宿','娛樂','數位服務','生活繳費','醫療','政府規費','未分類'] as const
@@ -23,17 +24,24 @@ const CATEGORY_RULES: [ExpenseCategory,RegExp][] = [
   ['購物',/AMAZON|SHOPEE|LAZADA|PCHOME|\bIKEA\b|\bWALMART\b|蝦皮|百貨|全聯|家樂福|便利商店|7 ?ELEVEN|FAMILY\s*MART/],
 ]
 
-export function expenseCategoryRuleIndex(description:string,rules:ExpenseCategoryRule[]):number {
+export function expenseCategoryRuleIndex(description:string,rules:readonly ExpenseCategoryRule[]):number {
   const merchant = categoryText(description)
   return rules.findIndex(rule=>merchant.includes(categoryText(rule.keyword)))
 }
 
-export function expenseCategory(e: Pick<Expense,'description'|'category'>, rules: ExpenseCategoryRule[] = []): ExpenseCategory {
-  if(e.category) return e.category
+export function expenseCategoryEvidence(e: Pick<Expense,'description'|'category'>, rules: readonly ExpenseCategoryRule[] = []): {category: ExpenseCategory; evidence: ClassificationEvidence} {
+  if(e.category) return {category:e.category,evidence:{basis:'manual'}}
   const merchant = categoryText(e.description)
   const custom = rules[expenseCategoryRuleIndex(e.description,rules)]
-  if(custom) return custom.category
-  return CATEGORY_RULES.find(([,rule])=>rule.test(merchant))?.[0] ?? '未分類'
+  if(custom) return {category:custom.category,evidence:{basis:'custom-rule',rule:{keyword:custom.keyword}}}
+  for (const [category,rule] of CATEGORY_RULES) {
+    const match = merchant.match(rule)
+    if (match) return {category,evidence:{basis:'builtin',rule:{keyword:match[0]}}}
+  }
+  return {category:'未分類',evidence:{basis:'unclassified'}}
+}
+export function expenseCategory(e: Pick<Expense,'description'|'category'>, rules: readonly ExpenseCategoryRule[] = []): ExpenseCategory {
+  return expenseCategoryEvidence(e,rules).category
 }
 
 export interface Expense {

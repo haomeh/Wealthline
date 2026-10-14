@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import { expenseCategory, type Expense, type ExpenseCategoryRule } from '../expenses'
 import { fmt } from '../format'
 import { ActionIcon } from './ActionIcon'
@@ -5,8 +6,9 @@ import { CategoryRuleButton } from './ExpenseCategoryRules'
 import { DetailRecord } from './DetailRecord'
 
 // `showCategory`: the category under each description (the overview lists rows without it otherwise).
-export function ExpenseRecords({ expenses, rules, busy = false, showCategory = false, onEdit, onRule }: {
+export function ExpenseRecords({ expenses, rules, busy = false, showCategory = false, onEdit, onRule, evidence }: {
   expenses: Expense[]; rules: ExpenseCategoryRule[]; busy?: boolean; showCategory?: boolean;
+  evidence?: (expense:Expense)=>ReactNode;
   onEdit?: (expense: Expense) => void; onRule?: (expense: Expense, index?: number) => void
 }) {
   const groups = new Map<string, { date: string; card: string; rows: Expense[] }>()
@@ -28,6 +30,7 @@ export function ExpenseRecords({ expenses, rules, busy = false, showCategory = f
       </>}>
       <p>{expense.description}</p>
       <dl className="record-evidence"><dt>銀行／卡片</dt><dd>{expense.card || '未命名卡片'}</dd><dt>日期</dt><dd>{expense.date}</dd><dt>分類</dt><dd>{expenseCategory(expense, rules)}</dd><dt>類型</dt><dd>{expense.amount < 0 ? '退款' : '消費'}</dd></dl>
+      {evidence?.(expense)}
     </DetailRecord>)}
   </section>)}</div>
 }

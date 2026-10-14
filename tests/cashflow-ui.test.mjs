@@ -17,6 +17,7 @@ before(async()=>{
  model=await server.ssrLoadModule('/src/model.ts')
 })
 beforeEach(async()=>{
+ window.history.replaceState({},'', '/cashflow')
  const {clearHistoryCache}=await server.ssrLoadModule('/src/priceHistory.ts');clearHistoryCache()
  globalThis.fetch=async url=>{const symbol=new URL(url,'https://test').searchParams.get('symbol');return new Response(JSON.stringify({symbol,currency:'TWD',asTraded:true,points:[{date:'2026-01-24',close:32}]}))}
 })

@@ -41,3 +41,14 @@ test('unknown paths fall back to the overview', () => {
     assert.deepEqual(routes.parseRoute(path), { tab: 'overview' })
   }
 })
+
+test('cashflow query roundtrip and invalid correction', async () => {
+ const qmod = await server.ssrLoadModule('/src/cashflowQuery.ts')
+ for (const scope of [{range:'month',month:'2026-09'},{range:'year',year:2026},{range:'all'}]) {
+ const query={...scope,metric:'consumption',category:'dining',source:'all',panel:'records',page:1}
+ assert.deepEqual(qmod.parseCashflowQuery(qmod.cashflowQueryString(query)),{query,corrected:false})
+ assert.deepEqual(routes.parseRoute(routes.routePath({tab:'cashflow',query})),{tab:'cashflow',query})
+ }
+ for (const search of ['?month=2026-99&page=-1','?month=2026-09&month=2026-10','?range=all&month=2026-09','?metric=income&category=dining']) assert.equal(qmod.parseCashflowQuery(search).corrected,true)
+ assert.deepEqual(routes.parseRoute('/expenses?recordId=a&returnTo=https%3A%2F%2Fevil.test'),{tab:'expenses',recordId:'a'})
+})

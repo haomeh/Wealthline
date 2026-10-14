@@ -198,3 +198,21 @@ test('random edits saved from partly loaded data keep every record', async () =>
     assert.deepEqual(totals(store.summaryCashflow(reopened.state)), totals(cashflow.cashflowMonths({ expenses: expected.expenses, bankTransactions: expected.bankTransactions })), `round ${round} summary`)
   }
 })
+
+
+test('v16 monthly reviews survive a partial bank save and complete reload without rewriting older quarters', async () => {
+  const monthlyReviews = [{month:'2025-02',expectedSources:[{kind:'bank',accountId:'acct'}],confirmations:[]}]
+  await splitOnDrive(base({version:16,monthlyReviews,bankTransactions:[tx('old','2025-02-01'),tx('recent','2026-08-01')]}))
+  const {data,state} = await openFrom('ledger-2026-Q3')
+  assert.equal(data.version,16)
+  assert.deepEqual(data.monthlyReviews,monthlyReviews)
+  const from = drive.log.length
+  const saved = await store.saveDrive(token,{...data,bankTransactions:[{...data.bankTransactions[0],amount:19}]},state,LATER)
+  assert.equal(saved.version,16)
+  assert.deepEqual(partWrites(from),['ledger-2026-Q3','main'])
+  assert.deepEqual(store.missingParts(state,saved,'ledger'),['ledger-2025-Q1'])
+  const full = await openAll()
+  assert.equal(full.data.version,16)
+  assert.deepEqual(full.data.monthlyReviews,monthlyReviews)
+  assert.deepEqual(sorted(full.data.bankTransactions),sorted([tx('old','2025-02-01'),tx('recent','2026-08-01',19)]))
+})

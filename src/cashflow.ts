@@ -1,5 +1,6 @@
-import { EXPENSE_CATEGORIES, expenseCategory, type Expense, type ExpenseCategory, type ExpenseCategoryRule } from './expenses'
-import { BANK_EXCLUSION_REASONS, INCOME_CATEGORIES, classifyBankTransaction, type BankCategoryRule, type BankTransaction, type Classification } from './bankTransactions'
+import { cashflowEntries, type CashflowEntry } from './cashflowEntries'
+import { EXPENSE_CATEGORIES, type Expense, type ExpenseCategory, type ExpenseCategoryRule } from './expenses'
+import { BANK_EXCLUSION_REASONS, INCOME_CATEGORIES, type BankCategoryRule, type BankTransaction, type Classification } from './bankTransactions'
 
 export type CashflowPeriod = 1 | 3 | 6 | 12 | 'all'
 export type IncomeCategory = Extract<Classification, {kind:'income'}>['category']
@@ -83,47 +84,30 @@ function monthsInPeriod(endMonth: string, period: Exclude<CashflowPeriod, 'all'>
     return `${String(Math.floor(value / 12)).padStart(4,'0')}-${String(value % 12 + 1).padStart(2,'0')}`
   })
 }
-function validateRecord(row: Pick<Expense, 'date' | 'currency' | 'amount'>, bank: boolean): void {
-  if (typeof row.date !== 'string' || !/^(?!0000)\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/.test(row.date)) throw new Error('收支紀錄日期無效')
-  const parsed = new Date(row.date + 'T00:00:00.000Z')
-  if (!Number.isFinite(parsed.getTime()) || parsed.toISOString().slice(0,10) !== row.date) throw new Error('收支紀錄日期無效')
-  if (typeof row.amount !== 'number' || !Number.isFinite(row.amount) || Math.abs(row.amount) > 1e12 || (bank && row.amount < 0)) throw new Error('收支紀錄金額無效')
-  if (typeof row.currency !== 'string' || !/^[A-Z]{3}$/.test(row.currency)) throw new Error('收支紀錄幣別無效')
-}
 function addCategory<C extends string>(categories: CashflowCategoryTotal<C>[], category: C, amount: number, count = 1): void {
   let total = categories.find(item=>item.category === category)
   if (!total) { total = {category,count:0,net:0}; categories.push(total) }
   total.count += count; total.net += amount
 }
-function addReview(total: CashflowReviewTotals, row: BankTransaction): void {
+function addReview(total: CashflowReviewTotals, row: Pick<CashflowEntry, 'direction' | 'amount'>): void {
   total.count++
   if (row.direction === 'debit') { total.debitCount++; total.debitAmount += row.amount }
   else { total.creditCount++; total.creditAmount += row.amount }
 }
-function addBank(total: CashflowTotals, row: BankTransaction, classification: Classification): void {
-  if (classification.kind === 'income') {
-    const net = row.direction === 'credit' ? row.amount : -row.amount
-    total.income += net
-    addCategory(total.incomeCategories,classification.category,net)
-    if (classification.category === '投資回收款') {
-      total.investmentRecovery.count++; total.investmentRecovery.net += net; total.investmentRecovery.hasRecords = true
-    }
-  } else if (classification.kind === 'expense') {
-    const net = row.direction === 'debit' ? row.amount : -row.amount
-    total.consumption += net
-    addCategory(total.consumptionCategories,classification.category,net)
-  } else if (classification.kind === 'excluded') {
-    addReview(total.excluded,row)
-    let reason = total.exclusions.find(item=>item.reason === classification.reason)
-    if (!reason) { reason = {reason:classification.reason,...reviewTotals()}; total.exclusions.push(reason) }
-    addReview(reason,row)
-  } else {
-    // Unclassified: an incoming row is income and an outgoing row is consumption, under 未分類,
-    // until the user classifies it or marks it 不計收支.
-    addReview(total.pending,row)
-    if (row.direction === 'credit') { total.income += row.amount; addCategory(total.incomeCategories,'未分類',row.amount) }
-    else { total.consumption += row.amount; addCategory(total.consumptionCategories,'未分類',row.amount) }
+function addEntry(total: CashflowTotals, row: CashflowEntry): void {
+  total.income += row.income
+  total.consumption += row.consumption
+  if (row.metric === 'income') addCategory(total.incomeCategories,row.category as IncomeCategory,row.income)
+  if (row.metric === 'consumption') addCategory(total.consumptionCategories,row.category as ExpenseCategory,row.consumption)
+  if (row.classification === 'income' && row.category === '投資回收款') {
+    total.investmentRecovery.count++; total.investmentRecovery.net += row.income; total.investmentRecovery.hasRecords = true
   }
+  if (row.classification === 'excluded') {
+    addReview(total.excluded,row)
+    let reason = total.exclusions.find(item=>item.reason === row.exclusionReason)
+    if (!reason) { reason = {reason:row.exclusionReason as ExclusionReason,...reviewTotals()}; total.exclusions.push(reason) }
+    addReview(reason,row)
+  } else if (row.classification === 'pending') addReview(total.pending,row)
 }
 function finish(total: CashflowTotals): void {
   total.difference = total.income - total.consumption
@@ -169,26 +153,18 @@ function addCoverage(target: CashflowSourceCoverage, add: CashflowSourceCoverage
 /** Totals per currency and month of every record, in currency then month order. */
 export function cashflowMonths(input: CashflowInput): CashflowMonthTotals[] {
   const points = new Map<string, CashflowMonthTotals>()
-  const expenseRules = [...(input.expenseRules ?? [])]
   function target(currency: string, month: string) {
     const key = `${currency} ${month}`
     let point = points.get(key)
     if (!point) { point = {currency,month,totals:emptyTotals(),coverage:sourceCoverage()}; points.set(key,point) }
     return point
   }
-  for (const row of input.expenses ?? []) {
-    validateRecord(row,false)
+  for (const row of cashflowEntries(input)) {
     const point = target(row.currency,row.date.slice(0,7))
-    point.totals.consumption += row.amount
-    addCategory(point.totals.consumptionCategories,expenseCategory(row,expenseRules),row.amount)
-    point.coverage.cardCount++; point.coverage.recordCount++
-  }
-  for (const row of input.bankTransactions ?? []) {
-    validateRecord(row,true)
-    if (row.direction !== 'debit' && row.direction !== 'credit') throw new Error('收支紀錄方向無效')
-    const point = target(row.currency,row.date.slice(0,7))
-    addBank(point.totals,row,classifyBankTransaction(row,input.bankRules ?? []))
-    point.coverage.bankCount++; point.coverage.recordCount++
+    addEntry(point.totals,row)
+    if (row.source.kind === 'card') point.coverage.cardCount++
+    else point.coverage.bankCount++
+    point.coverage.recordCount++
   }
   return [...points.values()].sort((a,b)=>a.currency.localeCompare(b.currency) || a.month.localeCompare(b.month))
 }
