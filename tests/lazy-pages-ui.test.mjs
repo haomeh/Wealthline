@@ -539,6 +539,30 @@ test('clicking the page already open, in the sidebar or the phone tabs, does not
   assert.equal(window.location.pathname, '/cashflow')
 })
 
+test('the sidebar and the phone tabs always offer the statement import entry, but do not close an import already open', async () => {
+  await splitDrive()
+  await open('/bank-transactions')
+  const side = () => [...document.querySelectorAll('.side-nav button')].find((b) => b.textContent === '匯入帳單')
+  const phone = () => [...document.querySelectorAll('[aria-label="收支分頁"] button')].find((b) => b.textContent === '匯入')
+  await click(side())
+  assert.equal(window.location.pathname, '/cashflow/import')
+  assert.equal(side().getAttribute('aria-current'), 'page')
+  assert.equal([...document.querySelectorAll('.side-nav button[aria-current="page"]')].length, 1)
+  assert.equal(phone().getAttribute('aria-pressed'), 'true')
+  await click(button('取消匯入'))
+  await click([...document.querySelectorAll('.side-nav button')].find((b) => b.textContent.startsWith('信用卡消費')))
+  await settle()
+  await click(phone())
+  assert.equal(window.location.pathname, '/cashflow/import')
+  await click(button('取消匯入'))
+  await click([...document.querySelectorAll('.side-nav button')].find((b) => b.textContent.startsWith('信用卡消費')))
+  await settle()
+  await click(button('匯入信用卡帳單'))
+  assert.equal(window.location.pathname, '/expenses/import')
+  assert.ok(side().disabled && phone().disabled)
+  await click(button('取消匯入'))
+})
+
 for (const [tab, recordId, month, entry] of [['expenses','e1','2026-01','card:e1'],['bank-transactions','t1','2026-07','bank:t1']]) {
   test(`${tab} import can close, then focused source editing returns to the same cashflow filter`, async () => {
     await splitDrive()

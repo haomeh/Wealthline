@@ -3562,7 +3562,7 @@ button.pin-chip:hover:not(:disabled) { background: var(--ink); opacity: 0.85; }
 .cashflow-hbar .num-serif { font-size: 15px; color: var(--ink); }
 .cashflow-hbar-track { height: 10px; border-radius: 5px; background: var(--surface-2); overflow: hidden; }
 .cashflow-hbar-track i { display: block; height: 100%; border-radius: 5px; }
-.cashflow-tabs { display: grid; grid-template-columns: repeat(3, 1fr); margin-bottom: 14px; }
+.cashflow-tabs { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; margin-bottom: 14px; }
 .cashflow-tabs button { position: relative; padding: 9px 0; min-height: 40px; }
 .cashflow-tabs .nav-badge { margin-left: 4px; }
 

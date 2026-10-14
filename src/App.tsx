@@ -683,6 +683,10 @@ export default function App() {
   const inImport = importingStatements || (route.tab === 'cashflow' && !!route.importing)
   useEffect(() => { if (!inImport) setImportPlan(null) }, [inImport])
   const goTab = (t: Tab) => { if (t !== tab || !importingStatements) navigate(tabPath(t)) }
+  // The one statement import entry (/cashflow/import), fixed in the sidebar and the phone's 收支 tabs.
+  // An import already open keeps its screen; its kind switch offers 自動判斷.
+  const importEntry = route.tab === 'cashflow' && !!route.importing
+  const openImportEntry = () => { if (!inImport) go({ tab: 'cashflow', importing: true }) }
 
   // The account menu's parts, shared by the sidebar menu and the phone's 更多 page.
   const avatar = user
@@ -765,14 +769,15 @@ export default function App() {
               {g.tabs.map((t) => (
                 <button
                   key={t}
-                  className={t === tab ? 'active' : ''}
-                  aria-current={t === tab ? 'page' : undefined}
+                  className={t === tab && !importEntry ? 'active' : ''}
+                  aria-current={t === tab && !importEntry ? 'page' : undefined}
                   onClick={() => goTab(t)}
                 >
                   {TABS[t]}
                   {t === 'bank-transactions' && unclassified > 0 && <span className="nav-badge" title={`${unclassified} 筆銀行流水未分類`}>{unclassified}</span>}
                 </button>
               ))}
+              {g.tabs.includes('cashflow') && <button className={importEntry ? 'active' : ''} aria-current={importEntry ? 'page' : undefined} disabled={importingStatements} title={importingStatements ? '正在匯入；可在匯入畫面切換為自動判斷' : undefined} onClick={openImportEntry}>匯入帳單</button>}
             </Fragment>
           ))}
         </nav>
@@ -860,7 +865,8 @@ export default function App() {
         {(tab === 'overview' || tab === 'cashflow' || tab === 'expenses' || tab === 'bank-transactions') && <StorageNotice bytes={storedBytes} browser={local ? browserStorage : undefined} />}
 
         {data && (tab === 'cashflow' || tab === 'expenses' || tab === 'bank-transactions') && <div className="segmented cashflow-tabs mobile-only" role="group" aria-label="收支分頁">
-          {([['cashflow', '總覽'], ['expenses', '信用卡'], ['bank-transactions', '銀行流水']] as const).map(([t, label]) => <button key={t} className={t === tab ? 'on' : ''} aria-pressed={t === tab} onClick={() => goTab(t)}>{label}{t === 'bank-transactions' && unclassified > 0 && <span className="nav-badge" title={`${unclassified} 筆銀行流水未分類`}>{unclassified}</span>}</button>)}
+          {([['cashflow', '總覽'], ['expenses', '信用卡'], ['bank-transactions', '銀行流水']] as const).map(([t, label]) => <button key={t} className={t === tab && !importEntry ? 'on' : ''} aria-pressed={t === tab && !importEntry} onClick={() => goTab(t)}>{label}{t === 'bank-transactions' && unclassified > 0 && <span className="nav-badge" title={`${unclassified} 筆銀行流水未分類`}>{unclassified}</span>}</button>)}
+          <button className={importEntry ? 'on' : ''} aria-pressed={importEntry} disabled={importingStatements} onClick={openImportEntry}>匯入</button>
         </div>}
         {data && tab === 'more' && <More
           who={<>{avatar}<div><strong>{user ? user.name : '本機模式'}</strong><span className="muted small">{user ? user.email : '資料只存在這個瀏覽器'}</span></div>{syncPill}</>}
