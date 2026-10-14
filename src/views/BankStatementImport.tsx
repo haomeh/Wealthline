@@ -12,13 +12,13 @@ import { BankRowFields } from './BankTransactionEditor'
 import { ActionIcon } from './ActionIcon'
 import { fmt } from '../format'
 import { BANK_SUMMARY_PENDING, BANK_TEXT_NOTICE, bankFileSummary, classificationLabel, summarizeBankWarnings } from './bankUiHelpers'
-import { ImportSteps } from './ImportSteps'
+import { ImportKind, ImportSteps } from './ImportSteps'
 
 type PreviewRow={draft:BankTransaction;original:BankTransactionRow;provenance:BankRowProvenance;selected:boolean;manual?:boolean;narration?:{leading:string[];trailing:string[]}}
 type PreviewSection={automatic?:boolean;id:string;bank:string;currency:string;hash:string;rows:PreviewRow[];accountId:string;newId:string;label:string;noTransactions:boolean;partial:boolean;warnings:ReturnType<typeof summarizeBankWarnings>}
 type Review={balanceConfirmations:NonNullable<ReturnType<typeof statementBalanceConfirmation>>[];balances:StatementBalanceCandidate[];balanceCount:number;balanceRevision:string;accounts:BankTransactionAccount[];rows:BankTransaction[];context:BankTransaction[]}
 type ParseProgress={processed:number;total:number;successes:number;failures:number;currentFile:string;page?:BankPageProgress;complete:boolean}
-export function BankStatementImport({data,accounts,existing,rules,passwords,passwordScope,busy,onCancel,onImport,onManagePasswords,onAddRule}: {data:WealthData;accounts:BankTransactionAccount[];existing:BankTransaction[];rules:BankCategoryRule[];passwords:StatementPassword[];passwordScope?:string;busy:boolean;onCancel:()=>void;onManagePasswords:()=>void;onAddRule:(row:BankTransaction)=>void;onImport:(review:Review,keep:boolean)=>void}) {
+export function BankStatementImport({data,accounts,existing,rules,passwords,passwordScope,busy,onCancel,onImport,onManagePasswords,onAddRule,onSwitchKind}: {onSwitchKind?:()=>void;data:WealthData;accounts:BankTransactionAccount[];existing:BankTransaction[];rules:BankCategoryRule[];passwords:StatementPassword[];passwordScope?:string;busy:boolean;onCancel:()=>void;onManagePasswords:()=>void;onAddRule:(row:BankTransaction)=>void;onImport:(review:Review,keep:boolean)=>void}) {
  const [files,setFiles]=useState<File[]>([]),[password,setPassword]=useState(''),[parsing,setParsing]=useState(false),[sections,setSections]=useState<PreviewSection[]>([]),[reports,setReports]=useState<string[]>([]),[error,setError]=useState(''),[review,setReview]=useState<Review|null>(null),[keep,setKeep]=useState(false)
  const [balances,setBalances]=useState<(StatementBalanceCandidate & {sectionId:string})[]>([])
  const [preparing,setPreparing]=useState(false),[progress,setProgress]=useState<ParseProgress|null>(null),[sectionIndex,setSectionIndex]=useState(0),[rowPage,setRowPage]=useState(0)
@@ -118,7 +118,8 @@ export function BankStatementImport({data,accounts,existing,rules,passwords,pass
  const narrationCount=sections.reduce((n,s)=>n+s.rows.filter(r=>r.selected&&r.narration).length,0)
  const activeSection=sections[Math.min(sectionIndex,Math.max(0,sections.length-1))],previewPages=Math.max(1,Math.ceil((activeSection?.rows.length??0)/50)),currentRowPage=Math.min(rowPage,previewPages-1)
  return <section className="panel bank-import">
-  <div className="panel-head"><h2>匯入銀行帳單</h2><ImportSteps step={sections.length ? 2 : 1} /><button onClick={()=>{controller.current?.abort();onCancel()}}>取消匯入</button></div>
+  <div className="panel-head"><h2>匯入帳單</h2><ImportSteps step={sections.length ? 2 : 1} /><button onClick={()=>{controller.current?.abort();onCancel()}}>取消匯入</button></div>
+  <ImportKind kind="bank" disabled={locked||!!sections.length} onSwitch={onSwitchKind}/>
   <p className="bank-import-intro muted">PDF 在本機解析，不上傳原始文件。核對並匯入後，請按「儲存變更」。</p>
   <details className="bank-help"><summary>支援範圍與資料保護</summary>
    <p className="muted">不保存原始文件或完整擷取文字；確認後保存收支明細，並將已辨識的期末餘額補入資產歷史。{BANK_TEXT_NOTICE}</p>

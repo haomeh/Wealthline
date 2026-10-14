@@ -15,6 +15,7 @@ export function summarizeBackup(data: WealthData, file: { name: string; size: nu
       positions: data.accounts.reduce((count, account) => count + account.positions.length, 0),
       liabilities: data.liabilities?.length ?? 0,
       expenses: data.expenses?.length ?? 0,
+      monthlyReviews: data.monthlyReviews?.length ?? 0,
       bankTransactions: data.bankTransactions?.length ?? 0,
     },
     historyRange: dates.length ? { from: dates[0], to: dates.at(-1)! } : null,

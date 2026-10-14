@@ -1,6 +1,8 @@
+import { cashflowReturnTo } from '../cashflowQuery'
+import { navigate } from '../site'
 import { bankStatementIdentity } from '../bankStatementAssets'
 import { applyBankLedger, bankDisplayAccounts, type BankLedgerPatch } from '../ledgerEdits'
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { WealthData } from '../model'
 import type { LedgerScope } from '../google/driveStore'
 import { dataVersion } from '../dataVersion'
@@ -10,6 +12,7 @@ import { mergeStatementPasswords, parseStatementPasswords } from '../statementPa
 import { StatementPasswordSettings } from './StatementPasswordSettings'
 import { BankCategoryRules, BankRuleDialog } from './BankCategoryRules'
 import { BankStatementImport } from './BankStatementImport'
+import { ImportKind } from './ImportSteps'
 import { BankTransactionEditor } from './BankTransactionEditor'
 import { BANK_TEXT_NOTICE, classificationLabel, classificationTag } from './bankUiHelpers'
 import { fmt } from '../format'
@@ -23,10 +26,17 @@ export type BankLedgerScope = LedgerScope & {status?:string;onLoadEarlier:()=>vo
 
 // `ledger`: set while earlier quarters are not loaded. The list, counts and filters then cover
 // the loaded months only; importing and deleting an account first load every quarter.
-export function BankTransactions({data,onChange,busy,passwordScope,historyReady=true,historyStatus,onLoadHistory,ledger}: {data:WealthData;onChange:(next:WealthData)=>void;busy:boolean;passwordScope?:string;historyReady?:boolean;historyStatus?:string;onLoadHistory?:()=>void;ledger?:BankLedgerScope}) {
+export function BankTransactions({data,onChange,busy,passwordScope,historyReady=true,historyStatus,onLoadHistory,ledger,recordId,returnTo,importing:routed,onImporting,onImportCard}: {recordId?:string;returnTo?:string;data:WealthData;onChange:(next:WealthData)=>void;busy:boolean;passwordScope?:string;historyReady?:boolean;historyStatus?:string;onLoadHistory?:()=>void;ledger?:BankLedgerScope;importing?:boolean;onImporting?:(open:boolean)=>void;onImportCard?:()=>void}) {
+ const back = cashflowReturnTo(returnTo??null)
+ const returnLink = back && <button type="button" className="link" onClick={()=>navigate(back,{scroll:'preserve',focus:'cashflow-records'})}>返回收支明細</button>
+ const missingRecord = recordId && !data.bankTransactions?.some(e=>e.id===recordId) ? <p role="status">找不到指定紀錄，可能已移除。</p> : null
+ const focusRoot=useRef<HTMLDivElement>(null)
+ useLayoutEffect(()=>{if(recordId)focusRoot.current?.querySelector<HTMLInputElement>('input, select, button')?.focus()},[recordId])
  const latest=useRef<{data:WealthData;busy:boolean;onChange:(next:WealthData)=>void;loadMonth?:(month:string)=>void}>({data,busy,onChange})
  useLayoutEffect(()=>{latest.current={data,busy,onChange,loadMonth:ledger?.onLoadMonth}})
- const [importing,setImporting]=useState(false),[editing,setEditing]=useState<BankTransaction|null>(null),[managingPasswords,setManagingPasswords]=useState(false),[ruleEditor,setRuleEditor]=useState<{index?:number;rule?:BankCategoryRule}|null>(null)
+ // The app keeps the open import in the URL; mounted on its own, the page keeps it itself.
+ const [opened,setOpened]=useState(false),importing=routed??opened,setImporting=onImporting??setOpened
+ const [editing,setEditing]=useState<BankTransaction|null>(()=>data.bankTransactions?.find(e=>e.id===recordId)??null),[managingPasswords,setManagingPasswords]=useState(false),[ruleEditor,setRuleEditor]=useState<{index?:number;rule?:BankCategoryRule}|null>(null)
  const [label,setLabel]=useState(''),[bank,setBank]=useState(''),[message,setMessage]=useState(''),[accountFilter,setAccountFilter]=useState(''),[currencyFilter,setCurrencyFilter]=useState(''),[monthFilter,setMonthFilter]=useState(''),[kindFilter,setKindFilter]=useState<''|'pending'|'classified'>('')
  const [page,setPage]=useState(0),[adding,setAdding]=useState(false)
  // An account to delete once every quarter is loaded, which shows whether any record still uses it.
@@ -85,8 +95,16 @@ export function BankTransactions({data,onChange,busy,passwordScope,historyReady=
  },[removing,ledgerError,!ledger])
  const editRule=(row:BankTransaction)=>{const index=bankCategoryRuleIndex(row,rules);setRuleEditor(index>=0?{index,rule:rules[index]}:{rule:{keyword:row.description.slice(0,100),direction:row.direction,target:row.classification??{kind:'pending'}}})}
  // Importing finds duplicates among every record, and checks balances against every year of history.
- if(importing&&(!historyReady||ledger)){const historyFailed=!historyReady&&historyStatus&&historyStatus!=='loading',failed=historyFailed||ledgerError;return <div className="bank-page">{dialogs}<section className="panel" aria-busy={!failed}><div className="panel-head"><h2>匯入銀行帳單</h2><button onClick={()=>setImporting(false)}>取消匯入</button></div>{historyFailed?<div className="banner error" role="alert"><p>{historyStatus}</p><button onClick={onLoadHistory}>重試</button></div>:ledgerError?<div className="banner error" role="alert"><p>{ledgerError}</p><button onClick={ledger!.onLoadAll}>重試</button></div>:<p className="muted">{ledger?'正在載入全部銀行流水，完成後才能比對重複的流水…':'正在載入往年歷史，完成後可核對帳單餘額…'}</p>}</section></div>}
- if(importing)return <div className="bank-page">{dialogs}<BankStatementImport data={data} accounts={accounts} existing={rows} rules={rules} passwords={passwords} passwordScope={passwordScope} busy={busy} onManagePasswords={()=>setManagingPasswords(true)} onAddRule={editRule} onCancel={()=>setImporting(false)} onImport={(review,keep)=>{
+ // However the import was opened (this page's button, the shared entry or its URL), it starts both loads,
+ // before paint so an earlier failed load does not flash its error first.
+ useLayoutEffect(()=>{
+  if(!importing)return
+  if(!historyReady)onLoadHistory?.()
+  ledger?.onLoadAll()
+ // eslint-disable-next-line react-hooks/exhaustive-deps
+ },[importing])
+ if(importing&&(!historyReady||ledger)){const historyFailed=!historyReady&&historyStatus&&historyStatus!=='loading',failed=historyFailed||ledgerError;return <div className="bank-page">{dialogs}<section className="panel" aria-busy={!failed}><div className="panel-head"><h2>匯入帳單</h2><button onClick={()=>setImporting(false)}>取消匯入</button></div><ImportKind kind="bank" onSwitch={onImportCard}/>{historyFailed?<div className="banner error" role="alert"><p>{historyStatus}</p><button onClick={onLoadHistory}>重試</button></div>:ledgerError?<div className="banner error" role="alert"><p>{ledgerError}</p><button onClick={ledger!.onLoadAll}>重試</button></div>:<p className="muted">{ledger?'正在載入全部銀行流水，完成後才能比對重複的流水…':'正在載入往年歷史，完成後可核對帳單餘額…'}</p>}</section></div>}
+ if(importing)return <div className="bank-page">{dialogs}<BankStatementImport onSwitchKind={onImportCard} data={data} accounts={accounts} existing={rows} rules={rules} passwords={passwords} passwordScope={passwordScope} busy={busy} onManagePasswords={()=>setManagingPasswords(true)} onAddRule={editRule} onCancel={()=>setImporting(false)} onImport={(review,keep)=>{
  const current=latest.current;if(current.busy)return
  const existingAccounts=current.data.bankTransactionAccounts??[]
  const accountIds=new Set(existingAccounts.map(a=>a.id))
@@ -97,9 +115,9 @@ export function BankTransactions({data,onChange,busy,passwordScope,historyReady=
  change({accounts:mappedAccounts.filter(a=>accountIds.has(a.id)||used.has(a.id)),transactions:result.transactions,balances:review.balances,balanceRevision:review.balanceRevision})
  setMessage(`已新增 ${result.added} 筆，略過 ${result.duplicates} 筆。期末餘額補入 ${review.balanceCount} 筆。請按「儲存變更」。`);setImporting(false)
  }}/></div>
- if(editing)return <div className="bank-page">{dialogs}<BankTransactionEditor transaction={editing} accounts={displayAccounts} rules={rules} busy={busy} onCancel={()=>setEditing(null)} onSave={row=>{const current=latest.current.data.bankTransactions??[];change({transactions:current.some(r=>r.id===row.id)?current.map(r=>r.id===row.id?row:r):[...current,row]});setEditing(null)}} onRemove={()=>{change({transactions:(latest.current.data.bankTransactions??[]).filter(r=>r.id!==editing.id)});setEditing(null)}}/></div>
+ if(editing)return <div ref={focusRoot} className="bank-page">{returnLink}{dialogs}<BankTransactionEditor transaction={editing} accounts={displayAccounts} rules={rules} busy={busy} onCancel={()=>setEditing(null)} onSave={row=>{const current=latest.current.data.bankTransactions??[];change({transactions:current.some(r=>r.id===row.id)?current.map(r=>r.id===row.id?row:r):[...current,row]});setEditing(null)}} onRemove={()=>{change({transactions:(latest.current.data.bankTransactions??[]).filter(r=>r.id!==editing.id)});setEditing(null)}}/></div>
  const pager=pageCount>1&&<nav className="bank-pagination" aria-label="銀行流水分頁"><button type="button" aria-label="銀行流水上一頁" disabled={currentPage===0} onClick={()=>setPage(currentPage-1)}>上一頁</button><span>{filtered.length} 筆符合篩選 · 第 {currentPage+1}／{pageCount} 頁 · 每頁最多 100 筆</span><button type="button" aria-label="銀行流水下一頁" disabled={currentPage+1===pageCount} onClick={()=>setPage(currentPage+1)}>下一頁</button></nav>
- return <div className="bank-page">{dialogs}<div className="page-head"><div><h2>銀行流水</h2><p className="muted">銀行收支與信用卡消費分開記錄；帳單期末餘額可補入資產歷史，不改動目前持倉與負債。變更後請按「儲存變更」。</p></div><button disabled={busy} className="primary" onClick={()=>{setImporting(true);if(!historyReady)onLoadHistory?.();ledger?.onLoadAll()}}>匯入銀行帳單</button></div>{message && <p role="status" className="notice">{message}</p>}
+ return <div className="bank-page">{returnLink}{missingRecord}{dialogs}<div className="page-head"><div><h2>銀行流水</h2><p className="muted">銀行收支與信用卡消費分開記錄；帳單期末餘額可補入資產歷史，不改動目前持倉與負債。變更後請按「儲存變更」。</p></div><button disabled={busy} className="primary" onClick={()=>setImporting(true)}>匯入銀行帳單</button></div>{message && <p role="status" className="notice">{message}</p>}
  <section className="panel bank-record-panel"><div className="panel-head"><h3>{rows.length} 筆銀行流水</h3><button disabled={busy||!accounts.length} title={accounts.length?undefined:'先在下方「流水帳戶」新增帳戶'} onClick={()=>setEditing({id:crypto.randomUUID(),accountId:accounts[0].id,date:'',description:'',direction:'debit',amount:0,currency:'TWD'})}>手動新增流水</button></div>
  {ledger && <LedgerScopeNotice ledger={ledger}/>}
  {(!!rows.length||!!ledger?.months.length) && <><div className="bank-fields bank-filters"><label className="field"><span>月份</span><select aria-label="流水月份篩選" value={monthFilter} onChange={setFilter(setMonthFilter)}><option value="">全部月份</option>{(monthFilter&&!months.includes(monthFilter)?[monthFilter,...months]:months).map(m=><option key={m} value={m}>{monthLabel(m)}</option>)}</select></label><label className="field"><span>帳戶</span><select aria-label="流水帳戶篩選" value={accountFilter} onChange={setFilter(setAccountFilter)}><option value="">全部帳戶</option>{displayAccounts.map(a=><option value={a.id} key={a.id}>{a.label}</option>)}</select></label><label className="field"><span>幣別</span><select aria-label="流水幣別篩選" value={currencyFilter} onChange={setFilter(setCurrencyFilter)}><option value="">全部幣別</option>{[...new Set(rows.map(r=>r.currency))].sort().map(c=><option key={c}>{c}</option>)}</select></label><label className="field"><span>分類</span><select aria-label="流水分類篩選" value={kindFilter} onChange={setFilter(v=>setKindFilter(v as ''|'pending'|'classified'))}><option value="">全部</option><option value="pending">未分類</option><option value="classified">已分類</option></select></label></div>
@@ -172,7 +190,7 @@ function AccountLabel({account,automatic,count,partial,referenced,busy,onRename,
 // rows by month); without it the caller's group heading already says the date and account.
 // `showTag`: without `date`, still show the category under the description.
 // `onReveal`: on narrow screens the buttons stay hidden until a left swipe (or focus) shows them.
-export function BankRecord({row,account,rules,busy=false,date,showTag=false,revealed=false,onReveal,onEdit,onRule}:{row:BankTransaction;account:string;rules:BankCategoryRule[];busy?:boolean;date?:string;showTag?:boolean;revealed?:boolean;onReveal?:(open:boolean)=>void;onEdit?:()=>void;onRule?:()=>void}) {
+export function BankRecord({row,account,rules,busy=false,date,showTag=false,revealed=false,onReveal,onEdit,onRule,evidence}:{row:BankTransaction;account:string;rules:BankCategoryRule[];busy?:boolean;date?:string;showTag?:boolean;evidence?:ReactNode;revealed?:boolean;onReveal?:(open:boolean)=>void;onEdit?:()=>void;onRule?:()=>void}) {
  const category=classificationLabel(row,rules),direction=row.direction==='debit'?'支出':'入帳',tag=date||showTag?classificationTag(row,rules):null
  // A touch drag moves the row with the finger (--swipe, set without re-rendering); on release
  // it settles open (buttons showing) past half of their width, else closed.
@@ -195,10 +213,11 @@ export function BankRecord({row,account,rules,busy=false,date,showTag=false,reve
  return <DetailRecord className="bank-record" title={row.description} label={`查看流水 ${row.id}`} articleProps={swipe}
   subtitle={tag&&<>{date&&<><time dateTime={date}>{Number(date.slice(8))} 日</time><span className="bank-record-account">{account}</span></>}<span className={`tag${tag.tone?` ${tag.tone}`:''}`}>{tag.text}</span></>}
   value={<span className="record-money" data-direction={row.direction} aria-label={`${direction} ${row.currency} ${fmt(row.amount)}`}><small>{row.currency}</small><strong>{row.direction==='credit'?'+':'−'}{fmt(row.amount)}</strong></span>}
-  actions={onEdit && onRule && <>
-   <button type="button" className="bank-record-rule" data-pending={classifyBankTransaction(row,rules).kind==='pending'||undefined} disabled={busy} aria-label={`分類規則：${category}`} title="編輯匹配規則／新增規則" onClick={onRule}><span className="swipe-icon"><ActionIcon name="tag"/></span></button>
+  actions={onEdit && <>
+   {onRule && <button type="button" className="bank-record-rule" data-pending={classifyBankTransaction(row,rules).kind==='pending'||undefined} disabled={busy} aria-label={`分類規則：${category}`} title="編輯匹配規則／新增規則" onClick={onRule}><span className="swipe-icon"><ActionIcon name="tag"/></span></button>}
    <button type="button" disabled={busy} aria-label={`編輯流水 ${row.id}`} title="編輯流水" onClick={onEdit}><span className="swipe-icon"><ActionIcon name="edit"/></span></button>
   </>}>
   <p>{row.description}</p><dl className="record-evidence"><dt>日期／帳戶</dt><dd>{row.date} · {account}</dd><dt>分類</dt><dd>{category}</dd></dl>
+  {evidence}
  </DetailRecord>
 }

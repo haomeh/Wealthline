@@ -38,8 +38,8 @@ import { More } from './views/More'
 import { Landing } from './views/Landing'
 import { Opening, type OpeningStep } from './views/Opening'
 import { LegalPage } from './views/Legal'
-import { PAGES, goBack, navigate, usePage, usePath } from './site'
-import { MOBILE_TABS, NAV_GROUPS, TABS, parseRoute, routePath, tabPath, type Route } from './routes'
+import { PAGES, goBack, navigate, usePage, useRouteLocation } from './site'
+import { MOBILE_TABS, NAV_GROUPS, TABS, parseRoute, routePath, tabPath, type Route, type Tab } from './routes'
 import { Link, Logo, PrivacyNotice, SiteFooter } from './views/Site'
 import { DeviceIcon, UploadButton } from './views/LocalData'
 import { StorageMeter, StorageNotice } from './views/StorageMeter'
@@ -127,7 +127,7 @@ export default function App() {
   // The notice pages are open to everyone; the app's own state stays mounted behind them.
   const page = usePage()
   // Every page of the signed-in app has its own URL, so back and forward move between them.
-  const path = usePath()
+  const path = useRouteLocation()
   const route = parseRoute(path)
   const tab = route.tab
 
@@ -631,12 +631,13 @@ export default function App() {
   // The bank page shows once the parts of the last three months are loaded; earlier quarters
   // load when it asks (bankFrom). The expense and cashflow pages read every part.
   const recentFrom = state ? recentLedgerFrom(state, localDate(new Date().toISOString())) : ''
-  const bankShown = !ledgerMissing.some((name) => name >= recentFrom)
+  const bankFocused = route.tab === 'bank-transactions' && !!route.recordId
+  const bankShown = bankFocused ? !ledgerMissing.length : !ledgerMissing.some((name) => name >= recentFrom)
   // A record dated in a part not loaded (an edit or a new record) loads that part, so every
   // record shown belongs to a loaded part and a later save rewrites that part as a whole.
   const recordParts = ledgerMissing.length && data ? new Set([...(data.bankTransactions ?? []), ...(data.expenses ?? [])].map((r) => ledgerPart(r.date))) : null
   const ledgerWanted = !ledgerMissing.length ? []
-    : tab === 'expenses' || tab === 'cashflow' || (tab === 'overview' && !ledgerMonths) ? ledgerMissing
+    : tab === 'expenses' || tab === 'cashflow' || bankFocused || (tab === 'overview' && !ledgerMonths) ? ledgerMissing
       : ledgerMissing.filter((name) => (tab === 'bank-transactions' && name >= (bankFrom ?? recentFrom)) || recordParts?.has(name))
   const needsHistory = missing('history') && (route.tab === 'history' || (route.tab === 'accounts' && route.page === 'detail') || (tab === 'overview' && !archive))
   useEffect(() => {
@@ -663,6 +664,13 @@ export default function App() {
 
   const go = (r: Route, replace = false) => navigate(routePath(r), { replace })
   const goAccounts = (view: AccountsView, replace = false) => go({ tab: 'accounts', ...view }, replace)
+  // Card and bank statements share one import screen, opened on the page its rows land on. Coming from
+  // another page adds a history entry; a page's own button, the kind switch and closing replace it.
+  const goImport = (kind: 'expenses' | 'bank-transactions', importing = true, replace = true) => go({ tab: kind, importing }, replace)
+  // The nav item of the page already open does nothing while its import is open: the parsed preview
+  // lives only in the import screen, and leaving it would discard the preview without asking.
+  const importingStatements = (route.tab === 'expenses' || route.tab === 'bank-transactions') && !!route.importing
+  const goTab = (t: Tab) => { if (t !== tab || !importingStatements) navigate(tabPath(t)) }
 
   // The account menu's parts, shared by the sidebar menu and the phone's 更多 page.
   const avatar = user
@@ -747,7 +755,7 @@ export default function App() {
                   key={t}
                   className={t === tab ? 'active' : ''}
                   aria-current={t === tab ? 'page' : undefined}
-                  onClick={() => navigate(tabPath(t))}
+                  onClick={() => goTab(t)}
                 >
                   {TABS[t]}
                   {t === 'bank-transactions' && unclassified > 0 && <span className="nav-badge" title={`${unclassified} 筆銀行流水未分類`}>{unclassified}</span>}
@@ -840,7 +848,7 @@ export default function App() {
         {(tab === 'overview' || tab === 'cashflow' || tab === 'expenses' || tab === 'bank-transactions') && <StorageNotice bytes={storedBytes} browser={local ? browserStorage : undefined} />}
 
         {data && (tab === 'cashflow' || tab === 'expenses' || tab === 'bank-transactions') && <div className="segmented cashflow-tabs mobile-only" role="group" aria-label="收支分頁">
-          {([['cashflow', '總覽'], ['expenses', '信用卡'], ['bank-transactions', '銀行流水']] as const).map(([t, label]) => <button key={t} className={t === tab ? 'on' : ''} aria-pressed={t === tab} onClick={() => go({ tab: t })}>{label}{t === 'bank-transactions' && unclassified > 0 && <span className="nav-badge" title={`${unclassified} 筆銀行流水未分類`}>{unclassified}</span>}</button>)}
+          {([['cashflow', '總覽'], ['expenses', '信用卡'], ['bank-transactions', '銀行流水']] as const).map(([t, label]) => <button key={t} className={t === tab ? 'on' : ''} aria-pressed={t === tab} onClick={() => goTab(t)}>{label}{t === 'bank-transactions' && unclassified > 0 && <span className="nav-badge" title={`${unclassified} 筆銀行流水未分類`}>{unclassified}</span>}</button>)}
         </div>}
         {data && tab === 'more' && <More
           who={<>{avatar}<div><strong>{user ? user.name : '本機模式'}</strong><span className="muted small">{user ? user.email : '資料只存在這個瀏覽器'}</span></div>{syncPill}</>}
@@ -877,11 +885,27 @@ export default function App() {
         {data && tab === 'cashflow' && (
           <Cashflow
             data={data}
-            months={ledgerMonths}
             onChange={update}
             busy={busy}
+            dirty={dirty}
+            sessionIdentity={sessionVersion.current}
+            captureReport={() => {
+              const snapshot = saved.current, session = sessionVersion.current, edit = editVersion.current, selection = restoreSelection.current, ledger = driveState.current
+              const isCurrent = () => !!snapshot && saved.current === snapshot && session === sessionVersion.current && edit === editVersion.current && selection === restoreSelection.current && !savingRef.current && !dirtyRef.current && driveState.current === ledger && (localMode.current || !ledger || missingParts(ledger, snapshot, 'ledger').length === 0)
+              if (!snapshot || !isCurrent()) throw new Error('請先載入完整明細並儲存變更。')
+              return { data: snapshot, isCurrent }
+            }}
+            captureReviewGuard={() => {
+              const session = sessionVersion.current, edit = editVersion.current, selection = restoreSelection.current
+              return () => session === sessionVersion.current && edit === editVersion.current && selection === restoreSelection.current && !savingRef.current
+            }}
+            months={ledgerMonths}
+            readiness={!missing('ledger') ? 'ready' : groupLoad.ledger === 'loading' ? 'loading' : groupLoad.ledger ? 'error' : 'not-loaded'}
+            ledgerError={groupLoad.ledger && groupLoad.ledger !== 'loading' ? groupLoad.ledger : undefined}
+            onRetryLedger={() => void loadGroup('ledger')}
             onGoExpenses={() => go({ tab: 'expenses' })}
             onGoBankTransactions={() => go({ tab: 'bank-transactions' })}
+            onImport={() => goImport('expenses', true, false)}
           />
         )}
         {data && route.tab === 'history' && missing('history') && waiting('history')}
@@ -907,8 +931,10 @@ export default function App() {
         {data && tab === 'liabilities' && <Liabilities data={data} onChange={update} />}
         {data && tab === 'expenses' && missing('ledger') && waiting('ledger')}
         {data && tab === 'bank-transactions' && !bankShown && waiting('ledger', ledgerWanted)}
-        {data && tab === 'expenses' && !missing('ledger') && <Expenses key={local?'local':user?.sub} passwordScope={local?'local':user?`google:${user.sub}`:undefined} data={data} onChange={update} busy={busy} />}
-        {data && tab === 'bank-transactions' && bankShown && <BankTransactions key={local?'local':user?.sub} passwordScope={local?'local':user?`google:${user.sub}`:undefined} data={data} onChange={update} busy={busy} historyReady={!missing('history')} historyStatus={groupLoad.history} onLoadHistory={()=>void loadGroup('history')}
+        {data && tab === 'expenses' && !missing('ledger') && <Expenses recordId={route.tab==='expenses'?route.recordId:undefined} returnTo={route.tab==='expenses'?route.returnTo:undefined} key={`${local?'local':user?.sub}:${route.recordId??''}`}  passwordScope={local?'local':user?`google:${user.sub}`:undefined} data={data} onChange={update} busy={busy}
+          importing={route.tab === 'expenses' && !!route.importing} onImporting={(open) => goImport('expenses', open)} onImportBank={() => goImport('bank-transactions')} />}
+        {data && tab === 'bank-transactions' && bankShown && <BankTransactions recordId={route.tab==='bank-transactions'?route.recordId:undefined} returnTo={route.tab==='bank-transactions'?route.returnTo:undefined} key={`${local?'local':user?.sub}:${route.recordId??''}`}  passwordScope={local?'local':user?`google:${user.sub}`:undefined} data={data} onChange={update} busy={busy} historyReady={!missing('history')} historyStatus={groupLoad.history} onLoadHistory={()=>void loadGroup('history')}
+          importing={route.tab === 'bank-transactions' && !!route.importing} onImporting={(open) => goImport('bank-transactions', open)} onImportCard={() => goImport('expenses')}
           ledger={ledger ? { ...ledger, status: groupLoad.ledger, onLoadEarlier: () => loadEarlier(ledger.next), onLoadAll: () => loadEarlier(''), onLoadMonth: (month) => void loadGroup('ledger', [ledgerPart(`${month}-01`)]) } : undefined} />}
         {data && tab === 'rates' && <Rates data={data} onChange={update} onRefresh={async () => void (await refreshRates(data))} error={ratesError} />}
       </main>

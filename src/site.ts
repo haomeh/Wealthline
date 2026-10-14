@@ -46,6 +46,10 @@ export function usePath(): string {
   return useSyncExternalStore(subscribe, () => window.location.pathname.replace(/\/+$/, '') || '/')
 }
 
+export function useRouteLocation(): string {
+  return useSyncExternalStore(subscribe, () => window.location.pathname + window.location.search)
+}
+
 export function usePage(): PageKey | null {
   const path = usePath()
   return (Object.keys(PAGES) as PageKey[]).find((k) => PAGES[k].path === path) ?? null
@@ -55,12 +59,12 @@ export function usePage(): PageKey | null {
 // entry is one of ours or a page from before the app was opened.
 const depth = (): number => (window.history.state as { depth?: number } | null)?.depth ?? 0
 
-export function navigate(to: string, { replace = false } = {}) {
-  if (to === window.location.pathname) return
-  if (replace) window.history.replaceState({ depth: depth() }, '', to)
-  else window.history.pushState({ depth: depth() + 1 }, '', to)
-  window.dispatchEvent(new PopStateEvent('popstate'))
-  window.scrollTo({ top: 0 })
+export function navigate(to: string, { replace = false, scroll = 'top', focus }: { replace?: boolean; scroll?: 'top' | 'preserve'; focus?: 'cashflow-records' } = {}) {
+  if (to === window.location.pathname + window.location.search) return
+  if (replace) window.history.replaceState({ depth: depth(), ...(focus && { focus }) }, '', to)
+  else window.history.pushState({ depth: depth() + 1, ...(focus && { focus }) }, '', to)
+  window.dispatchEvent(new window.PopStateEvent('popstate'))
+  if (scroll === 'top') window.scrollTo({ top: 0 })
 }
 
 // Whether the previous history entry is a page of this app.

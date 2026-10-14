@@ -1,3 +1,4 @@
+import type { ClassificationEvidence } from './cashflowEntries'
 import { EXPENSE_CATEGORIES, type ExpenseCategory, sha256 } from './expenses'
 import { normalizeBankText, protectBankText, type BankTextPrivacyContext } from './bankTextPrivacy'
 
@@ -107,19 +108,27 @@ export function bankCategoryRuleIndex(transaction: Pick<BankTransaction,'descrip
   const description = normalizeBankKeyword(transaction.description)
   return rules.findIndex(rule=>(rule.direction === undefined || rule.direction === transaction.direction) && description.includes(normalizeBankKeyword(rule.keyword)))
 }
-export function classifyBankTransaction(transaction: Pick<BankTransaction,'description'|'direction'|'classification'>, rules: readonly BankCategoryRule[] = []): Classification {
-  if (transaction.classification !== undefined) return parseBankClassification(transaction.classification)
+const BUILTIN_BANK_RULES: {direction: 'credit' | 'debit'; pattern: RegExp; classification: Classification}[] = [
+  {direction:'credit',pattern:/薪資入帳|薪資轉入|薪資|\bSALARY\b|\bPAYROLL\b/,classification:{kind:'income',category:'薪資'}},
+  {direction:'credit',pattern:/存款利息|利息入帳|\bINTEREST (?:CREDIT|PAID)\b/,classification:{kind:'income',category:'利息'}},
+  {direction:'credit',pattern:/股利入帳|現金股利|\bDIVIDEND\b/,classification:{kind:'income',category:'股利'}},
+  {direction:'debit',pattern:/信用卡繳款|繳信用卡款|\bCREDIT CARD PAYMENT\b/,classification:{kind:'excluded',reason:'信用卡繳款'}},
+]
+export function bankClassificationEvidence(transaction: Pick<BankTransaction,'description'|'direction'|'classification'>, rules: readonly BankCategoryRule[] = []): {classification: Classification; evidence: ClassificationEvidence} {
+  if (transaction.classification !== undefined) return {classification:parseBankClassification(transaction.classification),evidence:{basis:'manual'}}
   const rule = rules[bankCategoryRuleIndex(transaction,rules)]
-  if (rule) return parseBankClassification(rule.target)
+  if (rule) return {classification:parseBankClassification(rule.target),evidence:{basis:'custom-rule',rule:{keyword:rule.keyword,...(rule.direction !== undefined && {direction:rule.direction})}}}
   const description = normalizeBankKeyword(transaction.description)
-  if (transaction.direction === 'credit') {
-    if (/薪資入帳|薪資轉入|薪資|\bSALARY\b|\bPAYROLL\b/.test(description)) return {kind:'income',category:'薪資'}
-    if (/存款利息|利息入帳|\bINTEREST (?:CREDIT|PAID)\b/.test(description)) return {kind:'income',category:'利息'}
-    if (/股利入帳|現金股利|\bDIVIDEND\b/.test(description)) return {kind:'income',category:'股利'}
+  for (const builtin of BUILTIN_BANK_RULES) {
+    const match = builtin.direction === transaction.direction && description.match(builtin.pattern)
+    if (match) return {classification:{...builtin.classification},evidence:{basis:'builtin',rule:{keyword:match[0],direction:builtin.direction}}}
   }
-  if (transaction.direction === 'debit' && /信用卡繳款|繳信用卡款|\bCREDIT CARD PAYMENT\b/.test(description)) return {kind:'excluded',reason:'信用卡繳款'}
-  return {kind:'pending'}
+  return {classification:{kind:'pending'},evidence:{basis:'unclassified'}}
 }
+export function classifyBankTransaction(transaction: Pick<BankTransaction,'description'|'direction'|'classification'>, rules: readonly BankCategoryRule[] = []): Classification {
+  return bankClassificationEvidence(transaction,rules).classification
+}
+
 const signature = (row: BankTransactionRow, accountId:string): string => JSON.stringify([accountId,row.date,normalizeBankKeyword(row.description),row.currency,row.direction,row.amount])
 const hashKey = async (parts: unknown[]): Promise<string> => 'bank-v1:' + await sha256(new TextEncoder().encode(JSON.stringify(['bank-v1',...parts])))
 // Transient, bounded provenance evidence for prepared sources, never serialized.

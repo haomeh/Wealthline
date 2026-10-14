@@ -161,3 +161,36 @@ test('ledger edits keep every record, validate, and raise the data version', () 
   assert.equal(edits.saveExpense(data, { ...card, category: '交通' }).expenses[0].category, '交通')
   assert.equal(edits.removeExpense(data, 'card1').expenses.length, 0)
 })
+
+
+test('inline category editing preserves v16 evidence and query, updates filtered rows, and makes its review stale', async () => {
+  const {cashflowEntries} = await server.ssrLoadModule('/src/cashflowEntries.ts')
+  const {reviewFingerprint,monthlyReviewState} = await server.ssrLoadModule('/src/monthlyReviewState.ts')
+  const data = baseData()
+  data.version = 16
+  data.expenses = [{...card,sourceKey:'a'.repeat(64),importKey:'b'.repeat(64)}]
+  const source = {kind:'card',card:'Card'}
+  const review = {month,expectedSources:[source,{kind:'bank',accountId:'main'}],confirmations:[]}
+  const entries = d=>cashflowEntries({expenses:d.expenses,bankTransactions:d.bankTransactions,expenseRules:d.expenseCategoryRules,bankRules:d.bankCategoryRules})
+  review.confirmations.push({source,decision:'reviewed',confirmedAt:new Date().toISOString(),fingerprint:await reviewFingerprint(entries(data),review,source,{main:'Main'}),exceptionNote:'Synthetic unclassified purchase reviewed'})
+  data.monthlyReviews = [review]
+  window.history.replaceState({},'',`/cashflow?month=${month}&metric=consumption&category=unclassified&source=card`)
+  const location = window.location.search
+  const host = await open(data)
+  assert.equal(document.querySelectorAll('[data-entry]').length,1)
+  assert.ok(document.querySelector('[data-entry="card:card1"] button'), 'source navigation remains available beside inline editing')
+  await click(buttonLabelled(/^編輯消費 .*ZZZ商店/))
+  await choose(document.querySelector('form.panel select'),'購物')
+  await click([...document.querySelectorAll('form.panel button')].find(b=>b.textContent==='套用修改'))
+  await wait(60)
+  const next = host.data()
+  assert.equal(window.location.search,location)
+  assert.equal(document.querySelectorAll('[data-entry]').length,0, 'edited row no longer matches unclassified filter')
+  assert.equal(next.version,16)
+  assert.equal(next.expenses[0].sourceKey,'a'.repeat(64))
+  assert.equal(next.expenses[0].importKey,'b'.repeat(64))
+  assert.deepEqual(next.monthlyReviews,data.monthlyReviews,'keep old confirmation for stale-state evidence')
+  const state = await monthlyReviewState(entries(next),review,`${month}-28`,{main:'Main'})
+  assert.equal(state.status,'stale')
+  assert.equal(state.sources.find(r=>r.source.kind==='card').current,false)
+})

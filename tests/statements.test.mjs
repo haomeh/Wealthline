@@ -3,6 +3,8 @@ import { before, after, test } from 'node:test'
 import { createServer } from 'vite'
 import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
+import { compact } from './fixtures/bank-statements/layouts.mjs'
+import { observedFubon } from './fixtures/bank-statements/fragmented.mjs'
 
 let server, statements, expenses, model, history, saveState
 before(async () => {
@@ -129,6 +131,22 @@ test('Fubon ROC posting columns and E.SUN original amounts use the final billed 
     '11/05 感謝您辦理自動轉帳繳款 TWD -900'],'2025-11','USD','玉山信用卡.pdf')
   assert.deepEqual(esun.rows,[{date:'2025-11-01',description:'合成海外商店',amount:320,currency:'TWD'},
     {date:'2025-11-03',description:'合成退款',amount:-100,currency:'TWD'}])
+})
+
+test('Fubon and E.SUN bank-account rows fed to the card parser are skipped, not read as spending',()=>{
+  const bankLines=(pages,edit=i=>i)=>statements.textLines(pages[0].items.map(edit).filter(Boolean).map(i=>({str:i.text,transform:[1,0,0,1,i.x,i.y],width:i.width,height:i.height})))
+  // Rows after the first omit the account column, so the date leads the line. Repayment wording is replaced so the bare-column rule is what is tested.
+  const dateFirst=i=>i.text==='8800002222'?null:{...i,text:i.text.replace('信用卡繳款','Example outgoing')}
+  const fubonCredit='2031/04/08 Example refund 99000033334444 20.50 120.50'
+  const fubonDebit='2031/04/08 Example outgoing Order 123456789012 33.00 99000033334444 999999.99'
+  const esunDebit='120/04/08 Example outgoing Order 123456789012 33.00 999999.99'
+  const fubon=[...bankLines(observedFubon()),...bankLines(compact('fubon'),dateFirst)],esun=bankLines(compact('esun'),dateFirst)
+  assert.ok(fubon.includes(fubonCredit) && fubon.includes(fubonDebit) && esun.includes(esunDebit))
+  for(const [lines,name,rows] of [[fubon,'富邦',[fubonCredit,fubonDebit]],[esun,'玉山',[esunDebit]]]) for(const file of [`${name}.pdf`,name]) {
+    const result=statements.parseStatement(lines,'2031-04','TWD',file)
+    assert.deepEqual(result.rows,[])
+    for(const line of rows) assert.ok(result.skipped.includes(line))
+  }
 })
 
 test('HSBC rows whose merchant image could not be read keep date and amount with a blank merchant to fill in',async()=>{

@@ -3288,7 +3288,7 @@ dialog.expense-rule-dialog { max-width: 440px; }
 /* Wraps the page so an open record editor can hide it without unmounting it. */
 .cashflow-body { display: contents; }
 .cashflow-body[hidden] { display: none; }
-.cashflow-page-controls { position: relative; display: flex; justify-content: flex-end; }
+.cashflow-page-controls { position: relative; display: flex; justify-content: flex-end; align-items: center; gap: 8px; }
 .cashflow-page-controls .cashflow-period { margin: 0; justify-content: flex-end; }
 .cashflow-page-controls .cashflow-stepper button { min-height: 40px; }
 .cashflow-page-controls .cashflow-period-trigger { font-size: 15px; }
@@ -3449,6 +3449,8 @@ button.pin-chip:hover:not(:disabled) { background: var(--ink); opacity: 0.85; }
 .import-steps { display: flex; gap: 6px; list-style: none; margin: 0 0 0 auto; padding: 0; font-size: 13px; }
 .import-steps li { padding: 6px 12px; border-radius: 999px; background: var(--surface-2); color: var(--ink-2); white-space: nowrap; }
 .import-steps li.on { background: var(--ink); color: var(--page); font-weight: 700; }
+/* The statement kind of the shared import screen: card or bank. */
+.import-kind { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; margin: 0 0 12px; }
 .statement-preview-layout { display: grid; grid-template-columns: minmax(0, 3fr) minmax(220px, 1fr); gap: 20px; align-items: start; }
 .statement-preview-main { min-width: 0; }
 .statement-preview-summary { position: sticky; top: 16px; display: grid; gap: 12px; }
@@ -3647,10 +3649,11 @@ button.pin-chip:hover:not(:disabled) { background: var(--ink); opacity: 0.85; }
   .add-holding .row > input { flex: 1 1 140px; min-width: 0; }
 
   /* 2d 收支: the title with a month pill; the range choice moves into the picker. */
-  .cashflow-page-head { position: relative; flex-direction: row; flex-wrap: nowrap; justify-content: space-between; align-items: center; }
+  .cashflow-page-head { position: relative; flex-direction: row; flex-wrap: wrap; justify-content: space-between; align-items: center; }
   .cashflow-page-head .cashflow-page-controls { position: static; }
   .cashflow-page-controls .cashflow-picker { left: 0; right: 0; width: auto; }
-  .cashflow-page-head h2 { font-size: 22px; }
+  .cashflow-page-head h2 { font-size: 22px; white-space: nowrap; }
+  .cashflow-page-controls > button { flex: none; min-height: 36px; padding: 6px 12px; font-size: 13px; white-space: nowrap; }
   .cashflow-page-controls .cashflow-period, .cashflow-page-controls .cashflow-stepper { width: auto; }
   .cashflow-page-controls .cashflow-step { display: none; }
   .cashflow-page-controls .cashflow-period-trigger, .cashflow-all-trigger { flex: none; gap: 6px; min-height: 36px; padding: 6px 12px; font-size: 13px; font-weight: 700; border: 0 !important; }
@@ -3798,3 +3801,24 @@ button.pin-chip:hover:not(:disabled) { background: var(--ink); opacity: 0.85; }
 @media (max-width: 640px) and (prefers-reduced-motion: reduce) {
   .detail-record.bank-record[data-swipe] > .detail-record-details, .detail-record.bank-record[data-swipe] > .detail-record-actions > button { transition: none; }
 }
+/* Query-backed cashflow evidence remains reachable on a narrow keyboard layout. */
+.cashflow-evidence > div { display: flex; flex-wrap: wrap; gap: .5rem; padding: .5rem 0; border-bottom: 1px solid var(--hairline); }
+.cashflow-records-tile h3:focus { outline: 2px solid var(--s2); outline-offset: 4px; }
+.cashflow-category-rows button { text-align: left; }
+
+.monthly-review { margin-block: 1rem; }
+.monthly-review fieldset { border: 1px solid var(--border); border-radius: 8px; padding: 1rem; }
+.review-source-choice { display: inline-flex; align-items: center; gap: .5rem; margin: .4rem 1rem .4rem 0; }
+.review-source-choice input { width: auto; flex-shrink: 0; }
+.monthly-review form { display: flex; flex-wrap: wrap; align-items: end; gap: .5rem; margin-block: .8rem; }
+.review-source-row { display: grid; gap: .6rem; border-top: 1px solid var(--border); padding-block: 1rem; margin-top: .8rem; }
+.review-source-row textarea { display: block; width: 100%; min-height: 5rem; }
+.review-source-row button { justify-self: start; }
+
+.monthly-report { display: grid; gap: 1rem; min-width: 0; }
+.monthly-report .row { flex-wrap: wrap; gap: .75rem; }
+.monthly-report p { overflow-wrap: anywhere; }
+.report-fingerprint { font-size: .75rem; color: var(--muted); }
+.report-entries article { border-top: 1px solid var(--line); padding: 1rem 0; }
+.report-entries h4 { margin: 0; overflow-wrap: anywhere; }
+.monthly-report input[type=file] { max-width: 100%; }

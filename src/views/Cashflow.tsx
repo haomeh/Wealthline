@@ -1,38 +1,85 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { parseCashflowQuery, cashflowQueryString, categoryToken, type CashflowQuery, type LedgerReadiness } from '../cashflowQuery'
+import { navigate, useRouteLocation } from '../site'
+import { MonthlyReport } from './MonthlyReport'
+import type { CaptureReport } from '../monthlyReportExport'
+import { MonthlyReviewPanel } from './MonthlyReviewPanel'
+import { CashflowRecords } from './CashflowRecords'
 import { cashflowSummary, type CashflowCurrencySummary, type CashflowMonthTotals, type CashflowPeriod } from '../cashflow'
 import { fmt } from '../format'
 import type { WealthData } from '../model'
-import type { BankTransaction, BankTransactionAccount } from '../bankTransactions'
 import { useCalendarNow } from '../useCalendarNow'
 import { cashflowColor } from '../cashflowColor'
 import { monthKey, useCashflowPeriod, useTwdCashflow, type CashflowPeriodState } from '../cashflowPeriod'
 import { CashflowPeriodControls } from './CashflowPeriodControls'
-import { ExpenseRecords } from './ExpenseRecords'
-import { BankRecord } from './BankTransactions'
-import { useRecordEditing, type RecordEditing } from './useRecordEditing'
+import { useRecordEditing } from './useRecordEditing'
 
 interface Props {
   data: WealthData
-  // When transactions are not loaded: their monthly totals (dataSummary.ts).
-  months?: CashflowMonthTotals[]
-  // Without onChange the record lists are read-only. With it, a row's category rule and details can be edited
-  // once every record is loaded; the changes are saved with the app's save bar.
   onChange?: (next: WealthData) => void
   busy?: boolean
+  dirty?: boolean
+  sessionIdentity?: number
+  captureReport?: CaptureReport
+  captureReviewGuard?: () => () => boolean
+  readiness?: LedgerReadiness
+  ledgerError?: string
+  onRetryLedger?: () => void
+  // When transactions are not loaded: their monthly totals (dataSummary.ts).
+  months?: CashflowMonthTotals[]
   onGoExpenses: () => void
   onGoBankTransactions: () => void
+  // Opens the statement import, the one entry for card and bank statements.
+  onImport: () => void
 }
 
 const signed = (n: number) => `${n > 0 ? '+' : ''}${fmt(n, 0)}`
 const count = (categories: { count: number }[]) => categories.reduce((n, c) => n + c.count, 0)
 
 // Card spending and bank rows as one set of income and spending, one period at a time.
-export function Cashflow({ data, months, onChange, busy = false, onGoExpenses, onGoBankTransactions }: Props) {
+export function Cashflow(props:Props) {
+ const location=useRouteLocation(),now=useCalendarNow()
+ const date=new Date(now),today=monthKey(date.getFullYear(),date.getMonth()+1)+'-'+String(date.getDate()).padStart(2,'0')
+ const parsed=parseCashflowQuery(location.includes('?')?location.slice(location.indexOf('?')):'').query
+ if(parsed.panel==='report'&&parsed.month)return <MonthlyReport key={`${parsed.month}:${props.sessionIdentity}`} data={props.data} month={parsed.month} today={today} readiness={props.readiness??(props.months?'loading':'ready')} dirty={props.dirty} busy={props.busy} sessionIdentity={props.sessionIdentity} captureReport={props.captureReport} onClose={()=>navigate('/cashflow'+cashflowQueryString({...parsed,panel:'records'}),{scroll:'preserve'})}/>
+ return <LiveCashflow {...props}/>
+}
+
+function LiveCashflow({ data, onChange, busy = false, dirty, sessionIdentity, captureReviewGuard, months, readiness = months ? 'loading' : 'ready', ledgerError, onRetryLedger, onGoExpenses, onGoBankTransactions, onImport }: Props) {
   const now = useCalendarNow()
-  const editing = useRecordEditing({ data, onChange, busy, loading: !!months })
+  const editing = useRecordEditing({ data, onChange, busy, loading: readiness !== 'ready' })
   const input = { expenses: data.expenses, expenseRules: data.expenseCategoryRules, bankTransactions: data.bankTransactions, bankRules: data.bankCategoryRules, months }
-  const period = useCashflowPeriod(input, now)
-  const { rawGroups, groups, needsFx, loading, error, retry } = useTwdCashflow(input, period.endMonth, period.period, period.today)
+  const localPeriod = useCashflowPeriod(input, now)
+  const location = useRouteLocation()
+  const parsed = parseCashflowQuery(location.includes('?') ? location.slice(location.indexOf('?')) : '')
+  const currentMonth=monthKey(localPeriod.date.getFullYear(),localPeriod.date.getMonth()+1)
+  const defaultMonth=localPeriod.recordedMonths.has(currentMonth)?currentMonth:localPeriod.latestMonth??currentMonth
+  const query = {...parsed.query, ...(parsed.query.range==='month'&&!parsed.query.month ? {month:defaultMonth}: {})}
+  const [corrected, setCorrected] = useState(parsed.corrected)
+  const [focusSelection, setFocusSelection] = useState(0)
+  const onQuery = (next:CashflowQuery, replace=false) => navigate('/cashflow'+cashflowQueryString(next),{replace,scroll:'preserve'})
+  useEffect(()=>{
+    const notice=()=>{if(window.location.pathname==='/cashflow' && parseCashflowQuery(window.location.search).corrected)setCorrected(true)}
+    window.addEventListener('popstate',notice)
+    return ()=>window.removeEventListener('popstate',notice)
+  },[])
+  useEffect(()=>{
+    if(window.location.pathname!=='/cashflow')return
+    if(parsed.corrected || (!parsed.query.month && parsed.query.range==='month' && (readiness==='ready'||!!months))) navigate('/cashflow'+cashflowQueryString(query),{replace:true,scroll:'preserve'})
+  },[location, readiness, months, defaultMonth]) // eslint-disable-line react-hooks/exhaustive-deps
+  // A year or 全部期間 URL names no month: the last month chosen stays in the local selection.
+  const selection = {range:query.range,year:query.year??(query.month?Number(query.month.slice(0,4)):localPeriod.selection.year),month:query.month?Number(query.month.slice(5,7)):localPeriod.selection.month}
+  const choose = (next:CashflowQuery)=>{setFocusSelection(n=>n+1);onQuery(next)}
+  const period:CashflowPeriodState = {...localPeriod,selection,isCurrentMonth:query.range==='month'&&query.month===currentMonth,endMonth:monthKey(selection.year,selection.range==='year'?12:selection.month),period:selection.range==='all'?'all':selection.range==='year'?12:1,label:selection.range==='all'?'全部期間':`${selection.year} 年${selection.range==='month'?` ${selection.month} 月`:''}`,setSelection: action=>{
+    const next=typeof action==='function'?action(selection):action
+    localPeriod.setSelection(next)
+    onQuery({...query,range:next.range,month:next.range==='month'?monthKey(next.year,next.month):undefined,year:next.range==='year'?next.year:undefined,panel:'records',page:1})
+  },showMonth: month=>onQuery({...query,range:'month',month,year:undefined,panel:'records',page:1})}
+  // 核對 and 報表 are per month: in a year, its last recorded month up to this one.
+  const yearMonths=localPeriod.monthList.filter(m=>m.startsWith(period.endMonth.slice(0,5))&&m<=currentMonth).sort()
+  const panelMonth=query.range==='month'?query.month:query.range==='year'?yearMonths.at(-1)??(period.endMonth<currentMonth?period.endMonth:currentMonth):period.endMonth
+  const selectMetric=(metric:CashflowQuery['metric'], category?:string)=>choose({...query,metric,category,panel:'records',page:1})
+  const { rawGroups, groups, fx, needsFx, loading, error, retry } = useTwdCashflow(input, period.endMonth, period.period, period.today)
   const trend = trendWindow(period)
   const bars = useTwdCashflow(input, trend.end, trend.period, period.today)
   // The chosen month is one of the twelve already converted for the bars, so picking a bar swaps the numbers
@@ -55,13 +102,18 @@ export function Cashflow({ data, months, onChange, busy = false, onGoExpenses, o
   return <>
     {editing.editor}{editing.dialogs}
     <div className="cashflow-body" hidden={editing.editing}>
+    {corrected && <p role="status" className="notice">網址篩選無效，已還原為安全的未篩選範圍。</p>}
+    {editing.error && <p role="alert">{editing.error}</p>}
     <div className="page-head cashflow-page-head">
       <h2>收支總覽</h2>
-      {!empty && <div className="cashflow-page-controls"><CashflowPeriodControls state={period} /></div>}
+      <div className="cashflow-page-controls">{!empty && <button onClick={onImport}>匯入帳單</button>}<CashflowPeriodControls state={period} /></div>
     </div>
+    <div className="row"><button aria-pressed={query.panel === 'records'} onClick={() => onQuery({...query,panel:'records'})}>收支明細</button><button aria-pressed={query.panel === 'review'} onClick={() => onQuery({...query,range:'month',month:panelMonth,year:undefined,panel:'review',page:1})}>{query.range === 'month' ? '每月核對' : `核對 ${panelMonth}`}</button><button onClick={()=>onQuery({...query,range:'month',month:panelMonth,year:undefined,panel:'report',page:1})}>每月報表</button></div>
+    {query.panel === 'review' && query.month && <MonthlyReviewPanel key={`${query.month}:${sessionIdentity}`} data={data} month={query.month} today={period.today} readiness={readiness} onChange={onChange} busy={busy} dirty={dirty} sessionIdentity={sessionIdentity} captureReviewGuard={captureReviewGuard} onUnclassified={source => choose({...query,panel:'records',source,metric:'all',category:'unclassified',page:1})} />}
+    {empty && readiness!=='ready' && <div role={readiness==='error'?'alert':'status'}>{readiness==='error' ? <>{ledgerError || '無法載入明細'}<button onClick={onRetryLedger}>重試明細</button></> : '正在載入明細…'}</div>}
     {empty ? <section className="panel empty">
-      <p className="muted">還沒有收支紀錄。匯入信用卡帳單或銀行流水後，這裡會合併成同一套收支。</p>
-      <div className="row center"><button className="primary" onClick={onGoExpenses}>匯入信用卡帳單</button><button onClick={onGoBankTransactions}>匯入銀行流水</button></div>
+      <p className="muted">還沒有收支紀錄。匯入信用卡帳單或銀行帳單後，這裡會合併成同一套收支。</p>
+      <div className="row center"><button className="primary" onClick={onImport}>匯入帳單</button></div>
     </section> : <>
       {converting && <p role="status" className="notice">正在換算每月匯率…</p>}
       {failed && <div role="alert" className="notice"><p>無法完成 TWD 換算：{(!shown && needsFx && error) || bars.error}。未顯示部分合計。</p><button onClick={() => { retry(); bars.retry() }}>重試匯率</button></div>}
@@ -72,9 +124,9 @@ export function Cashflow({ data, months, onChange, busy = false, onGoExpenses, o
         {shown && <>
           <section className="panel span-2 cashflow-phone-summary mobile-only" aria-label="收支摘要">
             <span className="muted">收支差額 · TWD</span>
-            <strong className={`num-serif ${shown.difference >= 0 ? 'up' : 'down'}`}>{signed(shown.difference)}</strong>
+            <strong className={`num-serif ${shown.difference >= 0 ? 'up' : 'down'}`}><button disabled={stale} onClick={()=>selectMetric('difference')}>{signed(shown.difference)}</button></strong>
             {([['收入', shown.income, 'var(--s2)'], ['消費', shown.consumption, 'var(--s1)']] as const).map(([label, value, color]) => <div className="cashflow-hbar" key={label}>
-              <span>{label}</span>
+              <button disabled={stale} onClick={()=>selectMetric(label==='收入'?'income':'consumption')}>{label}</button>
               <span className="cashflow-hbar-track"><i style={{ width: `${Math.max(2, Math.max(0, value) / Math.max(shown.income, shown.consumption, 1) * 100)}%`, background: color }} /></span>
               <span className="num-serif">{fmt(value, 0)}</span>
             </div>)}
@@ -82,17 +134,17 @@ export function Cashflow({ data, months, onChange, busy = false, onGoExpenses, o
           </section>
           <section className="panel deep tile-stat desktop-only" aria-label="收支差額">
             <span>收支差額 · TWD</span>
-            <strong>{signed(shown.difference)}</strong>
+            <button disabled={stale} onClick={()=>selectMetric('difference')}><strong>{signed(shown.difference)}</strong></button>
             <small>收入 − 實際消費；不是帳戶餘額或淨資產</small>
           </section>
           <section className="panel tile-stat desktop-only" aria-label="收入">
             <span>收入</span>
-            <strong>{fmt(shown.income, 0)}</strong>
+            <button disabled={stale} onClick={()=>selectMetric('income')}><strong>{fmt(shown.income, 0)}</strong></button>
             <small>銀行流水 {count(shown.incomeCategories)} 筆</small>
           </section>
           <section className="panel tile-stat desktop-only" aria-label="實際消費">
             <span>實際消費</span>
-            <strong>{fmt(shown.consumption, 0)}</strong>
+            <button disabled={stale} onClick={()=>selectMetric('consumption')}><strong>{fmt(shown.consumption, 0)}</strong></button>
             <small>信用卡 {shown.coverage.cardCount} 筆 · 銀行 {Math.max(0, count(shown.consumptionCategories) - shown.coverage.cardCount)} 筆</small>
           </section>
           {shown.pending.count > 0 ? <section className="panel warn tile-stat cashflow-pending-tile" aria-label="未分類">
@@ -114,14 +166,13 @@ export function Cashflow({ data, months, onChange, busy = false, onGoExpenses, o
         {shown && <>
           <section className="panel cashflow-categories-tile" aria-label="消費分類">
             <h3>{period.label}消費分類</h3>
-            <CategoryList categories={shown.consumptionCategories} />
-            {shown.incomeCategories.length > 0 && <details className="cashflow-income-details"><summary>收入分類</summary><CategoryList categories={shown.incomeCategories} income /></details>}
+            <CategoryList categories={shown.consumptionCategories} onSelect={c=>{if(!stale)selectMetric('consumption',categoryToken(c))}} />
+            {shown.incomeCategories.length > 0 && <details className="cashflow-income-details"><summary>收入分類</summary><CategoryList categories={shown.incomeCategories} income onSelect={c=>{if(!stale)selectMetric('income',categoryToken(c))}} /></details>}
           </section>
 
-          {/* Keyed by the selection so the open year and month reset when it changes. */}
-          <RecordsTile key={period.label} period={period} data={data} loading={!!months} editing={editing} onGoExpenses={onGoExpenses} onGoBankTransactions={onGoBankTransactions} />
         </>}
       </div>}
+      <CashflowRecords editing={editing} query={query} fx={fx} readiness={readiness} ledgerError={ledgerError} onRetry={onRetryLedger} onQuery={onQuery} focusSelection={focusSelection} period={period} data={data} loading={readiness!=='ready'} onGoExpenses={onGoExpenses} onGoBankTransactions={onGoBankTransactions} />
       {shown?.investmentRecovery.hasRecords && <p className="notice small" role="note">投資回收款：可能包含投入本金，不代表投資收益</p>}
       <p className="cashflow-footnote muted small">依已匯入紀錄，不代表完整月份。{period.isCurrentMonth ? '本月尚未結束。' : ''}金額統一換算 TWD，依各月月底已完成匯率；本月採最新已完成匯率（最多回溯 7 日）。</p>
     </>}
@@ -142,79 +193,6 @@ function monthOf(year: CashflowCurrencySummary | undefined, month: string): Cash
   if (!year || !point || point.income === null || point.consumption === null || point.difference === null) return undefined
   const { income, consumption, difference, incomeCategories, consumptionCategories, excluded, exclusions, pending, investmentRecovery, coverage } = point
   return cashflowSummary({ months: [{ currency: year.currency, month, coverage, totals: { income, consumption, difference, incomeCategories, consumptionCategories, excluded, exclusions, pending, investmentRecovery } }] }, month, 1)[0]
-}
-
-function bankRecordGroups(rows: readonly BankTransaction[], accounts: readonly BankTransactionAccount[]) {
-  const label = (id: string) => accounts.find((a) => a.id === id)?.label ?? '未知帳戶'
-  const groups = new Map<string, { key: string; date: string; account: string; rows: BankTransaction[] }>()
-  for (const row of [...rows].sort((a, b) => b.date.localeCompare(a.date))) {
-    const key = JSON.stringify([row.date, row.accountId])
-    const group = groups.get(key) ?? { key, date: row.date, account: label(row.accountId), rows: [] }
-    group.rows.push(row)
-    groups.set(key, group)
-  }
-  return [...groups.values()]
-}
-
-// The records behind the totals, listed under the tiles: the chosen month, or each month of the year,
-// one open at a time; 全部期間 groups the months by year, the latest year open at first.
-function RecordsTile({ period, data, loading, editing, onGoExpenses, onGoBankTransactions }: { period: CashflowPeriodState; data: WealthData; loading: boolean; editing: RecordEditing; onGoExpenses: () => void; onGoBankTransactions: () => void }) {
-  const { range, year } = period.selection
-  const yearPrefix = `${String(year).padStart(4, '0')}-`
-  const recordMonths = range === 'month' ? [period.endMonth] : period.monthList.filter((m) => range === 'all' || m.startsWith(yearPrefix))
-  const recordYears = [...new Set(recordMonths.map((m) => m.slice(0, 4)))]
-  const [openMonth, setOpenMonth] = useState('')
-  const [openYear, setOpenYear] = useState<string | null>(null)
-  const count = (prefix: string) => loading ? null : <span className="muted small">信用卡 {(data.expenses ?? []).filter((e) => e.date.startsWith(prefix)).length} 筆 · 銀行 {(data.bankTransactions ?? []).filter((t) => t.date.startsWith(prefix)).length} 筆</span>
-  const records = (month: string) => <MonthRecords month={month} data={data} loading={loading} editing={editing} onGoExpenses={onGoExpenses} onGoBankTransactions={onGoBankTransactions} />
-  return <section className="panel span-4 cashflow-records-tile" aria-label={`${period.label}明細`}>
-    {editing.error && <p role="alert" className="banner error">{editing.error}</p>}
-    {editing.on && <><p className="muted small">每筆明細都能改分類或編輯；修改後請儲存變更。</p><p className="bank-swipe-hint muted small">向左滑一筆銀行流水可編輯或設定分類。</p></>}
-    {range === 'month' ? records(period.endMonth) : recordYears.map((y) => {
-      const yearOpen = range === 'year' || (openYear ?? recordYears[0]) === y
-      return <div key={y} className="cashflow-year-records">
-        {range === 'all' && <button className="cashflow-month-toggle cashflow-year-toggle" aria-expanded={yearOpen} onClick={() => setOpenYear(yearOpen ? '' : y)}>
-          <strong>{Number(y)} 年</strong><span className="muted small">{recordMonths.filter((m) => m.startsWith(y)).length} 個月有紀錄</span>
-        </button>}
-        {yearOpen && recordMonths.filter((m) => m.startsWith(y)).map((m) => {
-          const open = openMonth === m
-          return <div key={m} className="cashflow-month-records">
-            <button className="cashflow-month-toggle" aria-expanded={open} onClick={() => setOpenMonth(open ? '' : m)}><strong>{Number(m.slice(5, 7))} 月</strong>{count(m)}</button>
-            {open && records(m)}
-          </div>
-        })}
-      </div>
-    })}
-  </section>
-}
-
-// One month's card and bank records, each behind a disclosure.
-function MonthRecords({ month, data, loading, editing, onGoExpenses, onGoBankTransactions }: { month: string; data: WealthData; loading: boolean; editing: RecordEditing; onGoExpenses: () => void; onGoBankTransactions: () => void }) {
-  const cardRows = (data.expenses ?? []).filter((e) => e.date.startsWith(month))
-  const bankGroups = bankRecordGroups((data.bankTransactions ?? []).filter((t) => t.date.startsWith(month)), data.bankTransactionAccounts ?? [])
-  const bankCount = bankGroups.reduce((n, g) => n + g.rows.length, 0)
-  const count = (n: number) => loading ? '' : ` · ${n} 筆`
-  return <>
-    <details className="cashflow-records">
-      <summary><strong>信用卡消費{count(cardRows.length)}</strong><span className="muted small">依原交易日期；退款扣除消費</span></summary>
-      {loading ? <p className="muted small">正在載入明細…</p> : cardRows.length
-        ? <ExpenseRecords expenses={cardRows} rules={data.expenseCategoryRules ?? []} showCategory={editing.on} busy={editing.busy}
-          onEdit={editing.on ? editing.editExpense : undefined} onRule={editing.on ? editing.editExpenseRule : undefined} />
-        : <p className="muted small">這個月沒有信用卡消費</p>}
-      <button className="link" onClick={onGoExpenses}>前往信用卡消費頁編輯 →</button>
-    </details>
-    <details className="cashflow-records">
-      <summary><strong>銀行流水{count(bankCount)}</strong><span className="muted small">依銀行記帳日；不計收支的只列示</span></summary>
-      {loading ? <p className="muted small">正在載入明細…</p> : bankGroups.length
-        ? <div className="bank-records record-groups">{bankGroups.map((g) => <section key={g.key} className="bank-record-group">
-          <header className="record-group-head"><time dateTime={g.date}>{g.date}</time><span title={g.account}>{g.account}</span></header>
-          {g.rows.map((row) => <BankRecord key={row.id} row={row} account={g.account} rules={data.bankCategoryRules ?? []} busy={editing.busy} showTag={editing.on}
-            {...(editing.on ? { revealed: editing.revealed === row.id, onReveal: (open: boolean) => editing.setRevealed(open ? row.id : null), onEdit: () => editing.editBank(row), onRule: () => editing.editBankRule(row) } : {})} />)}
-        </section>)}</div>
-        : <p className="muted small">這個月沒有銀行流水</p>}
-      <button className="link" onClick={onGoBankTransactions}>前往銀行流水頁編輯 →</button>
-    </details>
-  </>
 }
 
 function MonthBars({ group, selected, onSelect }: { group: CashflowCurrencySummary; selected: string; onSelect: (month: string) => void }) {
@@ -238,12 +216,12 @@ function MonthBars({ group, selected, onSelect }: { group: CashflowCurrencySumma
   </div>
 }
 
-function CategoryList({ categories, income = false }: { categories: CashflowCurrencySummary['consumptionCategories'] | CashflowCurrencySummary['incomeCategories']; income?: boolean }) {
+function CategoryList({ categories, income = false, onSelect }: { onSelect: (category:string)=>void; categories: CashflowCurrencySummary['consumptionCategories'] | CashflowCurrencySummary['incomeCategories']; income?: boolean }) {
   if (!categories.length) return <p className="muted small">沒有這類紀錄</p>
   return <ul className="cashflow-category-rows">
     {[...categories].sort((a, b) => b.net - a.net).map((c) => <li key={c.category}>
       <i aria-hidden style={{ background: cashflowColor(c.category, income) }} />
-      <span>{c.category}<small className="muted"> · {c.count} 筆</small></span>
+      <button onClick={()=>onSelect(c.category)}>{c.category}<small className="muted"> · {c.count} 筆</small></button>
       <span className="num-serif">{fmt(c.net, 0)}</span>
     </li>)}
   </ul>

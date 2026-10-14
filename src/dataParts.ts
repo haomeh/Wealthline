@@ -5,6 +5,8 @@
 // - snapshots and edit logs of earlier years go to one part file per year.
 // Reading joins them back into the one data shape the app uses (model.ts).
 
+import { dataVersion } from './dataVersion'
+import { parseMonthlyReviews } from './monthlyReview'
 import { localDate } from './history'
 import type { WealthData } from './model'
 
@@ -57,7 +59,8 @@ export function splitData(data: WealthData, datasetId: string, now: string, arch
   }
   // The main file keeps an empty list for each ledger the data has, so a ledger without records
   // still reads back as an empty list.
-  const main: Row = { ...data, version: 15, datasetId, history: { ...data.history, ...keep } }
+  const main: Row = { ...data, version: dataVersion(data, { minimumVersion: 15 }), datasetId, history: { ...data.history, ...keep },
+    ...(data.monthlyReviews !== undefined && { monthlyReviews: parseMonthlyReviews(data.monthlyReviews) }) }
   for (const key of LEDGER_KEYS) {
     if (data[key]) main[key] = []
     else delete main[key]
