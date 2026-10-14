@@ -131,15 +131,19 @@ test('Fubon ROC posting columns and E.SUN original amounts use the final billed 
     {date:'2025-11-03',description:'合成退款',amount:-100,currency:'TWD'}])
 })
 
-test('HSBC unknown merchants and OCR I separators stay in skipped rows, not spending',()=>{
+test('HSBC rows whose merchant image could not be read keep date and amount with a blank merchant to fill in',async()=>{
   const lines=['04/01 04/02 1,200','04/03 04/04 USA USD 10.00 04/04 320',
     '04/05 04/06 I 80','04/07 04/08 | 100',
     '04/09 04/10 商家未能辨識（請對照帳單填寫；可能包含繳款） 200',
     '04/11 04/12 APPLE.COM/BILLITUNE 80']
   const result=statements.parseStatement(lines,'2026-04','TWD','HSBC信用卡.pdf')
-  assert.deepEqual(result.rows,[{date:'2026-04-11',description:'APPLE.COM/BILLITUNE',amount:80,currency:'TWD'}])
-  assert.deepEqual(result.sourceIndexes,[5])
-  assert.deepEqual(result.skipped,lines.slice(0,5))
+  assert.deepEqual(result.rows.map(r=>[r.date,r.description,r.amount]),[['2026-04-01','',1200],['2026-04-03','',320],['2026-04-05','',80],['2026-04-07','',100],['2026-04-11','APPLE.COM/BILLITUNE',80]])
+  assert.deepEqual(result.skipped,[lines[4]])
+  // A payment and a row without a posting date are still not spending; other issuers still skip a missing merchant.
+  assert.deepEqual(statements.parseStatement(['04/01 04/02 匯豐銀行自動扣款 -500','04/03 900'],'2026-04','TWD','HSBC').rows,[])
+  assert.deepEqual(statements.parseStatement(['玉山銀行','04/01 04/02 TWD 500'],'2026-04','TWD','玉山').rows,[])
+  // A blank merchant can never be imported as it is.
+  await assert.rejects(()=>expenses.prepareExpenses(result.rows.slice(0,1),'匯豐','a'.repeat(64)),/商家/)
 })
 
 test('unrecognized merchant labels cannot be confirmed even without a review flag',async()=>{
@@ -269,8 +273,10 @@ test('synthetic HSBC PDF preserves readable scope headings and excludes date-sha
   assert.ok(start>0 && end>start)
   const indices=extracted.flatMap((_,i)=>i>start && i<end?[i]:[])
   const parsed=statements.parseStatement(extracted,'2026-04','TWD','HSBC',indices)
-  assert.deepEqual(parsed.rows,[])
-  assert.ok([210,900,640,-2000].every(amount=>parsed.skipped.some(line=>line.replace(/,/g,'').endsWith(String(amount)))))
+  assert.deepEqual(parsed.rows.map(r=>[r.description,r.amount]),[['',210],['',900],['',640],['',-2000]])
+  // Rows without a readable merchant still get an OCR region.
+  const cell=(str,x)=>({str,width:20,height:8,transform:[1,0,0,1,x,600]})
+  assert.equal(statements.hsbcMerchantRegions([cell('04/01',45),cell('04/02',96),cell('1,200',549)]).length,1)
   const enriched=extracted.map(line=>statements.ocrMerchantLine(line,'SYNTHETIC SHOP',90))
   assert.deepEqual(statements.parseStatement(enriched,'2026-04','TWD','HSBC',indices).rows.map(r=>r.amount),[210,900,640,-2000])
   assert.equal(extracted.filter(l=>l.endsWith('999')).length,2)
@@ -287,7 +293,7 @@ test('multi-page HSBC fixture has a bankless continuation page with a readable t
     const second=statements.textLines((await (await pdf.getPage(2)).getTextContent()).items)
     assert.ok(second.some(l=>l.includes('消費日期') && l.includes('入帳日期')))
     assert.ok(!second.some(l=>/HSBC|匯豐/.test(l)))
-    assert.equal(statements.parseStatement(second,'2026-04','TWD','HSBC').rows.length,0)
+    assert.ok(statements.parseStatement(second,'2026-04','TWD','HSBC').rows.every(r=>r.description===''))
     const enriched=second.map(line=>statements.ocrMerchantLine(line,'SYNTHETIC SHOP',90))
     assert.equal(statements.parseStatement(enriched,'2026-04','TWD','HSBC').rows.length,4)
   } finally {await task.destroy()}

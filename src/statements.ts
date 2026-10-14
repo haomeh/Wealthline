@@ -73,7 +73,7 @@ export function taishinCardPage(items:unknown[], amountX?:number) {
 export function hsbcMerchantRegions(items:unknown[]) {
   return textRows(items).flatMap((row,index)=>{
     const line=row.items.map(i=>i.str).join(' ').replace(/\s+/g,' ').trim()
-    if(parseStatement([line],'2000-12','TWD','HSBC').rows.length || nonSpending.test(line)) return []
+    if(parseStatement([line],'2000-12','TWD','HSBC').rows.some(r=>r.description) || nonSpending.test(line)) return []
     const dates=row.items.filter(i=>/^\d{1,2}[/.-]\d{1,2}$/.test(i.str))
     if(dates.length < 2) return []
     const left=dates[1].x+dates[1].width+4
@@ -214,11 +214,11 @@ export function parseStatement(lines:string[], month:string, currency:string, fi
       description = description.replace(/\s\d{1,2}[/.-]\d{1,2}$/, '').trim()
     }
     if(bank === 'hsbc') description=stripMerchantBorders(description)
-    if(isUnrecognizedMerchant(description) || (bank === 'hsbc' && (!description || !/[\p{L}]/u.test(description) || /^[A-Z]{3}$/i.test(description)))) {
-      skipped.push(original);continue
-    }
+    // An HSBC merchant is an image: when OCR gives nothing usable, keep the dated amount with a blank merchant for the user to fill in.
+    if(bank === 'hsbc' && (isUnrecognizedMerchant(description) || !/[\p{L}]/u.test(description) || /^[A-Z]{3}$/i.test(description))) description=''
+    else if(isUnrecognizedMerchant(description)) {skipped.push(original);continue}
     // shortcut: unknown bank layouts require a single unambiguous amount; add verified layouts when samples are available.
-    if(!description || (!bank && /\s[+-]?\d[\d,.]*\s*$/.test(description))) {skipped.push(original);continue}
+    if((!description && bank !== 'hsbc') || (!bank && /\s[+-]?\d[\d,.]*\s*$/.test(description))) {skipped.push(original);continue}
     let amount = Number(amountMatch[1].replace(/[(),]/g,''))
     if(amountMatch[1].startsWith('(') || amountMatch[2]?.toUpperCase() === 'CR') amount = -Math.abs(amount)
     if(!Number.isFinite(amount)) {skipped.push(original);continue}
