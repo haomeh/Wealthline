@@ -1,7 +1,7 @@
 import { PasswordException } from 'pdfjs-dist/legacy/build/pdf.mjs'
 import { openStatementDocument } from './statementDocument'
 import { readStatementText } from './statementText'
-import { hsbcMerchantRegions, hsbcSgPage, hsbcTransactionBounds, ocrMerchantLine, statementMetadata, textLines, textRows } from './statements'
+import { hsbcMerchantRegions, hsbcSgPage, hsbcTransactionBounds, ocrMerchantLine, statementMetadata, taishinCardPage, textLines, textRows } from './statements'
 
 export async function readStatementPdf(bytes: Uint8Array, password:string | readonly string[], signal:AbortSignal, fileName = '', onProgress?:(message:string)=>void): Promise<{lines:string[];title:string;ocrUsed:boolean;ocrError?:string;transactionIndexes?:number[]}> {
   const task = openStatementDocument('credit-card',bytes,password)
@@ -17,7 +17,7 @@ export async function readStatementPdf(bytes: Uint8Array, password:string | read
     const title = typeof info?.Title === 'string' ? info.Title : ''
     let bank=statementMetadata([],title,fileName).bank
     const lines:string[] = [], transactionIndexes:number[] = []
-    let scoped=false,singapore=false
+    let scoped=false,singapore=false,taishinAmountX:number|undefined
     let ocrUsed=false,ocrError:string|undefined
     for(let i=1;i<=pdf.numPages;i++) {
       if(signal.aborted) throw new Error('已取消解析')
@@ -30,6 +30,12 @@ export async function readStatementPdf(bytes: Uint8Array, password:string | read
       singapore ||= pageInfo.currency === 'SGD'
       const sg=bank === '匯豐' ? hsbcSgPage(text.items) : undefined
       if(sg) {pageLines=sg.lines;allowed=sg.transactionIndexes;scoped=true}
+      else if(bank === '台新') {
+        // Pages without the transaction table (summary, notices) carry no transactions.
+        const taishin=taishinCardPage(text.items,taishinAmountX)
+        allowed=taishin?.transactionIndexes ?? [];scoped=true
+        if(taishin) {pageLines=taishin.lines;taishinAmountX=taishin.amountX}
+      }
       else if(bank === '匯豐' && singapore) {allowed=[];scoped=true}
       else if(bank === '匯豐') {
         allowed=[];scoped=true

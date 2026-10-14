@@ -11,9 +11,45 @@ test('closed Fubon TWD reopens validated foreign table on same or next page',()=
   const r=bank.parseBankStatement(p);assert.equal(r.status,'recognized');assert.equal(r.recognizedCount,2);assert.deepEqual(r.sections.map(s=>s.currency),['TWD','USD']);
  }
 })
-test('HSBC orphan narration after completed amount is warned, not attached to next undated row',()=>{
- const p=hsbc();p[0].items.push(item('First trailing detail',103,655),item('Second payment',103,640),right('7.00',482,640));
- const r=bank.parseBankStatement(p);assert.equal(r.status,'partial');assert.equal(r.recognizedCount,2);assert.equal(r.sections[0].rows[1].description,'Second payment');assert.ok(r.sections[0].warnings.some(w=>w.code==='ambiguous-trailing-narration'));
+test('Fubon month with only the opening balance is a proven empty month; a foreign interest row ignores its exchange rate',()=>{
+ const empty=[page(1,[...mast('台北富邦銀行'),item('2031/04/01 - 2031/04/30',35,795),item('TWD 交易明細',35,730),...compactHeader('fubon'),item('8800002222',23,680),item('2031/04/01',107,680),item('承轉結餘',170,680),right('669.00',581,680)])];
+ const none=bank.parseBankStatement(empty);assert.equal(none.status,'recognized');assert.equal(none.recognizedCount,0);assert.equal(none.sections[0].noTransactions,true);
+ // The same table cut by the page end may have lost rows: it is not a proven empty month.
+ const cut=[...structuredClone(empty),page(2,[item('2031/04/08',107,680),item('Payment',170,680),right('33.00',335,680)])];assert.notEqual(bank.parseBankStatement(cut).status,'recognized');
+ const p=compact('fubon');p[0].items.push(...compactHeader('fubon',600,true),item('8800002222',23,580),item('USD',100,580),item('2031/04/21',135,580),item('利息',191,580),right('31.497500',349,580),right('0.01',468,580),right('3.37',581,580));
+ const r=bank.parseBankStatement(p);assert.equal(r.status,'recognized');assert.deepEqual(r.sections[1].rows.map(x=>[x.currency,x.direction,x.amount]),[['USD','credit',0.01]])
+})
+test('E.SUN deposit ledger lists withdrawals and deposits of the labelled account and stops at the notice text',()=>{
+ const ledger=()=>[page(1,[item('2031年04月 綜 合 對 帳 單',413,796),item('對 帳 單 期 間 ：2031/04/01－2031/04/30',413,766)]),page(2,[item('臺幣活存交易明細',40,638),item('銀行帳號',35,615),item('8800002222***',80,615),
+  item('交易日期',35,596),item('摘要',118,596),item('提款',208,596),item('存款',293,596),item('轉入帳戶/備註',321,596),item('對方帳號',406,596),item('餘額',558,596),
+  item('120/04/02',35,577),item('網路非約轉帳',86,577,48),right('742.00',232,577),item('184947837',326,577),right('15,556.00',574,577),
+  item('120/04/03',35,557),item('ＡＴＭ跨行轉',86,557,48),right('20,000.00',317,557),right('35,556.00',574,557),
+  item('※提醒您，本行未委託外部行銷公司、顧問公司等行銷貸款業務，敬請您留意以防範詐騙事件發生。',29,496)])];
+ const r=bank.parseBankStatement(ledger());assert.equal(r.bank,'E.SUN');assert.equal(r.status,'recognized');assert.equal(r.sections[0].partial,false);
+ assert.deepEqual(r.sections[0].rows.map(x=>[x.date,x.currency,x.direction,x.amount,x.description]),[['2031-04-02','TWD','debit',742,'網路非約轉帳'],['2031-04-03','TWD','credit',20000,'ATM跨行轉']]);
+ const other=ledger();other[1].items.find(i=>i.text==='臺幣活存交易明細').text='其他明細';assert.equal(bank.parseBankStatement(other).status,'unsupported')
+})
+test('Fubon nano-invest trust statement: USD cash ledger with leading-dot cents, ended by the fee table',()=>{
+ for(const old of [false,true]){
+  const x=old?[153,355,444,532,408,496]:[177,396,460,535,436,501];
+  const p=[{page:1,width:595,height:842,items:[item('【奈米投】電子對帳單',248,741),item('存款收支明細表',264,317),item('120/11/01 ~ 120/11/30',242,304),item('幣別：USD',14,292),
+   item('年/月/日',14,280),item('摘要',x[0],280),item('支出',x[1],280),item('存入',x[2],280),item('結存',x[3],280),
+   item('120/11/01',14,269),item('申購款匯入',x[0],269),right('300.00',x[5],269),right('300.00',585,269),
+   item('120/11/02',14,259),item('付管理費',x[0],259),right('.25',x[4],259),right('299.75',585,259),
+   item('費用支付明細表',264,184),item('年/月/日',14,147),item('項目',251,147),item('幣別',393,147),item('金額',530,147),item('120/11/02',14,136),item('管理費',251,136),item('USD',393,136),right('.25',585,136)]}];
+  const r=bank.parseBankStatement(p);assert.equal(r.bank,'Fubon Nano');assert.equal(r.status,'recognized',String(old));
+  assert.deepEqual(r.sections[0].rows.map(v=>[v.date,v.currency,v.direction,v.amount,v.description]),[['2031-11-01','USD','credit',300,'申購款匯入'],['2031-11-02','USD','debit',0.25,'付管理費']])
+ }
+})
+test('HSBC prints the amount on the last line: narration after a completed row begins the next undated row',()=>{
+ for(const sg of [false,true]){
+  const p=hsbc(sg);p[0].items.push(item('Second payment line',103,655),item('Second ref detail',103,640),right('7.00',482,640));
+  const r=bank.parseBankStatement(p);assert.equal(r.status,'recognized');assert.equal(r.rejectedCount,0);
+  assert.deepEqual(r.sections[0].rows.map(row=>row.description),['Example payment Order 123456789012','Second payment line Second ref detail']);
+  assert.equal(r.sections[0].rows[1].date,r.sections[0].rows[0].date);assert.equal(r.sections[0].rows[1].amount,7);
+  // The undated row stays located at its amount line, as before its narration was owned.
+  assert.deepEqual(r.sections[0].rows.map(row=>row.rowKey),['row-4','row-7']);assert.equal('ambiguousNarration' in r.sections[0].rows[1],false)
+ }
 })
 test('validated activity-shaped footer row is warned rather than silently dropped',()=>{
  const p=hsbc();p[0].items.push(item('18/06/2031',53,90),item('Low payment',103,90),right('7.00',482,90));
@@ -178,27 +214,29 @@ test('explicit period metadata cannot override a conflicting printed E.SUN month
 })
 
 // Rereview P2-B / P3-C. Entirely synthetic narration and positions.
-const narration=r=>r.sections[0].rows.map(row=>row.ambiguousNarration)
-test('omitted-date multiline row keeps its amount line and exposes the unowned narration as a candidate on both neighbours',()=>{
- const p=hsbc();p[0].items.push(item('Second payment line',103,655),item('Second ref detail',103,640),right('7.00',482,640));
- const r=bank.parseBankStatement(p);assert.equal(r.status,'partial');assert.equal(r.recognizedCount,2);assert.equal(r.rejectedCount,1);
- assert.deepEqual(r.sections[0].rows.map(row=>row.description),['Example payment Order 123456789012','Second ref detail']);
- assert.deepEqual(narration(r),[{leading:[],trailing:['Second payment line']},{leading:['Second payment line'],trailing:[]}]);
- // Location identity of rows emitted before this fix must not move.
- assert.deepEqual(r.sections[0].rows.map(row=>row.rowKey),['row-4','row-7']);assert.equal(r.sections[0].rows[1].date,'2031-06-17');assert.equal(r.sections[0].rows[1].amount,7)
+test('HSBC Taiwan continues a section across pages through 本頁結餘/承上頁結餘, carrying date, currency and unfinished narration',()=>{
+ const heading=()=>[...mast('HSBC Taiwan'),item('外幣綜合存款',67,730),item('7700001111',276,730),...hsbcHeader(700)];
+ const first=page(1,[...heading(),item('新加坡幣',545,686),item('17/06/2031',53,675),item('承前結餘',103,675),right('0.00',573,675),
+  item('29/06/2031',53,660),item('GLOBAL TRANSFER',103,660),item('REF EB02',103,650),right('20,000.00',402,650),right('20,000.00',573,650),
+  item('至臺幣帳戶',103,640),item('本頁結餘',103,630),right('20,000.00',573,630),
+  // First-page footer text sits above the footer boundary, in the date and summary columns.
+  item('帳戶管理費說明',189,128),item('合 成 銀 行',50,121),item('本行各帳戶訂有帳戶管理費',189,121),item('重要事項',189,110)]);
+ const next=page(2,[...heading(),item('承上頁結餘',103,688),right('20,000.00',573,688),item('HIB transfer',103,678),item('REF YWC3',103,668),right('1,200.00',482,668),right('18,800.00',573,668),
+  item('結餘',103,658),right('18,800.00',573,658),item('交易總額',103,648),right('20,000.00',402,648),right('1,200.00',482,648),item('交易次數',103,638),right('1',402,638),right('1',482,638)]);
+ const r=bank.parseBankStatement([first,next]);assert.equal(r.status,'recognized');assert.equal(r.sections.length,1);assert.equal(r.sections[0].currency,'SGD');
+ assert.deepEqual(r.sections[0].rows.map(row=>[row.date,row.direction,row.amount,row.description,row.page]),[['2031-06-29','credit',20000,'GLOBAL TRANSFER REF EB02',1],['2031-06-29','debit',1200,'至臺幣帳戶 HIB transfer REF YWC3',2]]);
+ // A carried-forward balance followed by a page without the table is reported.
+ const notice=bank.parseBankStatement([first,page(2,[...mast('HSBC Taiwan'),item('通知事項',67,730)])]);assert.equal(notice.status,'partial');assert.ok(notice.sections[0].warnings.some(w=>w.code==='unproven-page-continuity'));
+ // Another account on the next page is not a continuation: its unlabelled table stays unsupported.
+ next.items.find(i=>i.text==='7700001111').text='7700009999';const other=bank.parseBankStatement([first,next]);
+ assert.equal(other.recognizedCount,1);assert.deepEqual(other.sections[0].warnings.map(w=>w.code).sort(),['unproven-page-continuity','unsupported-hsbc-tw-account'])
 })
-test('amount-only line after one unowned narration line still emits the second row with an empty summary awaiting review',()=>{
- const p=hsbc();p[0].items.push(item('Second payment',103,655),right('7.00',482,640));
- const r=bank.parseBankStatement(p);assert.equal(r.recognizedCount,2);assert.equal(r.rejectedCount,1);assert.equal(r.status,'partial');
- assert.deepEqual(r.sections[0].warnings.map(w=>w.code),['ambiguous-trailing-narration']);
- const second=r.sections[0].rows[1];assert.equal(second.description,'');assert.equal(second.direction,'debit');assert.equal(second.amount,7);assert.equal(second.date,'2031-06-17');
- assert.deepEqual(narration(r),[{leading:[],trailing:['Second payment']},{leading:['Second payment'],trailing:[]}])
-})
-test('narration candidates use the recognized-identifier privacy boundary and never reach a following dated row',()=>{
+test('HSBC narration that never reaches an amount is reported, not attached to the following dated row',()=>{
  const p=hsbc();p[0].items.push(item('Trailing ref 7700001111',103,655),item('18/06/2031',53,640),item('Dated payment',103,640),right('7.00',482,640));
- const r=bank.parseBankStatement(p);assert.equal(r.recognizedCount,2);assert.ok(!JSON.stringify(r).includes('7700001111'));
- assert.deepEqual(narration(r),[{leading:[],trailing:['Trailing ref [帳號已遮蔽]']},undefined]);assert.equal(r.sections[0].rows[1].description,'Dated payment')
- // Unambiguous rows carry no review metadata at all.
+ const r=bank.parseBankStatement(p);assert.equal(r.recognizedCount,2);assert.equal(r.status,'partial');assert.ok(!JSON.stringify(r).includes('7700001111'));
+ assert.deepEqual(r.sections[0].warnings.map(w=>w.code),['missing-explicit-amount']);assert.equal(r.sections[0].rows[1].description,'Dated payment')
+})
+test('unambiguous rows carry no review metadata',()=>{
  for(const sg of [false,true])assert.equal('ambiguousNarration' in bank.parseBankStatement(hsbc(sg)).sections[0].rows[0],false)
 })
 test('undated money in a validated wrapped table below the footer boundary warns; footer numbers and balances do not',()=>{
@@ -226,12 +264,12 @@ const dbsSg=()=>[
  ]},
  {page:3,width:594,height:792,items:[item('Disclosure',34,704),item('04/09/2031',45,600),item('Not an activity table',113,600),right('99.00',395,600)]}
 ]
-test('DBS Singapore validates own account and SGD table, separates money from balances, preserves wrapped narration for review',()=>{
+test('DBS Singapore validates own account and SGD table, separates money from balances, owns trailing narration without card numbers',()=>{
  const pages=dbsSg(),before=JSON.stringify(pages),r=bank.parseBankStatement(pages);
- assert.equal(r.bank,'DBS Singapore');assert.equal(r.status,'partial');assert.equal(r.recognizedCount,2);assert.equal(r.sections.length,1);
+ assert.equal(r.bank,'DBS Singapore');assert.equal(r.status,'recognized');assert.equal(r.recognizedCount,2);assert.equal(r.sections.length,1);
  assert.deepEqual(r.sections[0].rows.map(row=>[row.date,row.currency,row.direction,row.amount]),[['2031-09-02','SGD','credit',42.5],['2031-09-03','SGD','debit',12]]);
- assert.ok(r.sections[0].warnings.every(w=>w.code==='ambiguous-trailing-narration'));
- assert.equal(r.sections[0].rows[0].page,2);assert.match(r.sections[0].rows[0].ambiguousNarration.trailing.join(' '),/帳號已遮蔽/);assert.match(r.sections[0].rows[1].ambiguousNarration.trailing.join(' '),/VALUE DATE/);
+ assert.equal(r.sections[0].rows[0].page,2);assert.match(r.sections[0].rows[0].description,/^Example incoming .*帳號已遮蔽.*Reference/);assert.equal(r.sections[0].rows[1].description,'Example payment VALUE DATE : 03/09/2031');
+ const card=dbsSg();card[1].items.push(item('4628-0000-0000-0000 SI SGP',113,463),item('30/09/2031',45,440),right('987684.82',548,440));const c=bank.parseBankStatement(card);assert.equal(c.status,'recognized');assert.ok(!JSON.stringify(c).includes('4628'));
  assert.ok(!JSON.stringify(r).includes('271-000111-7'));assert.ok(!JSON.stringify(r).includes('987684.82'));assert.equal(JSON.stringify(pages),before);
  pages[1].items.reverse();assert.deepEqual(bank.parseBankStatement(pages),r);
 })
@@ -307,12 +345,11 @@ test('DBS closing total keeps a complete clean table recognized without a contin
  const p=dbsSgWithoutNarration();p[1].items.push(item('Total Balance Carried Forward in SGD:',113,122),right('12.00',395,122),right('42.50',474,122),right('987684.82',548,122));
  const r=bank.parseBankStatement(p);assert.equal(r.status,'recognized');assert.equal(r.recognizedCount,2);assert.equal(r.rejectedCount,0);
 })
-test('Currency-prefixed DBS narration stays a review candidate and never switches the table currency',()=>{
+test('Currency-prefixed DBS narration stays narration and never switches the table currency',()=>{
  for(const text of ['Currency: US DOLLAR','CURRENCY: SINGAPORE DOLLAR','Currency:']){
   const p=dbsSg();p[1].items.push(item(text,113,460));const r=bank.parseBankStatement(p);
   assert.equal(r.recognizedCount,2);assert.equal(r.sections.length,1);assert.equal(r.sections[0].currency,'SGD');
-  assert.ok(r.sections[0].rows[1].ambiguousNarration.trailing.includes(text));
-  assert.ok(r.sections[0].warnings.every(w=>w.code==='ambiguous-trailing-narration'));
+  assert.ok(r.sections[0].rows[1].description.endsWith(text));assert.equal(r.status,'recognized');
  }
 })
 test('DBS currency evidence comes from the date column, excluding nearby description text',()=>{
@@ -344,10 +381,11 @@ test('closing dates reject conflicting labels on the same cover line and invalid
  }
  const p=dbsSg();p[0].items.push(item('Statement Date: 30 September 2031 as at 30 Sep 2031',231,508));assert.equal(bank.parseBankStatement(p).balances[0].date,'2031-09-30');
 })
-test('every bank profile has a distinct layout bank name and a matching asset institution',async()=>{
+test('bank profiles of different banks have distinct layout bank names and a matching asset institution',async()=>{
  const {BANK_PROFILES}=await server.ssrLoadModule('/src/bankStatements/profiles.ts'),assets=await server.ssrLoadModule('/src/bankStatementAssets.ts')
  const names=BANK_PROFILES.map(p=>p.layout.bank)
- assert.equal(new Set(names).size,names.length)
+ // Two layouts of one bank may share its name; two banks may not.
+ for(const a of BANK_PROFILES)for(const b of BANK_PROFILES)if(a!==b&&a.layout.bank===b.layout.bank)assert.equal(a.brand.source,b.brand.source,a.layout.bank)
  for(const name of names)assert.ok(assets.bankStatementIdentity(name),name)
 })
 const relabel=(pages,from,to)=>pages.map(p=>({...p,items:p.items.map(i=>i.text===from?{...i,text:to}:i)}))

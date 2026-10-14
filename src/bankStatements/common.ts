@@ -71,7 +71,7 @@ export interface Layout {
             number,
             number
         ];
-        accountX: number;
+        accountX?: number;
     };
     edges: [
         number,
@@ -79,6 +79,8 @@ export interface Layout {
     ];
     decimalOnly?: boolean;
     wrapped?: boolean;
+    /** The amount is printed on the last line of a transaction: narration after a completed row begins the next one. */
+    amountLast?: boolean;
     /** Never inherit a date for a new amount-bearing row in this layout. */
     datedRowsOnly?: boolean;
     partial?: boolean;
@@ -164,7 +166,8 @@ export function tableHeader(line: SpatialLine, layout: Layout): Table | undefine
 }
 export function money(text: string, decimalOnly = false): number | undefined {
     const normalized = text.replace(/^\$\s*/, '');
-    const syntax = decimalOnly ? /^(?:\d{1,3}(?:,\d{3})*|\d+)\.\d{2}$/ : /^(?:\d{1,3}(?:,\d{3})*|\d+)(?:\.\d{2})?$/;
+    // Decimal-only layouts may print cents without a leading zero.
+    const syntax = decimalOnly ? /^(?:\d{1,3}(?:,\d{3})*|\d+)?\.\d{2}$/ : /^(?:\d{1,3}(?:,\d{3})*|\d+)(?:\.\d{2})?$/;
     if (!syntax.test(normalized))
         return;
     const value = Number(normalized.replaceAll(',', ''));

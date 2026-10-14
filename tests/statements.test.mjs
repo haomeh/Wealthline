@@ -313,6 +313,43 @@ test('SG HSBC positioned columns preserve merchant numbers, final SGD amount and
   assert.deepEqual(parsed.rows,[{date:'2025-12-31',description:'SYNTHETIC SHOP 123',amount:12.34,currency:'SGD'},{date:'2026-01-03',description:'SYNTHETIC REFUND',amount:-2,currency:'SGD'}])
   assert.deepEqual(statements.hsbcSgPage([item('HSBC',50,700)]),undefined)
 })
+test('E.SUN statement is titled by the month before its closing month: later rows stay in the statement year',()=>{
+  const lines=['這是您 120年02月 信用卡帳單','02/27 03/01 SYNTHETIC SHOP TWD 1,913','03/10 03/12 SYNTHETIC SHOP 退貨 TWD -1,913','03/03 03/04 SYNTHETIC SUB TWD 298','11/30 12/02 SYNTHETIC OLD TWD 5']
+  assert.deepEqual(statements.parseStatement(lines,'2031-02','TWD','玉山').rows.map(r=>r.date),['2031-02-27','2031-03-10','2031-03-03','2030-11-30'])
+  assert.deepEqual(statements.parseStatement(['玉山銀行','05/20 03/25 合成分期 第11期 TWD 1,000'],'2031-03','TWD','玉山').rows.map(r=>r.date),['2030-05-20'])
+  assert.deepEqual(statements.parseStatement(['玉山銀行','12/28 12/30 SYNTHETIC SHOP TWD 10','01/05 01/06 SYNTHETIC SHOP TWD 20'],'2031-12','TWD','玉山').rows.map(r=>r.date),['2031-12-28','2032-01-05'])
+})
+test('older E.SUN rows end with a one-letter category after the amount',()=>{
+  const lines=['玉山銀行','02/25 03/02 合成餐廳－２９８ TWD 50 A','03/13 03/16 SYNTH BV NLD HELP.SYNTH.COM 03/14 TWD 203 TWD 203 A','03/05 03/09 合成超商 TWD 20 Q']
+  assert.deepEqual(statements.parseStatement(lines,'2031-03','TWD','玉山').rows.map(r=>[r.description,r.amount]),[['合成餐廳-298',50],['SYNTH BV NLD HELP.SYNTH.COM',203],['合成超商',20]])
+})
+test('Taishin card joins a merchant wrapped around its date row, drops foreign columns and the auto-debit payment',()=>{
+  const item=(str,x,y)=>({str,width:20,height:8,transform:[1,0,0,1,x,y]})
+  const items=[item('消 費 日',81,621),item('入 帳 起 息 日 消 費 明 細',116,621),item('新 臺 幣 金 額 外 幣 折 算 日',306,621),item('消 費 地',413,621),item('幣 別',451,621),item('外 幣 金 額',479,621),
+    item('120/05/04',75,608),item('120/05/04',120,608),item('台新自動扣款',165,608),item('-5,500',327,608),
+    item('120/05/02',75,560),item('120/05/02',120,560),item('您的付款已收到,謝謝您!',165,560),item('-1,000',327,560),
+    item('合成卡 測試人 (卡號末四碼:0000)',165,598),
+    item('合成加值 - 測試車',165,587),item('120/04/13',75,583),item('120/04/20',120,583),item('1,000',331,583),item('0000',165,578),
+    item('120/04/30',75,460),item('120/05/04',120,460),item('SYNTHETIC INTL',165,460),item('5,955',331,460),item('0501',372,460),item('AU',422,460),item('USD',453,460),item('200.00',484,460),
+    item('120/04/30',75,449),item('120/05/04',120,449),item('國外交易服務費－5955.00',165,449),item('90',344,449),
+    item('合成權益加碼回',165,441),item('120/05/01',75,436),item('120/05/02',120,436),item('-149',336,436),item('TW',420,436),item('饋',165,431),
+    item('合成卡本期帳單消費回饋：一般消費總計NT$0',78,394)]
+  const page=statements.taishinCardPage(items)
+  assert.ok(page)
+  assert.equal(statements.statementMetadata(['若您有任何問題，請至台新銀行網站','120年 05月 信用卡電子帳單']).bank,'台新')
+  // Another issuer's statement naming 台新 as payee or autopay bank keeps its own issuer.
+  assert.equal(statements.statementMetadata(['信用卡帳單','自動扣繳帳號 台新銀行 ****1234','HSBC 滙豐 現金回饋卡']).bank,'匯豐')
+  assert.equal(statements.statementMetadata([...Array(10).fill('說明'),'本行 玉山銀行','03/02 03/04 台新PAY SHOP 100']).bank,'玉山')
+  assert.deepEqual(statements.parseStatement(page.lines,'2031-05','USD','台新',page.transactionIndexes).rows,[
+    {date:'2031-04-13',description:'合成加值 - 測試車 0000',amount:1000,currency:'TWD'},
+    {date:'2031-04-30',description:'SYNTHETIC INTL',amount:5955,currency:'TWD'},
+    {date:'2031-04-30',description:'國外交易服務費-5955.00',amount:90,currency:'TWD'},
+    {date:'2031-05-01',description:'合成權益加碼回饋',amount:-149,currency:'TWD'}])
+  // A continuation page has no header: it reuses the amount column of the previous page.
+  const next=statements.taishinCardPage([item('120/05/10',75,700),item('120/05/12',120,700),item('SYNTHETIC NEXT',165,700),item('224',340,700),item('0511',372,700)],page.amountX)
+  assert.deepEqual(statements.parseStatement(next.lines,'2031-05','TWD','台新',next.transactionIndexes).rows,[{date:'2031-05-10',description:'SYNTHETIC NEXT',amount:224,currency:'TWD'}])
+  assert.equal(statements.taishinCardPage([item('帳單結帳日',60,676),item('120/05/17',170,676)]),undefined)
+})
 
 
 test('SG HSBC PDF skips its cover and combines only billed SGD transactions',async()=>{

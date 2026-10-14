@@ -7,7 +7,7 @@ export const singaporeLayout: Layout = {
     bank: 'DBS Singapore', dateKind: 'dmy', date: 'Date', description: 'Description',
     debit: 'Withdrawal (-)', credit: 'Deposit (+)', balance: 'Balance',
     anchors: [45, 113, 338, 430, 515], edges: [395, 474],
-    decimalOnly: true, wrapped: true, datedRowsOnly: true,
+    decimalOnly: true, wrapped: true, datedRowsOnly: true, bodyBottom: 40,
 };
 
 /** Full positional table, own-account heading and nearby printed SGD label are all required. */
@@ -24,5 +24,6 @@ export function dbsSingaporeContext(lines: readonly SpatialLine[], index: number
 /** The cover alone never selects DBS: the parser also needs dbsSingaporeContext evidence. */
 export const singaporeProfile: BankProfile = {
     layout: singaporeLayout, brand: /DBS|星展銀行/i,
-    acceptTable: ({ lines, index }) => dbsSingaporeContext(lines, index) ?? 'unsupported-dbs-sg-account',
+    // A continuation page repeats the account heading but not the currency label.
+    acceptTable: ({ lines, index, continuing, contextAccount }) => dbsSingaporeContext(lines, index) ?? (continuing && contextAccount ? { account: contextAccount, currency: 'SGD' } : 'unsupported-dbs-sg-account'),
 };

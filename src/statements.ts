@@ -47,6 +47,29 @@ export function hsbcSgPage(items:unknown[]) {
   return {lines,transactionIndexes}
 }
 
+/** Taishin card: a merchant may wrap onto the lines just above and below its date row, and foreign columns follow the TWD amount. A continuation page has no header and reuses the previous page's amount column. */
+export function taishinCardPage(items:unknown[], amountX?:number) {
+  const rows=textRows(items),lines=textLines(items)
+  const header=rows.find(row=>/消費日入帳起息日消費明細/.test(row.items.map(i=>i.str).join('').replace(/\s/g,'')))
+  const x=header ? header.items.find(i=>/新臺幣金額/.test(i.str.replace(/\s/g,'')))?.x : amountX
+  if(x === undefined) return undefined
+  const rocDate=/^\d{3}\/\d{2}\/\d{2}$/, cjk=/[\u3000-\u9fff\uff00-\uffef]/
+  const transactionIndexes:number[]=[]
+  for(const [index,row] of rows.entries()) {
+    if(header && row.y>=header.y) continue
+    const dates=row.items.filter(i=>rocDate.test(i.str.trim()))
+    const amount=row.items.find(i=>i.x>=x-5 && /^-?[\d,]+$/.test(i.str.trim()))
+    if(dates.length!==2 || !amount) continue
+    const merchant=(r:typeof row)=>r.items.filter(i=>i.x>dates[1].x && i.x<x-5 && !rocDate.test(i.str.trim())).map(i=>i.str.trim())
+    const own=merchant(row)
+    const parts=own.length ? own : rows.filter(r=>r!==row && Math.abs(r.y-row.y)<=7 && r.items.every(i=>i.x>dates[1].x && i.x<x-5)).flatMap(merchant)
+    const description=parts.reduce((text,part)=>text+(cjk.test(text.slice(-1)) && cjk.test(part[0]) ? '' : ' ')+part,'').trim()
+    lines[index]=`${dates[0].str.trim()} ${dates[1].str.trim()} ${description} ${amount.str.trim()}`
+    transactionIndexes.push(index)
+  }
+  return {lines,transactionIndexes,amountX:x}
+}
+
 export function hsbcMerchantRegions(items:unknown[]) {
   return textRows(items).flatMap((row,index)=>{
     const line=row.items.map(i=>i.str).join(' ').replace(/\s+/g,' ').trim()
@@ -92,7 +115,7 @@ export function ocrMerchantLine(line:string, description:string, confidence:numb
 }
 
 const datePattern = /^(?:(\d{3,4})[/.-])?(\d{1,2})[/.-](\d{1,2})(?:\s+|$)/
-const nonSpending = /繳款|繳費|轉帳扣款|自動扣繳|匯豐銀行自動扣款|滙豐銀行自動扣款|上期|前期|應繳|最低應繳|總額|小計|合計|PAYMENT|BALANCE|TOTAL/i
+const nonSpending = /繳款|繳費|轉帳扣款|自動扣繳|匯豐銀行自動扣款|滙豐銀行自動扣款|台新自動扣款|付款已收到|上期|前期|應繳|最低應繳|總額|小計|合計|PAYMENT|BALANCE|TOTAL/i
 // One worker tries each candidate; passwords never enter persisted import data.
 export function statementPasswordHandler(passwordText:string | readonly string[]) {
   const passwords = [...new Set((typeof passwordText === 'string' ? passwordText.split(',').map(p=>p.trim()) : passwordText).filter(Boolean))]
@@ -101,13 +124,17 @@ export function statementPasswordHandler(passwordText:string | readonly string[]
 }
 
 export function statementMetadata(lines:string[], title = '', fileName = ''): {bank?:string;month?:string;monthSource?:string;currency?:string} {
-  const identify = (text:string) => {
-    const compact = text.normalize('NFKC').replace(/\s/g,'')
-    const banks = [[/玉山|E\.?SUN/i,'玉山'],[/富邦|FUBON/i,'富邦'],[/HSBC|滙豐|匯豐/i,'匯豐']] as const
-    const matches = banks.filter(([pattern])=>pattern.test(compact))
-    return matches.length === 1 ? matches[0][1] : undefined
+  const issuers = [[/玉山|E\.?SUN/i,'玉山'],[/富邦|FUBON/i,'富邦'],[/HSBC|滙豐|匯豐/i,'匯豐']] as const
+  const find = (banks:readonly (readonly [RegExp,string])[]) => {
+    const identify = (text:string) => {
+      const compact = text.normalize('NFKC').replace(/\s/g,'')
+      const matches = banks.filter(([pattern])=>pattern.test(compact))
+      return matches.length === 1 ? matches[0][1] : undefined
+    }
+    return identify(title) ?? lines.slice(0,10).map(identify).find(Boolean) ?? identify(fileName) ?? identify(lines.join(' '))
   }
-  const bank = identify(title) ?? lines.slice(0,10).map(identify).find(Boolean) ?? identify(fileName) ?? identify(lines.join(' '))
+  // 台新 is also a payee and autopay bank on other issuers' statements: it counts only when no other issuer is found.
+  const bank = find(issuers) ?? find([...issuers,[/台新|TAISHIN/i,'台新']])
   const identity={bank,...(bank === '匯豐' && /AMOUNT\s*\(\s*SGD\s*\)|ACCOUNT\s+SUMMARY\s+SGD/i.test(lines.join(' ')) ? {currency:'SGD'} : {})}
   for(const line of lines) {
     const closing=line.match(/^Statement From \d{1,2}\s+[A-Z]{3}\s+\d{4}\s+to\s+(\d{1,2})\s+([A-Z]{3})\s+(\d{4})/i)
@@ -147,7 +174,7 @@ export function parseStatement(lines:string[], month:string, currency:string, fi
   const text = lines.join(' ').replace(/\s/g,'')
   if(/綜合月對帳單|综合月对账单/.test(text) || (/成交日期/.test(text) && /買賣別|證券帳號/.test(text))) throw new Error('證券對帳單不支援：請選擇信用卡帳單')
   const detected = statementMetadata(lines,'',fileName).bank
-  const bank = detected === '富邦' ? 'fubon' : detected === '玉山' ? 'esun' : detected === '匯豐' ? 'hsbc' : null
+  const bank = detected === '富邦' ? 'fubon' : detected === '玉山' ? 'esun' : detected === '匯豐' ? 'hsbc' : detected === '台新' ? 'taishin' : null
   if(!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) throw new Error('請填寫有效的帳單月份')
   if(!/^[A-Z]{3}$/.test(currency)) throw new Error('請填寫三碼幣別')
   const rows:StatementRow[] = [], skipped:string[] = [], sourceIndexes:number[] = []
@@ -161,13 +188,19 @@ export function parseStatement(lines:string[], month:string, currency:string, fi
     const m = Number(match[2]), d = Number(match[3])
     let year = match[1] ? Number(match[1]) : Number(month.slice(0,4))
     if(match[1]?.length === 3) year += 1911
-    if(!match[1] && m > Number(month.slice(5))) year--
+    // E.SUN titles a statement by the month before its closing month, so a row up to two months later is not last year's.
+    // An instalment row reprints an old purchase date, so the posting date must be as recent.
+    const ahead = (m - Number(month.slice(5)) + 12) % 12, posted = Number(line.slice(match[0].length).match(datePattern)?.[2])
+    if(!match[1] && bank === 'esun' && ahead >= 1 && ahead <= 2 && (posted - m + 12) % 12 <= 2) year += m < Number(month.slice(5)) ? 1 : 0
+    else if(!match[1] && m > Number(month.slice(5))) year--
     const date = `${year}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`
     line = line.slice(match[0].length)
     // Some statements have posting date in a second column.
     const posting = line.match(datePattern)
     if(posting) line = line.slice(posting[0].length)
     if(bank === 'hsbc' && !posting) {skipped.push(original);continue}
+    // Older E.SUN statements print a one-letter spending category after the amount.
+    if(bank === 'esun') line = line.replace(/(TWD\s+-?[\d,]+)\s+[A-Z]$/, '$1')
     const amountMatch = line.match(/(?:^|\s+)(?:NT\$|TWD|\$)?\s*(\(?[+-]?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d{1,2})?\)?)(?:\s*(CR|DR))?$/i)
     if(!validDate(date) || !amountMatch) {skipped.push(original);continue}
     let description = line.slice(0,amountMatch.index).trim()
@@ -190,7 +223,7 @@ export function parseStatement(lines:string[], month:string, currency:string, fi
     if(amountMatch[1].startsWith('(') || amountMatch[2]?.toUpperCase() === 'CR') amount = -Math.abs(amount)
     if(!Number.isFinite(amount)) {skipped.push(original);continue}
     sourceIndexes.push(sourceIndex)
-    rows.push({date,description,amount,currency:bank === 'fubon' || bank === 'esun' ? 'TWD' : currency})
+    rows.push({date,description,amount,currency:bank === 'fubon' || bank === 'esun' || bank === 'taishin' ? 'TWD' : currency})
   }
   return {rows,skipped,sourceIndexes}
 }
