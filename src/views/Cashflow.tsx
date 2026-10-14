@@ -16,13 +16,15 @@ interface Props {
   months?: CashflowMonthTotals[]
   onGoExpenses: () => void
   onGoBankTransactions: () => void
+  // Opens the statement import, the one entry for card and bank statements.
+  onImport: () => void
 }
 
 const signed = (n: number) => `${n > 0 ? '+' : ''}${fmt(n, 0)}`
 const count = (categories: { count: number }[]) => categories.reduce((n, c) => n + c.count, 0)
 
 // Card spending and bank rows as one set of income and spending, one period at a time.
-export function Cashflow({ data, months, onGoExpenses, onGoBankTransactions }: Props) {
+export function Cashflow({ data, months, onGoExpenses, onGoBankTransactions, onImport }: Props) {
   const now = useCalendarNow()
   const input = { expenses: data.expenses, expenseRules: data.expenseCategoryRules, bankTransactions: data.bankTransactions, bankRules: data.bankCategoryRules, months }
   const period = useCashflowPeriod(input, now)
@@ -48,11 +50,11 @@ export function Cashflow({ data, months, onGoExpenses, onGoBankTransactions }: P
   return <>
     <div className="page-head cashflow-page-head">
       <h2>收支總覽</h2>
-      {!empty && <div className="cashflow-page-controls"><CashflowPeriodControls state={period} /></div>}
+      {!empty && <div className="cashflow-page-controls"><button onClick={onImport}>匯入帳單</button><CashflowPeriodControls state={period} /></div>}
     </div>
     {empty ? <section className="panel empty">
-      <p className="muted">還沒有收支紀錄。匯入信用卡帳單或銀行流水後，這裡會合併成同一套收支。</p>
-      <div className="row center"><button className="primary" onClick={onGoExpenses}>匯入信用卡帳單</button><button onClick={onGoBankTransactions}>匯入銀行流水</button></div>
+      <p className="muted">還沒有收支紀錄。匯入信用卡帳單或銀行帳單後，這裡會合併成同一套收支。</p>
+      <div className="row center"><button className="primary" onClick={onImport}>匯入帳單</button></div>
     </section> : <>
       {converting && <p role="status" className="notice">正在換算每月匯率…</p>}
       {failed && <div role="alert" className="notice"><p>無法完成 TWD 換算：{(!shown && needsFx && error) || bars.error}。未顯示部分合計。</p><button onClick={() => { retry(); bars.retry() }}>重試匯率</button></div>}

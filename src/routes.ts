@@ -30,8 +30,9 @@ export type Route =
   | { tab: 'accounts'; page: 'detail'; id: string }
   | { tab: 'liabilities' }
   | { tab: 'cashflow' }
-  | { tab: 'expenses' }
-  | { tab: 'bank-transactions' }
+  // Card and bank statements share one import screen; its kind is the page the rows land on.
+  | { tab: 'expenses'; importing?: boolean }
+  | { tab: 'bank-transactions'; importing?: boolean }
   | { tab: 'history'; date?: string }
   | { tab: 'rates' }
   | { tab: 'more' }
@@ -44,6 +45,7 @@ export function parseRoute(path: string): Route {
   if (first === 'cashflow' && !second) return { tab: 'cashflow' }
   if (first === 'expenses' && !second) return { tab: 'expenses' }
   if (first === 'bank-transactions' && !second) return { tab: 'bank-transactions' }
+  if ((first === 'expenses' || first === 'bank-transactions') && second === 'import' && !third) return { tab: first, importing: true }
   if (first === 'history' && !third && !rest.length) {
     if (!second) return { tab: 'history' }
     if (validDate(second)) return { tab: 'history', date: second }
@@ -68,11 +70,12 @@ export function routePath(r: Route): string {
       return r.date ? `/history/${r.date}` : '/history'
     case 'liabilities':
     case 'cashflow':
-    case 'expenses':
-    case 'bank-transactions':
     case 'rates':
     case 'more':
       return `/${r.tab}`
+    case 'expenses':
+    case 'bank-transactions':
+      return r.importing ? `/${r.tab}/import` : `/${r.tab}`
     case 'accounts':
       if (r.page === 'list') return r.importing ? '/accounts/import' : '/accounts'
       if (r.page === 'new') return '/accounts/new'
