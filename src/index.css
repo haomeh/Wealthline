@@ -3190,6 +3190,9 @@ dialog.expense-rule-dialog { max-width: 440px; }
 .detail-record:last-child { border-bottom: 0; }
 .detail-record:has(> .detail-record-actions > button) { --record-action-space: 44px; }
 .detail-record:has(> .detail-record-actions > button + button) { --record-action-space: 88px; }
+/* Statement preview rows may lack the category button; always reserve its slot so dates and amounts stay aligned. */
+.statement-preview-row .detail-record { --record-action-space: 44px; }
+.statement-preview-row .detail-record .detail-record-details > summary { padding-right: calc(var(--record-action-space) + 4px); }
 /* Spending and bank rows may lack the category button; always reserve both slots so amounts stay aligned. */
 .expense-record:has(> .detail-record-actions > button), .bank-record:has(> .detail-record-actions > button) { --record-action-space: 88px; }
 .detail-record-details { min-width: 0; }
@@ -3260,6 +3263,7 @@ dialog.expense-rule-dialog { max-width: 440px; }
   .detail-record-actions { top: 24px; }
   .statement-preview-select { padding-top: 32px; }
   .statement-preview-row .detail-record-actions { top: 20px; }
+  .statement-preview-row .detail-record .detail-record-details > summary { padding-right: 0; }
   .liability-record .liability-details { grid-template-columns: auto minmax(0, 1fr); gap: 8px 16px; }
   .liability-record .liability-details dd { margin: 0; }
   section.daily tbody tr { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 12px; padding: 12px; }
