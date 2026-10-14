@@ -463,12 +463,19 @@ test('a focused old bank record loads the complete ledger before deciding it is 
 // One import screen for card and bank statements: the kind is in the URL, and decides the parts to load.
 const kind = () => [...document.querySelectorAll('[aria-label="帳單類型"] button')].filter((b) => b.getAttribute('aria-pressed') === 'true').map((b) => b.textContent)
 
-test('the cashflow page opens the statement import, and its kind switch moves between card and bank', async () => {
+test('the cashflow page opens the statement import entry, and its kind switch moves between auto, card and bank', async () => {
   const drive = await splitDrive()
   await open('/cashflow')
   // Opening adds one history entry (Back returns to 收支總覽); switching kind and closing replace it.
   const entries = window.history.length
   await click(button('匯入帳單'))
+  // The entry detects each file's kind; nothing is read until files are chosen.
+  assert.equal(window.location.pathname, '/cashflow/import')
+  assert.equal(window.history.length, entries + 1)
+  assert.ok(document.querySelector('.statement-entry form'))
+  assert.deepEqual(kind(), ['自動判斷'])
+  assert.ok(!drive.reads.some((name) => name.startsWith('history-')), 'the entry needs no history')
+  await click(button('信用卡帳單'))
   assert.equal(window.location.pathname, '/expenses/import')
   assert.equal(window.history.length, entries + 1)
   assert.ok(document.querySelector('.statement-import form'))

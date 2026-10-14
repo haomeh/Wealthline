@@ -9,7 +9,10 @@ let server,dom,root,createRoot,Page,routes,pdf,App,appHook,auth,model
 const originalFetch=globalThis.fetch
 const appMock=`import {createElement} from 'react';import {BankTransactions as Real} from '/src/views/BankTransactions.tsx';export let change,data;export function BankTransactions(props){change=props.onChange;data=props.data;return createElement(Real,props)}`
 const pdfMock=`let results=[],hold=false,pauseAt=0,resolve;export let calls=[];export function reset(next){results=next;calls=[];hold=false;resolve=undefined}export function pause(index=0){hold=true;pauseAt=index}export function isPaused(){return hold}export function release(){hold=false;resolve?.()}export function progress(index,completed,total){calls[index].onPageProgress?.({completed,total})}export async function readBankStatementPdf(bytes,password,signal,onPageProgress){calls.push({password,signal,onPageProgress});if(hold&&calls.length-1===pauseAt)await new Promise(r=>resolve=r);if(signal.aborted)throw new Error('abort');const next=results.shift();if(next instanceof Error)throw next;return {pages:next}}export function parseBankStatement(pages){if(pages.parseError)throw pages.parseError;return pages}`
-before(async()=>{dom=new JSDOM('<div id="root"></div>',{url:'https://wealthline.test/'});for(const k of ['window','document','HTMLElement','Event','MouseEvent','KeyboardEvent','PopStateEvent','localStorage','sessionStorage'])globalThis[k]=dom.window[k];globalThis.IS_REACT_ACT_ENVIRONMENT=true;globalThis.ResizeObserver=class{observe(){}disconnect(){}};globalThis.requestAnimationFrame=callback=>setTimeout(callback,0);window.scrollTo=()=>{};window.HTMLDialogElement.prototype.showModal=function(){this.open=true};({createRoot}=await import('react-dom/client'));server=await createServer({cacheDir:'node_modules/.vite-bank-ui',configFile:false,envDir:false,plugins:[{name:'bank-pdf-mock',enforce:'pre',resolveId(id,importer){if(id==='bank-app-test-hook'||id==='./views/BankTransactions'&&importer?.endsWith('/src/App.tsx'))return '\0bank-app-mock';if(id.endsWith('/bankStatements')||id==='/src/bankStatements.ts')return '\0bank-pdf-mock'},load(id){if(id==='\0bank-app-mock')return appMock;if(id==='\0bank-pdf-mock')return pdfMock}}],server:{middlewareMode:true,watch:null,hmr:false,ws:false}});pdf=await server.ssrLoadModule('/src/bankStatements.ts');routes=await server.ssrLoadModule('/src/routes.ts');({BankTransactions:Page}=await server.ssrLoadModule('/src/views/BankTransactions.tsx'));App=(await server.ssrLoadModule('/src/App.tsx')).default;appHook=await server.ssrLoadModule('bank-app-test-hook');auth=await server.ssrLoadModule('/src/google/auth.ts');model=await server.ssrLoadModule('/src/model.ts')})
+// The import entry's detection and the card reader, for the 自動判斷 flow.
+const kindMock=`let kinds=[];export let calls=[];export function setKinds(next){kinds=next;calls=[]}export async function detectStatementKind(bytes,password,signal,name){calls.push({name,password});const next=kinds.shift();if(next instanceof Error)throw next;return next}`
+const cardMock=`let results=[];export let calls=[];export function setResults(next){results=next;calls=[]}export async function readStatementPdf(bytes,password,signal,name){calls.push({name,password});return results.shift()}`
+before(async()=>{dom=new JSDOM('<div id="root"></div>',{url:'https://wealthline.test/'});for(const k of ['window','document','HTMLElement','Event','MouseEvent','KeyboardEvent','PopStateEvent','localStorage','sessionStorage'])globalThis[k]=dom.window[k];globalThis.IS_REACT_ACT_ENVIRONMENT=true;globalThis.ResizeObserver=class{observe(){}disconnect(){}};globalThis.requestAnimationFrame=callback=>setTimeout(callback,0);window.scrollTo=()=>{};window.HTMLDialogElement.prototype.showModal=function(){this.open=true};({createRoot}=await import('react-dom/client'));server=await createServer({cacheDir:'node_modules/.vite-bank-ui',configFile:false,envDir:false,plugins:[{name:'bank-pdf-mock',enforce:'pre',resolveId(id,importer){if(id==='bank-app-test-hook'||id==='./views/BankTransactions'&&importer?.endsWith('/src/App.tsx'))return '\0bank-app-mock';if(id.endsWith('/bankStatements')||id==='/src/bankStatements.ts')return '\0bank-pdf-mock';if(id.endsWith('/statementKind')||id==='/src/statementKind.ts')return '\0kind-mock';if(id.endsWith('/statementPdf')||id==='/src/statementPdf.ts')return '\0card-pdf-mock'},load(id){if(id==='\0bank-app-mock')return appMock;if(id==='\0bank-pdf-mock')return pdfMock;if(id==='\0kind-mock')return kindMock;if(id==='\0card-pdf-mock')return cardMock}}],server:{middlewareMode:true,watch:null,hmr:false,ws:false}});pdf=await server.ssrLoadModule('/src/bankStatements.ts');routes=await server.ssrLoadModule('/src/routes.ts');({BankTransactions:Page}=await server.ssrLoadModule('/src/views/BankTransactions.tsx'));App=(await server.ssrLoadModule('/src/App.tsx')).default;appHook=await server.ssrLoadModule('bank-app-test-hook');auth=await server.ssrLoadModule('/src/google/auth.ts');model=await server.ssrLoadModule('/src/model.ts')})
 afterEach(async()=>{if(root)await act(()=>root.unmount());root=null;globalThis.fetch=originalFetch;localStorage.clear();sessionStorage.clear();window.history.replaceState(null,'','/');delete globalThis.confirm;delete globalThis.indexedDB})
 after(async()=>{await server?.close();dom?.window.close()})
 const empty={version:13,accounts:[],history:[],bankTransactionAccounts:[],bankTransactions:[],bankCategoryRules:[]}
@@ -381,7 +384,7 @@ test('Drive ledger displays before archived history is requested; import blocks 
 test('the kind switch of the import screen locks once a bank preview exists, and closing returns to the bank page',async()=>{
  window.history.replaceState(null,'','/bank-transactions');drive(appData());await renderApp();pdf.reset([parsed()]);await click('匯入銀行帳單');assert.equal(window.location.pathname,'/bank-transactions/import')
  const kinds=()=>[...document.querySelectorAll('[aria-label="帳單類型"] button')].map(b=>b.disabled)
- assert.deepEqual(kinds(),[false,false]);pdf.pause();await files();await submitImport();assert.equal(document.querySelector('.bank-preview-row'),null);assert.deepEqual(kinds(),[true,true],'switching kinds would abandon the parse');await act(()=>pdf.release());await settle(()=>!!document.querySelector('.bank-preview-row'));assert.deepEqual(kinds(),[true,true],'switching kinds would silently discard the preview')
+ assert.deepEqual(kinds(),[false,false,false]);pdf.pause();await files();await submitImport();assert.equal(document.querySelector('.bank-preview-row'),null);assert.deepEqual(kinds(),[true,true,true],'switching kinds would abandon the parse');await act(()=>pdf.release());await settle(()=>!!document.querySelector('.bank-preview-row'));assert.deepEqual(kinds(),[true,true,true],'switching kinds would silently discard the preview')
  await click('取消匯入');assert.equal(window.location.pathname,'/bank-transactions');assert.ok(button('匯入銀行帳單'))
 })
 test('a balance for a currency without transactions imports with the same bank section',async()=>{
@@ -407,4 +410,68 @@ test('summary-only balances ask which ledger account when the bank has several, 
  await click('檢查匯入');await click('確認銀行匯入')
  assert.deepEqual(latest().bankTransactionAccounts.map(a=>a.id),['salary','savings'])
  assert.deepEqual(latest().bankStatementBalances.map(b=>[b.currency,b.ledgerAccountId]).sort(),[['TWD','savings'],['USD','savings']])
+})
+
+// 自動判斷: one entry for card and bank statements.
+async function entryFiles(names){const el=box('帳單 PDF');Object.defineProperty(el,'files',{configurable:true,value:names.map(name=>({size:30,name,arrayBuffer:async()=>new TextEncoder().encode('%PDF-'+name).buffer}))});await act(()=>el.dispatchEvent(new Event('change',{bubbles:true})))}
+async function detect(){await act(async()=>document.querySelector('.statement-entry form').dispatchEvent(new Event('submit',{bubbles:true,cancelable:true})))}
+async function openEntry(){window.history.replaceState(null,'','/cashflow/import');root=createRoot(document.getElementById('root'));await act(async()=>root.render(createElement(App)));await settle(()=>!!box('帳單 PDF'));return {kind:await server.ssrLoadModule('/src/statementKind.ts'),card:await server.ssrLoadModule('/src/statementPdf.ts')}}
+const cardResult=()=>({lines:['HSBC','04/01 04/02 SHOP 100'],title:'',ocrUsed:false})
+const tabs=()=>[...document.querySelectorAll('[role="tab"]')].map(b=>`${b.textContent}${b.getAttribute('aria-selected')==='true'?' *':''}`)
+const panel=kind=>document.getElementById(`batch-panel-${kind}`)
+test('the import entry detects each file, lists the unrecognized one, then shows card and bank statements in two tabs',async()=>{
+ const d=drive(appData());const {kind,card}=await openEntry()
+ const pressed=()=>[...document.querySelectorAll('[aria-label="帳單類型"] button')].filter(b=>b.getAttribute('aria-pressed')==='true').map(b=>b.textContent)
+ assert.deepEqual(pressed(),['自動判斷'])
+ kind.setKinds([{kind:'card',bank:'匯豐'},{kind:'bank',bank:'HSBC (TW)'},{kind:'unknown',reason:'沒有已支援的銀行交易表，也沒有信用卡帳單特徵'},new Error('提供的密碼無法開啟此帳單，請核對密碼或新增其他密碼後重新解析')]);card.setResults([cardResult()]);pdf.reset([parsed()])
+ await entryFiles(['card-2026-04.pdf','bank.pdf','other.pdf','locked.pdf']);await input('帳單 PDF 密碼','typed-secret');await detect()
+ await settle(()=>!!box('帳單類型判斷結果'))
+ assert.deepEqual(kind.calls.map(c=>c.name),['card-2026-04.pdf','bank.pdf','other.pdf','locked.pdf']);assert.ok(kind.calls.every(c=>c.password.includes('typed-secret')))
+ const report=box('帳單類型判斷結果').textContent
+ assert.match(report,/card-2026-04\.pdf · 信用卡帳單（匯豐）/);assert.match(report,/bank\.pdf · 銀行帳單（HSBC \(TW\)）/);assert.match(report,/other\.pdf · 無法辨識：沒有已支援的銀行交易表.*未匯入/);assert.match(report,/locked\.pdf · 無法讀取：提供的密碼無法開啟此帳單.*未匯入/)
+ assert.equal(box('other.pdf 的類型').value,'skip','an unrecognized file is left out unless the user picks a kind');assert.equal(box('locked.pdf 的類型'),null)
+ await click('繼續匯入 · 信用卡 1 份 · 銀行 1 份')
+ assert.equal(window.location.pathname,'/cashflow/import','the batch stays on one screen')
+ assert.deepEqual(tabs(),['信用卡帳單 · 1 份 *','銀行對帳單 · 1 份'])
+ // Both kinds parse at once; the hidden tab keeps its preview.
+ await settle(()=>!!panel('card').querySelector('.statement-group')&&!!panel('bank').querySelector('.bank-preview-row'))
+ assert.equal(panel('card').hidden,false);assert.equal(panel('bank').hidden,true)
+ assert.deepEqual(card.calls.map(c=>c.name),['card-2026-04.pdf']);assert.ok(card.calls[0].password.includes('typed-secret'));assert.equal(pdf.calls.length,1);assert.ok(pdf.calls[0].password.includes('typed-secret'))
+ assert.match(box('帳單類型判斷結果').textContent,/other\.pdf · 無法辨識/)
+ assert.equal(document.querySelector('[aria-label="帳單類型"]'),null,'the tabs replace the kind switch')
+ await act(()=>[...document.querySelectorAll('[role="tab"]')][1].click());assert.deepEqual(tabs(),['信用卡帳單 · 1 份','銀行對帳單 · 1 份 *']);assert.equal(panel('card').hidden,true)
+ await input('區段 1 帳戶','ledger')
+ await act(()=>[...document.querySelectorAll('[role="tab"]')][0].click());assert.ok(panel('card').querySelector('.statement-group'),'switching tabs keeps the card preview')
+ await click('確認匯入 1 筆')
+ assert.deepEqual(tabs(),['信用卡帳單 · 1 份 ✓','銀行對帳單 · 1 份 *'],'a finished tab gives way to the open one')
+ assert.match(panel('card').textContent,/已加入 1 筆/);assert.equal(box('區段 1 帳戶').value,'ledger','the bank mapping survived')
+ await click('檢查匯入');await click('確認銀行匯入')
+ const result=box('匯入結果').textContent;assert.match(result,/信用卡帳單：已加入 1 筆/);assert.match(result,/銀行對帳單：已新增 1 筆/)
+ assert.equal(appHook.data.expenses.length,1,'the bank tab sees the card rows already imported');assert.equal(d.writes,0,'nothing is saved before 儲存變更')
+ await click('返回收支總覽');assert.equal(window.location.pathname,'/cashflow')
+})
+test('a fully recognized batch goes straight to the import; an unrecognized file runs only with the kind the user picked; each tab cancels on its own',async()=>{
+ drive(appData());const {kind,card}=await openEntry()
+ kind.setKinds([{kind:'bank',bank:'HSBC (TW)'}]);card.setResults([]);pdf.reset([parsed()]);await entryFiles(['bank.pdf']);await detect()
+ await settle(()=>!!document.querySelector('.bank-preview-row'));assert.equal(window.location.pathname,'/cashflow/import');assert.deepEqual(tabs(),[],'one kind needs no tabs');assert.equal(card.calls.length,0)
+ await click('取消匯入');assert.match(box('匯入結果').textContent,/銀行對帳單：已取消，未匯入/)
+ await click('返回收支總覽');assert.equal(window.location.pathname,'/cashflow')
+ await act(async()=>{window.history.pushState(null,'','/cashflow/import');window.dispatchEvent(new PopStateEvent('popstate'))});await settle(()=>!!box('帳單 PDF'))
+ kind.setKinds([{kind:'unknown',bank:'富邦銀行 (TW)',reason:'看起來是 富邦銀行 (TW) 的文件，但沒有已支援的銀行交易表，也沒有信用卡帳單特徵'},{kind:'bank'}]);card.setResults([cardResult()]);pdf.reset([parsed()])
+ await entryFiles(['odd-2026-04.pdf','bank.pdf']);await detect();await settle(()=>!!box('帳單類型判斷結果'))
+ await input('odd-2026-04.pdf 的類型','card');await click('繼續匯入 · 信用卡 1 份 · 銀行 1 份')
+ await settle(()=>!!panel('card').querySelector('.statement-group')&&!!panel('bank').querySelector('.bank-preview-row'));assert.deepEqual(card.calls.map(c=>c.name),['odd-2026-04.pdf'])
+ assert.match(box('帳單類型判斷結果').textContent,/odd-2026-04\.pdf · 無法辨識（富邦銀行 \(TW\)），依你的選擇以信用卡帳單匯入/)
+ await act(()=>[...panel('card').querySelectorAll('button')].find(b=>b.textContent==='取消匯入').click())
+ assert.deepEqual(tabs(),['信用卡帳單 · 1 份 ✓','銀行對帳單 · 1 份 *']);assert.match(panel('card').textContent,/已取消，未匯入信用卡帳單/);assert.ok(panel('bank').querySelector('.bank-preview-row'),'the other tab keeps its preview')
+ // Leaving the screen drops the batch: its files and typed password are not kept.
+ await act(async()=>{window.history.pushState(null,'','/expenses');window.dispatchEvent(new PopStateEvent('popstate'))});await act(async()=>{window.history.pushState(null,'','/cashflow/import');window.dispatchEvent(new PopStateEvent('popstate'))})
+ await settle(()=>!!box('帳單 PDF'));assert.deepEqual(tabs(),[])
+})
+test('nothing to import keeps the entry, and the entry kind switch opens a kind import',async()=>{
+ drive(appData());const {kind}=await openEntry()
+ kind.setKinds([{kind:'unknown',reason:'證券對帳單不支援'}]);await entryFiles(['broker.pdf']);await detect();await settle(()=>!!box('帳單類型判斷結果'))
+ assert.ok(button('沒有可匯入的檔案').disabled);await click('重新選擇帳單');assert.ok(box('帳單 PDF'))
+ await click('銀行帳單');assert.equal(window.location.pathname,'/bank-transactions/import');await settle(()=>!!document.querySelector('.bank-import form'))
+ await click('自動判斷');assert.equal(window.location.pathname,'/cashflow/import');await click('取消匯入');assert.equal(window.location.pathname,'/cashflow')
 })
