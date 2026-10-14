@@ -12,7 +12,7 @@ import { BankRowFields } from './BankTransactionEditor'
 import { ActionIcon } from './ActionIcon'
 import { fmt } from '../format'
 import { BANK_SUMMARY_PENDING, BANK_TEXT_NOTICE, bankFileSummary, classificationLabel, summarizeBankWarnings } from './bankUiHelpers'
-import { ImportKind, ImportSteps } from './ImportSteps'
+import { ImportKind, ImportSteps, type ImportKindChoice, type QueuedImport } from './ImportSteps'
 
 type PreviewRow={draft:BankTransaction;original:BankTransactionRow;provenance:BankRowProvenance;selected:boolean;manual?:boolean;narration?:{leading:string[];trailing:string[]}}
 type PreviewSection={automatic?:boolean;id:string;bank:string;currency:string;hash:string;rows:PreviewRow[];accountId:string;newId:string;label:string;noTransactions:boolean;partial:boolean;warnings:ReturnType<typeof summarizeBankWarnings>}
@@ -20,7 +20,7 @@ type Review={balanceConfirmations:NonNullable<ReturnType<typeof statementBalance
 // The ledger accounts a statement bank's balances may belong to.
 const ledgerChoices=(bank:string,accounts:readonly BankTransactionAccount[])=>accounts.filter(a=>bankStatementIdentity(a.bank)?.label===bankStatementIdentity(bank)?.label)
 type ParseProgress={processed:number;total:number;successes:number;failures:number;currentFile:string;page?:BankPageProgress;complete:boolean}
-export function BankStatementImport({data,accounts,existing,rules,passwords,passwordScope,busy,onCancel,onImport,onManagePasswords,onAddRule,onSwitchKind}: {onSwitchKind?:()=>void;data:WealthData;accounts:BankTransactionAccount[];existing:BankTransaction[];rules:BankCategoryRule[];passwords:StatementPassword[];passwordScope?:string;busy:boolean;onCancel:()=>void;onManagePasswords:()=>void;onAddRule:(row:BankTransaction)=>void;onImport:(review:Review,keep:boolean)=>void}) {
+export function BankStatementImport({data,accounts,existing,rules,passwords,passwordScope,busy,onCancel,onImport,onManagePasswords,onAddRule,onSelectKind,queued}: {onSelectKind?:(kind:ImportKindChoice)=>void;queued?:QueuedImport;data:WealthData;accounts:BankTransactionAccount[];existing:BankTransaction[];rules:BankCategoryRule[];passwords:StatementPassword[];passwordScope?:string;busy:boolean;onCancel:()=>void;onManagePasswords:()=>void;onAddRule:(row:BankTransaction)=>void;onImport:(review:Review,keep:boolean)=>void}) {
  const [files,setFiles]=useState<File[]>([]),[password,setPassword]=useState(''),[parsing,setParsing]=useState(false),[sections,setSections]=useState<PreviewSection[]>([]),[reports,setReports]=useState<string[]>([]),[error,setError]=useState(''),[review,setReview]=useState<Review|null>(null),[keep,setKeep]=useState(false)
  const [balances,setBalances]=useState<(StatementBalanceCandidate & {sectionId:string})[]>([])
  // Ledger account per statement bank for balances without a transaction section, when the bank has several.
@@ -29,10 +29,17 @@ export function BankStatementImport({data,accounts,existing,rules,passwords,pass
  const controller=useRef<AbortController|null>(null),latest=useRef({accounts,existing,busy,data})
  useEffect(()=>{latest.current={accounts,existing,busy,data}},[accounts,existing,busy,data])
  useEffect(()=>()=>controller.current?.abort(),[])
+ // Files the import entry detected as bank statements are parsed at once, with the password typed there.
+ useEffect(()=>{if(!queued)return;setFromEntry(true);void run(queued.files,queued.password)
+ // eslint-disable-next-line react-hooks/exhaustive-deps
+ },[])
+ // Files handed over by the import entry: the empty picker stays hidden while they parse.
+ const [fromEntry,setFromEntry]=useState(false)
  const locked=busy||parsing||preparing
  function patch(id:string,change:Partial<PreviewSection>){setError('');setSections(list=>list.map(s=>s.id===id?{...s,...change}:s));setReview(null);setKeep(false)}
  function patchRow(id:string,index:number,draft:BankTransaction){setError('');setSections(list=>list.map(s=>s.id===id?{...s,rows:s.rows.map((r,i)=>i===index?{...r,draft}:r)}:s));setReview(null);setKeep(false)}
- async function parse(e:FormEvent){e.preventDefault();if(locked||!files.length)return;if(sections.length && !confirm('重新解析會捨棄目前預覽、手動補登、帳戶映射及選取狀態。確定捨棄並重新解析？'))return;controller.current?.abort();const abort=new AbortController();controller.current=abort;setParsing(true);setError('');setReview(null);const secret=password;setPassword('');const outcomes:string[]=[],next:PreviewSection[]=[],nextBalances:(StatementBalanceCandidate & {sectionId:string})[]=[]
+ function parse(e:FormEvent){e.preventDefault();if(locked||!files.length)return;if(sections.length && !confirm('重新解析會捨棄目前預覽、手動補登、帳戶映射及選取狀態。確定捨棄並重新解析？'))return;const secret=password;setPassword('');setFromEntry(false);void run(files,secret)}
+ async function run(files:File[],secret:string){controller.current?.abort();const abort=new AbortController();controller.current=abort;setParsing(true);setError('');setReview(null);const outcomes:string[]=[],next:PreviewSection[]=[],nextBalances:(StatementBalanceCandidate & {sectionId:string})[]=[]
  let successes=0,failures=0
  setProgress({processed:0,total:files.length,successes,failures,currentFile:'',complete:false})
  let stage:BankImportStage='setup'
@@ -133,13 +140,13 @@ export function BankStatementImport({data,accounts,existing,rules,passwords,pass
  const activeSection=sections[Math.min(sectionIndex,Math.max(0,sections.length-1))],previewPages=Math.max(1,Math.ceil((activeSection?.rows.length??0)/50)),currentRowPage=Math.min(rowPage,previewPages-1)
  return <section className="panel bank-import">
   <div className="panel-head"><h2>匯入帳單</h2><ImportSteps step={sections.length ? 2 : 1} /><button onClick={()=>{controller.current?.abort();onCancel()}}>取消匯入</button></div>
-  <ImportKind kind="bank" disabled={locked||!!sections.length} onSwitch={onSwitchKind}/>
+  <ImportKind kind="bank" disabled={locked||!!sections.length} onSelect={onSelectKind}/>
   <p className="bank-import-intro muted">PDF 在本機解析，不上傳原始文件。核對並匯入後，請按「儲存變更」。</p>
   <details className="bank-help"><summary>支援範圍與資料保護</summary>
    <p className="muted">不保存原始文件或完整擷取文字；確認後保存收支明細，並將已辨識的期末餘額補入資產歷史。{BANK_TEXT_NOTICE}</p>
    <p>辨識到的交易不代表完整月流水。新加坡星展目前支援 SGD 收支明細；玉山舊版綜合對帳單僅局部轉出明細，2023 年起的版型為完整活存明細。Wise 與奈米投記錄的是基金買賣的款項進出。未知或歧義列不自動推算，請核對並手動補登。</p>
   </details>
-  <form onSubmit={parse}>
+  <form onSubmit={parse} hidden={parsing && fromEntry}>
    <fieldset disabled={locked} className="bank-fields bank-upload-fields">
     <label className="field"><span>銀行帳單 PDF（每份最多 20 MB）</span><input aria-label="銀行帳單 PDF" type="file" multiple accept=".pdf,application/pdf" onChange={e=>{setFiles(Array.from(e.target.files??[]));setPassword('')}}/></label>
     <label className="field"><span>PDF 密碼（選填，多組以逗號分隔）</span><input aria-label="銀行 PDF 密碼" type="password" autoComplete="off" value={password} onChange={e=>setPassword(e.target.value)}/><small className="muted">僅供本次解析，不會保存。</small></label>

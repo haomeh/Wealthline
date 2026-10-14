@@ -113,6 +113,7 @@ function LiveCashflow({ data, onChange, busy = false, dirty, sessionIdentity, ca
     {empty && readiness!=='ready' && <div role={readiness==='error'?'alert':'status'}>{readiness==='error' ? <>{ledgerError || '無法載入明細'}<button onClick={onRetryLedger}>重試明細</button></> : '正在載入明細…'}</div>}
     {empty ? <section className="panel empty">
       <p className="muted">還沒有收支紀錄。匯入信用卡帳單或銀行帳單後，這裡會合併成同一套收支。</p>
+      <p className="muted small">兩種帳單可一起選，會自動判斷類型。</p>
       <div className="row center"><button className="primary" onClick={onImport}>匯入帳單</button></div>
     </section> : <>
       {converting && <p role="status" className="notice">正在換算每月匯率…</p>}

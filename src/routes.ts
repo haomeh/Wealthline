@@ -30,7 +30,7 @@ export type Route =
   | { tab: 'accounts'; page: 'edit'; id: string }
   | { tab: 'accounts'; page: 'detail'; id: string }
   | { tab: 'liabilities' }
-  | { tab: 'cashflow'; query?: CashflowQuery }
+  | { tab: 'cashflow'; query?: CashflowQuery; importing?: boolean }
   | { tab: 'expenses'; importing?: boolean; recordId?: string; returnTo?: string }
   | { tab: 'bank-transactions'; importing?: boolean; recordId?: string; returnTo?: string }
   | { tab: 'history'; date?: string }
@@ -44,6 +44,8 @@ export function parseRoute(path: string): Route {
   const [first, second, third, ...rest] = url.pathname.split('/').filter(Boolean).map(decodeURIComponent)
   if (first === 'liabilities' && !second) return { tab: 'liabilities' }
   if (first === 'cashflow' && !second) return { tab: 'cashflow', ...(url.search ? { query: parseCashflowQuery(url.search).query } : {}) }
+  // The statement import entry: it detects card or bank statements, then opens that kind's import.
+  if (first === 'cashflow' && second === 'import' && !third) return { tab: 'cashflow', importing: true }
   if ((first === 'expenses' || first === 'bank-transactions') && !second) {
     const recordId = url.searchParams.getAll('recordId').length === 1 ? url.searchParams.get('recordId') : null
     const returnTo = url.searchParams.getAll('returnTo').length === 1 ? cashflowReturnTo(url.searchParams.get('returnTo')) : undefined
@@ -72,7 +74,7 @@ export function routePath(r: Route): string {
       return '/app'
     case 'history':
       return r.date ? `/history/${r.date}` : '/history'
-    case 'cashflow': return '/cashflow' + (r.query ? cashflowQueryString(r.query) : '')
+    case 'cashflow': return r.importing ? '/cashflow/import' : '/cashflow' + (r.query ? cashflowQueryString(r.query) : '')
     case 'expenses':
     case 'bank-transactions': {
       if (r.importing) return `/${r.tab}/import`

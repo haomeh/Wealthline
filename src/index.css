@@ -3449,8 +3449,17 @@ button.pin-chip:hover:not(:disabled) { background: var(--ink); opacity: 0.85; }
 .import-steps { display: flex; gap: 6px; list-style: none; margin: 0 0 0 auto; padding: 0; font-size: 13px; }
 .import-steps li { padding: 6px 12px; border-radius: 999px; background: var(--surface-2); color: var(--ink-2); white-space: nowrap; }
 .import-steps li.on { background: var(--ink); color: var(--page); font-weight: 700; }
-/* The statement kind of the shared import screen: card or bank. */
+/* The statement kind of the shared import screen: auto, card or bank. */
 .import-kind { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; margin: 0 0 12px; }
+/* 自動判斷: the detection report, with a kind choice for each unrecognized file. */
+.statement-entry-report h3 { margin: 0 0 4px; font-size: 15px; }
+.statement-entry-report ul { list-style: none; padding: 0; margin: 12px 0; display: grid; gap: 10px; }
+.statement-entry-report li { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 12px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); font-size: .85rem; }
+.statement-entry-report li > span { flex: 1 1 260px; min-width: 0; overflow-wrap: anywhere; }
+.statement-entry-report li .field { margin: 0; flex: 0 1 220px; }
+.statement-entry-report .row { flex-wrap: wrap; gap: 8px; }
+.statement-kind-report { margin: 0 0 16px; }
+.statement-kind-report li { overflow-wrap: anywhere; }
 .statement-preview-layout { display: grid; grid-template-columns: minmax(0, 3fr) minmax(220px, 1fr); gap: 20px; align-items: start; }
 .statement-preview-main { min-width: 0; }
 .statement-preview-summary { position: sticky; top: 16px; display: grid; gap: 12px; }
@@ -3553,7 +3562,7 @@ button.pin-chip:hover:not(:disabled) { background: var(--ink); opacity: 0.85; }
 .cashflow-hbar .num-serif { font-size: 15px; color: var(--ink); }
 .cashflow-hbar-track { height: 10px; border-radius: 5px; background: var(--surface-2); overflow: hidden; }
 .cashflow-hbar-track i { display: block; height: 100%; border-radius: 5px; }
-.cashflow-tabs { display: grid; grid-template-columns: repeat(3, 1fr); margin-bottom: 14px; }
+.cashflow-tabs { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; margin-bottom: 14px; }
 .cashflow-tabs button { position: relative; padding: 9px 0; min-height: 40px; }
 .cashflow-tabs .nav-badge { margin-left: 4px; }
 
@@ -3845,3 +3854,7 @@ button.pin-chip:hover:not(:disabled) { background: var(--ink); opacity: 0.85; }
 .cashflow-totals small { grid-column: 1 / -1; color: var(--muted); font-size: 12px; }
 .cashflow-totals span { display: flex; flex-direction: column; padding: 8px 10px; border-radius: 12px; background: var(--surface-2); color: var(--ink-2); font-size: 12px; }
 .cashflow-totals b { color: var(--ink); font-size: 15px; font-weight: 400; overflow-wrap: anywhere; }
+/* 自動判斷 batch: one tab per statement kind, each with its own import below. */
+.statement-batch-head { margin-bottom: 16px; }
+.statement-batch-head .notice { padding-left: 18px; }
+.statement-batch-tabs { display: inline-flex; flex-wrap: wrap; max-width: 100%; }

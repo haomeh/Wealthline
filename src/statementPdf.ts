@@ -21,6 +21,8 @@ export async function readStatementPdf(bytes: Uint8Array, password:string | read
     let ocrUsed=false,ocrError:string|undefined
     for(let i=1;i<=pdf.numPages;i++) {
       if(signal.aborted) throw new Error('已取消解析')
+      const at=`第 ${i}／${pdf.numPages} 頁`
+      onProgress?.(`讀取文字 · ${at}`)
       const page = await pdf.getPage(i)
       const text = await readStatementText(page)
       let pageLines=textLines(text.items)
@@ -45,7 +47,7 @@ export async function readStatementPdf(bytes: Uint8Array, password:string | read
           let scopeReady=false
           const canvas=document.createElement('canvas')
           try {
-            onProgress?.('正在載入本機 OCR（英文／繁中）…')
+            onProgress?.(`正在載入本機 OCR（英文／繁中）· ${at}`)
             if(!ocr) {const {createStatementOcr}=await import('./statementOcr');ocr=await createStatementOcr(signal)}
             if(signal.aborted) throw new Error('已取消解析')
             const base=page.getViewport({scale:1})
@@ -58,13 +60,14 @@ export async function readStatementPdf(bytes: Uint8Array, password:string | read
             const abortRender=()=>render.cancel()
             signal.addEventListener('abort',abortRender,{once:true})
             try {await render.promise} finally {signal.removeEventListener('abort',abortRender)}
-            onProgress?.('正在本機定位匯豐交易區段…')
+            onProgress?.(`正在本機定位匯豐交易區段 · ${at}`)
             const transactionTops=candidates.map(row=>viewport.transform[3]*(row.y+9.5)+viewport.transform[5])
             const textLayout='header\n'+textRows(text.items).map((row,index)=>[
               5,1,1,1,index,1,0,viewport.transform[3]*(row.y+9.5)+viewport.transform[5],1,13*scale,100,row.items.map(i=>i.str).join(' ')
             ].join('\t')).join('\n')
             let bounds=hsbcTransactionBounds(textLayout,transactionTops)
             if(!bounds) {
+              onProgress?.(`正在本機 OCR 整頁定位交易區段 · ${at}（較慢）`)
               const pageBlob=await new Promise<Blob>((resolve,reject)=>canvas.toBlob(b=>b?resolve(b):reject(new Error('OCR 無法讀取圖片')),'image/png'))
               const layout=await ocr.recognize(new Uint8Array(await pageBlob.arrayBuffer()),true)
               bounds=hsbcTransactionBounds(layout.tsv ?? '',transactionTops)
@@ -78,7 +81,7 @@ export async function readStatementPdf(bytes: Uint8Array, password:string | read
             const active=regions.filter(r=>allowed.includes(r.index))
             for(let j=0;j<active.length;j++) {
               if(signal.aborted) throw new Error('已取消解析')
-              onProgress?.(`正在本機辨識商家 · 第 ${i} 頁 ${j+1}/${active.length}`)
+              onProgress?.(`正在本機辨識商家 · ${at} · ${j+1}／${active.length} 筆`)
               const region=active[j]
               const [a,b,c,d,e,f]=viewport.transform
               const [[x1,y1],[x2,y2]]=[[region.left,region.bottom],[region.right,region.top]].map(([x,y])=>[a*x+c*y+e,b*x+d*y+f])

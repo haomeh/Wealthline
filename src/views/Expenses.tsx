@@ -2,7 +2,7 @@ import { cashflowReturnTo } from '../cashflowQuery'
 import { navigate } from '../site'
 import { ExpenseRecords } from './ExpenseRecords'
 import { ExpenseEditor } from './ExpenseEditor'
-import { ImportKind, ImportSteps } from './ImportSteps'
+import { ImportKind, ImportSteps, type ImportKindChoice, type QueuedImport } from './ImportSteps'
 import { DetailRecord } from './DetailRecord'
 import { fmt } from '../format'
 import { dataVersion } from '../dataVersion'
@@ -16,7 +16,7 @@ import { mergeStatementPasswords, parseStatementPasswords, statementPasswordStat
 import type { WealthData } from '../model'
 import { removeExpense, saveExpense, saveExpenseRule } from '../ledgerEdits'
 
-export function Expenses({data,onChange,busy,passwordScope,recordId,returnTo,importing:routed,onImporting,onImportBank}: {recordId?:string;returnTo?:string;passwordScope?:string;data:WealthData;onChange:(next:WealthData)=>void;busy:boolean;importing?:boolean;onImporting?:(open:boolean)=>void;onImportBank?:()=>void}) {
+export function Expenses({data,onChange,busy,passwordScope,recordId,returnTo,importing:routed,onImporting,onSelectKind,queued,onImported}: {recordId?:string;returnTo?:string;passwordScope?:string;data:WealthData;onChange:(next:WealthData)=>void;busy:boolean;importing?:boolean;onImporting?:(open:boolean)=>void;onSelectKind?:(kind:ImportKindChoice)=>void;queued?:QueuedImport;onImported?:(message:string)=>boolean}) {
  const back = cashflowReturnTo(returnTo??null)
  const returnLink = back && <button type="button" className="link" onClick={()=>navigate(back,{scroll:'preserve',focus:'cashflow-records'})}>返回收支明細</button>
  const missingRecord = recordId && !data.expenses?.some(e=>e.id===recordId) ? <p role="status">找不到指定紀錄，可能已移除。</p> : null
@@ -36,11 +36,13 @@ export function Expenses({data,onChange,busy,passwordScope,recordId,returnTo,imp
     onChange(saveExpenseRule(data,rule,ruleExpense.index))
     setRuleExpense(null)
   }}/>
-  if(importing) return <>{ruleDialog}{passwordDialog}<StatementImport onSwitchKind={onImportBank} passwords={passwords} passwordScope={passwordScope} onManagePasswords={()=>setManagingPasswords(true)} onAddRule={(expense,index)=>setRuleExpense({expense,index})} rules={rules} existing={expenses} busy={busy} onCancel={()=>setImporting(false)} onImport={(rows,context)=>{
+  if(importing) return <>{ruleDialog}{passwordDialog}<StatementImport onSelectKind={onSelectKind} queued={queued} passwords={passwords} passwordScope={passwordScope} onManagePasswords={()=>setManagingPasswords(true)} onAddRule={(expense,index)=>setRuleExpense({expense,index})} rules={rules} existing={expenses} busy={busy} onCancel={()=>setImporting(false)} onImport={(rows,context)=>{
     const result = mergeExpenses(expenses,rows,context)
     if(result.added) onChange({...data,version:dataVersion(data, {minimumVersion:10}),expenses:result.expenses})
-    setMessage(`已加入 ${result.added} 筆，略過 ${result.duplicates} 筆重複。`)
-    setImporting(false)
+    const done = `已加入 ${result.added} 筆，略過 ${result.duplicates} 筆重複。`
+    setMessage(done)
+    // In a detected batch the batch screen shows the result, so the import does not close.
+    if(!onImported?.(done)) setImporting(false)
   }}/></>
   if(editing) return <>{returnLink}<ExpenseEditor rules={rules} expense={editing} busy={busy} onCancel={()=>setEditing(null)} onSave={expense=>{
     onChange(saveExpense(data,expense))
@@ -64,7 +66,7 @@ export function Expenses({data,onChange,busy,passwordScope,recordId,returnTo,imp
 }
 
 type Draft = Expense & {selected:boolean;amountText:string;needsReview?:boolean;sourceFile?:number}
-function StatementImport({existing,busy,onCancel,onImport,rules,onAddRule,passwords,passwordScope,onManagePasswords,onSwitchKind}: {onSwitchKind?:()=>void;passwords:StatementPassword[];passwordScope?:string;onManagePasswords:()=>void;onAddRule:(expense:Expense,index?:number)=>void;rules:ExpenseCategoryRule[];existing:Expense[];busy:boolean;onCancel:()=>void;onImport:(rows:Expense[],context:Expense[])=>void}) {
+function StatementImport({existing,busy,onCancel,onImport,rules,onAddRule,passwords,passwordScope,onManagePasswords,onSelectKind,queued}: {onSelectKind?:(kind:ImportKindChoice)=>void;queued?:QueuedImport;passwords:StatementPassword[];passwordScope?:string;onManagePasswords:()=>void;onAddRule:(expense:Expense,index?:number)=>void;rules:ExpenseCategoryRule[];existing:Expense[];busy:boolean;onCancel:()=>void;onImport:(rows:Expense[],context:Expense[])=>void}) {
   const [files,setFiles] = useState<File[]>([])
   const [reports,setReports] = useState<{name:string;bank?:string;month?:string;source?:string;currency?:string;count?:number;error?:string;ocr?:boolean;warning?:string}[]>([])
   const [password,setPassword] = useState('')
@@ -76,11 +78,21 @@ function StatementImport({existing,busy,onCancel,onImport,rules,onAddRule,passwo
   const [currency,setCurrency] = useState('TWD')
   const [parsing,setParsing] = useState(false)
   const [progress,setProgress] = useState('')
+  // Files done of the run, and the one being read; `progress` is that file's current step.
+  const [count,setCount] = useState<{processed:number;total:number;current:string;failures:number}|null>(null)
+  const [fromEntry,setFromEntry] = useState(false)
   const [drafts,setDrafts] = useState<Draft[]|null>(null)
   const [skipped,setSkipped] = useState<string[]>([])
   const [error,setError] = useState('')
   const controller = useRef<AbortController|null>(null)
   useEffect(()=>()=>controller.current?.abort(),[])
+  // Files the import entry detected as card statements are parsed at once, with the password typed there.
+  useEffect(()=>{
+    if(!queued) return
+    setFromEntry(true)
+    void run(queued.files,queued.password)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[])
   const locked = busy || parsing
   const patch = (id:string,fields:Partial<Draft>) => setDrafts(rows=>rows?.map(r=>r.id===id?{...r,...fields}:r) ?? null)
   const selected = (drafts ?? []).filter(r=>r.selected)
@@ -95,14 +107,19 @@ function StatementImport({existing,busy,onCancel,onImport,rules,onAddRule,passwo
     }),drafts ?? [])
   } catch(e) {validation = e instanceof Error?e.message:'請檢查資料'}
 
-  async function parse(e:FormEvent) {
+  function parse(e:FormEvent) {
     e.preventDefault()
     if(locked || !files.length) return
-    setError('');setReports([]);setProgress('');setParsing(true)
-    const abort = new AbortController()
-    controller.current = abort
     const secret = password
     setPassword('')
+    setFromEntry(false)
+    void run(files,secret)
+  }
+  async function run(files:File[],secret:string) {
+    controller.current?.abort()
+    setError('');setReports([]);setProgress('');setCount(null);setParsing(true)
+    const abort = new AbortController()
+    controller.current = abort
     const previews:Draft[] = [], ignored:string[] = []
     const outcomes:typeof reports = []
     try {
@@ -110,8 +127,9 @@ function StatementImport({existing,busy,onCancel,onImport,rules,onAddRule,passwo
       if(abort.signal.aborted)return
       const candidates = passwords.length ? [...stored.values,...secret.split(',').map(p=>p.trim()).filter(Boolean)] : secret
       setPasswordNotice(stored.unavailable?`${stored.unavailable} 組密碼無法在此瀏覽器解鎖；請重新設定或手動輸入。`:'')
-      for(const file of files) {
+      for(const [index,file] of files.entries()) {
         if(abort.signal.aborted) return
+        setProgress('');setCount({processed:index,total:files.length,current:file.name?.trim() || `檔案 ${index+1}`,failures:outcomes.filter(r=>r.error).length})
         try {
           assertCreditCardFile(file.name)
           if(file.size > 20*1024*1024) throw new Error('帳單超過 20 MB，請拆分後再匯入')
@@ -152,14 +170,14 @@ function StatementImport({existing,busy,onCancel,onImport,rules,onAddRule,passwo
 
   return <section className="panel statement-import">
     <div className="panel-head"><h2>匯入帳單</h2><ImportSteps step={drafts ? 2 : 1} /><button onClick={()=>{controller.current?.abort();onCancel()}}>取消匯入</button></div>
-    <ImportKind kind="card" disabled={locked || !!drafts} onSwitch={onSwitchKind} />
+    <ImportKind kind="card" disabled={locked || !!drafts} onSelect={onSelectKind} />
     <p className="statement-privacy">PDF 與解密都只在瀏覽器處理，原始帳單不保存、不上傳。選擇保存的密碼會加密；密碼設定與確認匯入的消費明細，儲存後才會存於本機或自己的 Google Drive。</p>
     {passwordScope && !drafts && <div className="statement-password-summary"><span className="muted small">{available.length?`已設定 ${available.length} 組密碼，解析時自動套用。`:'可先設定常用帳單密碼。'}{passwords.length>available.length?` ${passwords.length-available.length} 組需在此瀏覽器重新設定。`:''}</span><button disabled={locked} onClick={onManagePasswords}>管理帳單密碼</button></div>}
     {passwordNotice && <p role="status" className="notice">{passwordNotice}</p>}
-    {parsing && progress && <p role="status">{progress}</p>}
+    {parsing && count && <div className="notice bank-progress" role="status" aria-label="信用卡帳單解析進度" aria-live="polite"><progress value={count.processed} max={count.total} aria-label="信用卡帳單處理進度"/><p>正在本機解析 · 第 {count.processed+1}／{count.total} 份{count.processed?` · 完成 ${count.processed} 份${count.failures?`（${count.failures} 份未匯入）`:''}`:''}</p><p>目前檔案：{count.current} · {progress || '讀取 PDF…'}</p></div>}
     {error && <p className="banner error" role="alert">{error}</p>}
     {!!reports.length && <ul className="notice" aria-label="各帳單解析結果">{reports.map((r,i)=><li key={i}><strong>{r.name}</strong>：{r.error || `${r.bank} · ${r.month}（${r.source}）· ${r.count} 筆待核對${r.ocr?' · OCR 商家請核對':''}${r.warning?` · ${r.warning}`:''}`}</li>)}</ul>}
-    {!drafts ? <form onSubmit={parse}>
+    {!drafts ? <form onSubmit={parse} hidden={parsing && fromEntry}>
       <fieldset className="statement-upload-fields" disabled={locked}>
         <label className="field statement-upload"><span>帳單 PDF（可選多份）</span><small className="muted">選擇信用卡帳單 · 每份最多 20 MB</small><input type="file" multiple accept=".pdf,application/pdf" required onChange={e=>{setFiles(Array.from(e.target.files??[]));setPassword('');setError('');setReports([])}}/></label>
         <label className="field statement-password"><span>PDF 密碼（多組以逗號 , 分隔）</span><input type="password" autoComplete="off" placeholder="未加密的帳單可留空" value={password} onChange={e=>setPassword(e.target.value)}/><small className="muted">僅供本次解析，不會保存。不同帳單的密碼以逗號分隔。</small></label>
