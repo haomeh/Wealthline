@@ -40,3 +40,5 @@ public/ocr/
 
 .codegraph
 .worktrees/
+
+.private/

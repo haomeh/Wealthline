@@ -3822,3 +3822,26 @@ button.pin-chip:hover:not(:disabled) { background: var(--ink); opacity: 0.85; }
 .report-entries article { border-top: 1px solid var(--line); padding: 1rem 0; }
 .report-entries h4 { margin: 0; overflow-wrap: anywhere; }
 .monthly-report input[type=file] { max-width: 100%; }
+
+/* 收支總覽: the numbers and category rows that open their records are plain text with a chevron, not pills. */
+.cashflow-panels { display: flex; margin: 0 0 14px; }
+.cashflow-panels button { flex: 1; min-height: 36px; white-space: nowrap; }
+@media (min-width: 900px) { .cashflow-panels { display: inline-flex; } .cashflow-panels button { flex: none; } }
+.cashflow-phone-summary button, .cashflow-tiles .tile-stat > button:not(.link), .cashflow-category-rows button { min-height: 32px; padding: 0; border: 0; border-radius: 6px; background: none; color: inherit; font: inherit; text-align: left; }
+.cashflow-phone-summary button:hover:not(:disabled), .cashflow-tiles .tile-stat > button:not(.link):hover:not(:disabled), .cashflow-category-rows button:hover:not(:disabled) { background: none; text-decoration: underline; text-underline-offset: 4px; }
+.cashflow-phone-summary button::after, .cashflow-category-rows button::after { content: '›' / ''; margin-left: 6px; color: var(--muted); font: 400 15px/1 system-ui, sans-serif; }
+.cashflow-phone-summary > strong button::after { font-size: 22px; }
+.cashflow-hbar { grid-template-columns: auto minmax(0, 1fr) 6.5em; }
+.cashflow-hbar button { white-space: nowrap; }
+.cashflow-hbar .num-serif { text-align: right; }
+.cashflow-category-rows li { padding: 4px 0; }
+.cashflow-category-rows button { width: 100%; min-height: 36px; }
+.cashflow-records-tile > h3 { order: -1; margin: 0; }
+.cashflow-filters button, .cashflow-filters select { min-height: 36px; padding: 5px 12px; font-size: 13px; }
+.cashflow-filters label { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--ink-2); white-space: nowrap; }
+.cashflow-filters button[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-wash); color: var(--accent); font-weight: 700; }
+.cashflow-records-tile p { margin: 0; }
+.cashflow-totals { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.cashflow-totals small { grid-column: 1 / -1; color: var(--muted); font-size: 12px; }
+.cashflow-totals span { display: flex; flex-direction: column; padding: 8px 10px; border-radius: 12px; background: var(--surface-2); color: var(--ink-2); font-size: 12px; }
+.cashflow-totals b { color: var(--ink); font-size: 15px; font-weight: 400; overflow-wrap: anywhere; }

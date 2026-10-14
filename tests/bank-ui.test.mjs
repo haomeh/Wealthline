@@ -384,3 +384,27 @@ test('the kind switch of the import screen locks once a bank preview exists, and
  assert.deepEqual(kinds(),[false,false]);pdf.pause();await files();await submitImport();assert.equal(document.querySelector('.bank-preview-row'),null);assert.deepEqual(kinds(),[true,true],'switching kinds would abandon the parse');await act(()=>pdf.release());await settle(()=>!!document.querySelector('.bank-preview-row'));assert.deepEqual(kinds(),[true,true],'switching kinds would silently discard the preview')
  await click('取消匯入');assert.equal(window.location.pathname,'/bank-transactions');assert.ok(button('匯入銀行帳單'))
 })
+test('a balance for a currency without transactions imports with the same bank section',async()=>{
+ const r=parsed();r.bank='DBS Singapore';r.sections[0].bank=r.bank;r.sections[0].currency='SGD';r.sections[0].rows[0]={...draft,currency:'SGD'};r.balances=[{bank:r.bank,date:'2025-09-30',currency:'SGD',quantity:888.5},{bank:r.bank,date:'2025-09-30',currency:'USD',quantity:12.5}];pdf.reset([r]);
+ const latest=await render({...model.emptyData(),bankTransactionAccounts:[],bankTransactions:[],bankCategoryRules:[]})
+ await click('匯入銀行帳單');await files();await submitImport();assert.match(document.body.textContent,/USD 12.5/);await click('檢查匯入');await click('確認銀行匯入')
+ assert.deepEqual(latest().history.quantityDays[0].entries.map(e=>[e.currency,e.quantity]).sort(),[['SGD',888.5],['USD',12.5]]);assert.equal(latest().bankStatementBalances.length,2)
+})
+test('balances from a statement with only an account summary import under the bank ledger account',async()=>{
+ const r=parsed();r.bank='DBS Singapore';r.sections=[];r.recognizedCount=0;r.balances=[{bank:r.bank,date:'2025-09-30',currency:'SGD',quantity:888.5},{bank:r.bank,date:'2025-09-30',currency:'USD',quantity:12.5}];pdf.reset([r])
+ const latest=await render({...model.emptyData(),bankTransactionAccounts:[],bankTransactions:[],bankCategoryRules:[]})
+ await click('匯入銀行帳單');await files();await submitImport();await click('檢查匯入');await click('確認銀行匯入')
+ assert.deepEqual(latest().bankTransactionAccounts.map(a=>a.label),['DBS (SG)']);assert.equal(latest().bankTransactions.length,0)
+ assert.deepEqual(latest().history.quantityDays[0].entries.map(e=>[e.currency,e.quantity]).sort(),[['SGD',888.5],['USD',12.5]])
+})
+test('summary-only balances ask which ledger account when the bank has several, then use the choice',async()=>{
+ const r=parsed();r.bank='Fubon';r.sections=[];r.recognizedCount=0;r.balances=[{bank:'Fubon',date:'2025-09-30',currency:'TWD',quantity:545},{bank:'Fubon',date:'2025-09-30',currency:'USD',quantity:3.38}];pdf.reset([r])
+ const ledgers=[{id:'salary',label:'Salary',bank:'Fubon'},{id:'savings',label:'Savings',bank:'Fubon'}]
+ const latest=await render({...model.emptyData(),bankTransactionAccounts:ledgers,bankTransactions:[],bankCategoryRules:[]})
+ await click('匯入銀行帳單');await files();await submitImport();await click('檢查匯入')
+ assert.match(document.querySelector('[role=alert]').textContent,/選擇帳單餘額對應的流水帳戶/)
+ await input(`${box('帳單期末餘額').querySelector('select').getAttribute('aria-label')}`,'savings')
+ await click('檢查匯入');await click('確認銀行匯入')
+ assert.deepEqual(latest().bankTransactionAccounts.map(a=>a.id),['salary','savings'])
+ assert.deepEqual(latest().bankStatementBalances.map(b=>[b.currency,b.ledgerAccountId]).sort(),[['TWD','savings'],['USD','savings']])
+})
