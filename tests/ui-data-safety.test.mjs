@@ -1585,6 +1585,10 @@ test('an HSBC row with an unreadable merchant enters the preview as an unselecte
   const report=document.querySelector('[aria-label="各帳單解析結果"]').textContent
   assert.match(report,/2 筆/);assert.ok(!report.includes('請填寫商家'))
   assert.match(document.querySelector('.statement-import').textContent,/編輯第 2 筆交易 · 商家待填寫核對2026-04-01/)
+  // OCR rows with a readable merchant are checked by default; the unreadable draft stays unchecked.
+  assert.equal(document.querySelector('[aria-label="第 1 筆"]').checked,true)
+  assert.equal(document.querySelector('[aria-label="第 2 筆"]').checked,false)
+  assert.match(document.querySelector('.statement-preview-summary').textContent,/1 筆 OCR 交易已勾選/)
 })
 for(const {ocrError,currency} of [{currency:'TWD'},{currency:'TWD',ocrError:'OCR 等待逾時，請重試或手動補上商家'},{currency:'SGD'}]) {
   test(`zero recognized HSBC rows allow inspection and manual recovery (${currency} ${ocrError ?? 'unreadable'})`,async()=>{
