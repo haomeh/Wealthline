@@ -1,12 +1,15 @@
 import { useState } from 'react'
 import { fmt } from '../format'
-import { importSheet, type ImportResult } from '../importSheet'
+import { importPositionCsv, importSheet, type ImportResult } from '../importSheet'
+import { CSV_MAX_BYTES, CsvError, csvErrorText, decodeCsv, hasCsvHeader } from '../csvImport'
+import { REPO_URL } from '../site'
 import { ACCOUNT_KINDS, accountBaseValue, breakdown, cashCurrencies, type Account, type AccountKind, type Slice, type WealthData } from '../model'
 import { accountChange } from '../accountTrend'
 import { displaySymbol } from '../quotes'
 import { useCalendarNow } from '../useCalendarNow'
 import { AccountDetail } from './AccountDetail'
 import { AccountForm } from './AccountForm'
+import { CsvGuide } from './CsvGuide'
 
 interface Props {
   data: WealthData
@@ -95,7 +98,7 @@ export function Accounts({ data, onChange, view, setView, onBack, onRefreshPrice
       <div className="page-head">
         <h2>帳戶</h2>
         <div className="row">
-          <button className="desktop-only" onClick={() => setShowImport(!showImport)}>從試算表匯入</button>
+          <button className="desktop-only" onClick={() => setShowImport(!showImport)}>從試算表或 CSV 匯入</button>
           <button className="primary add-account" aria-label="新增帳戶" onClick={() => setView({ page: 'new' })}>
             ＋<span className="desktop-only"> 新增帳戶</span>
           </button>
@@ -148,7 +151,7 @@ export function Accounts({ data, onChange, view, setView, onBack, onRefreshPrice
           </ul>
         </section>
       ))}
-      {data.accounts.length > 0 && !showImport && <button className="link import-link mobile-only" onClick={() => setShowImport(true)}>從試算表匯入</button>}
+      {data.accounts.length > 0 && !showImport && <button className="link import-link mobile-only" onClick={() => setShowImport(true)}>從試算表或 CSV 匯入</button>}
     </>
   )
 }
@@ -184,24 +187,43 @@ function ShareBar({ slices }: { slices: Slice[] }) {
 
 function ImportPanel({ data, onChange, onDone }: Props & { onDone: () => void }) {
   const [text, setText] = useState('')
+  const [fileError, setFileError] = useState('')
   const [preview, setPreview] = useState<{ source: WealthData; result: ImportResult } | null>(null)
+  // A header row with a type column is the CSV format (docs/csv-import.md); anything else is pasted sheet rows.
+  const isCsv = hasCsvHeader(text)
+  const unpriced = preview && !preview.result.errors.length ? preview.result.data.accounts.flatMap((a) => a.positions).filter((p) => p.type === 'holding' && !p.price && !p.priceManual).length : 0
   return (
     <section className="panel">
-      <h3>從試算表匯入</h3>
+      <h3>從試算表或 CSV 匯入</h3>
       <p className="muted small">
         從 Google 試算表或 Excel 複製資料列後貼上（不含標題列）。欄位順序：機構、類別、子類別、幣別、數量、單價、原幣市值、匯率、台幣市值、佔比。
-        同名帳戶的全部原持倉會被取代，匯率會一併更新。請先預覽並確認刪除差異；有錯誤時整批不匯入。
+        也可以選擇 type=position 的 CSV 檔，欄位見 <a href={`${REPO_URL}/blob/main/docs/csv-import.md`} target="_blank" rel="noreferrer">CSV 匯入格式</a>。
+        同名帳戶的全部原持倉會被取代，試算表的匯率會一併更新。請先預覽並確認刪除差異；有錯誤時整批不匯入。
       </p>
-      <textarea value={text} onChange={(e) => { setText(e.target.value); setPreview(null) }} rows={8} placeholder="在這裡貼上…" />
+      <label className="field"><span>CSV 檔（選填，只在此瀏覽器讀取）</span><input aria-label="帳戶 CSV" type="file" accept=".csv,text/csv" onChange={async (e) => {
+        const file = e.target.files?.[0]
+        e.target.value = ''
+        setPreview(null); setFileError('')
+        if (!file) return
+        try {
+          if (file.size > CSV_MAX_BYTES) throw new CsvError('CSV 超過 5 MB，請拆分後再匯入。')
+          setText(decodeCsv(new Uint8Array(await file.arrayBuffer())))
+        } catch (error) {
+          setFileError(csvErrorText(error))
+        }
+      }} /></label>
+      {fileError && <p role="alert" className="banner error">{fileError}</p>}
+      <CsvGuide kinds={['position']} where="在上方「CSV 檔」選擇檔案，按「預覽 CSV 匯入」" />
+      <textarea aria-label="匯入資料" value={text} onChange={(e) => { setText(e.target.value); setPreview(null) }} rows={8} placeholder="在這裡貼上…" />
       <div className="row">
         <button
           className="primary"
           onClick={() => {
-            setPreview({ source: data, result: importSheet(data, text) })
+            setPreview({ source: data, result: isCsv ? importPositionCsv(data, text) : importSheet(data, text) })
           }}
           disabled={!text.trim()}
         >
-          預覽匯入
+          {isCsv ? '預覽 CSV 匯入' : '預覽匯入'}
         </button>
         <button onClick={onDone}>取消</button>
       </div>
@@ -210,7 +232,7 @@ function ImportPanel({ data, onChange, onDone }: Props & { onDone: () => void })
         {preview.source !== data && <p role="alert">資料已變更，請重新預覽後再確認。</p>}
         {preview.result.errors.length > 0 && <div role="alert">
           <p>以下錯誤必須全部修正，尚未套用任何資料：</p>
-          <ul>{preview.result.errors.map((e) => <li key={e.line}>第 {e.line} 列：{e.message}</li>)}</ul>
+          <ul>{preview.result.errors.map((e, i) => <li key={i}>{e.line ? `第 ${e.line} 列：` : ''}{e.message}</li>)}</ul>
         </div>}
         {preview.result.replaced.map((a) => <div key={a.id}>
           <strong>將取代「{a.name}」，刪除以下 {a.positions.length} 筆原持倉：</strong>
@@ -221,6 +243,7 @@ function ImportPanel({ data, onChange, onDone }: Props & { onDone: () => void })
           <ul>{a.positions.map((p) => <li key={p.id}>{p.symbol || '現金'} · {p.currency} · 數量 {p.quantity} · 單價 {p.price}</li>)}</ul>
         </div>)}
         <ul>{preview.result.rateChanges.map((r) => <li key={r.currency}>匯率 {r.currency}：{r.before ?? '未設定'} → {r.after}</li>)}</ul>
+        {unpriced > 0 && <p className="muted small">{unpriced} 個標的還沒有價格，確認後到帳戶頁按「更新報價」，或下次開啟時自動查價。</p>}
         <p className="muted small">確認後只更新本機資料，仍需按「儲存變更」才會寫入 Drive。</p>
         <button className="primary" disabled={preview.source !== data || !!preview.result.errors.length || !preview.result.rows} onClick={() => {
           if (preview.source !== data || preview.result.errors.length || !preview.result.rows) return

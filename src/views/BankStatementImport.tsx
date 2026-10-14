@@ -1,8 +1,9 @@
-import { bankStatementIdentity, statementAccountLabel, statementBalanceConfirmation, statementLedgerAccount, importStatementBalances, statementBalanceRevision, type StatementBalanceCandidate } from '../bankStatementAssets'
+import { bankStatementIdentity, statementAccountLabel, statementInstitution, statementBalanceConfirmation, statementLedgerAccount, importStatementBalances, statementBalanceRevision, type StatementBalanceCandidate } from '../bankStatementAssets'
 import type { WealthData } from '../model'
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { BANK_PDF_ERRORS, bankStatementErrorMessage, pdfFormatError, type BankImportStage } from '../bankStatementErrors'
 import { sha256 } from '../expenses'
+import { CSV_MAX_BYTES, CsvError, csvErrorText, decodeCsv, isCsvFile, readBankCsv } from '../csvImport'
 import { bankCategoryRuleIndex, mergeBankTransactions, prepareBankTransactions, validateBankLedger, type BankTransaction, type BankTransactionAccount, type BankTransactionRow, type BankCategoryRule, type BankRowProvenance } from '../bankTransactions'
 import { protectBankText } from '../bankTextPrivacy'
 import { unlockStatementPasswords, type StatementPassword } from '../statementPasswords'
@@ -13,9 +14,11 @@ import { ActionIcon } from './ActionIcon'
 import { fmt } from '../format'
 import { BANK_SUMMARY_PENDING, BANK_TEXT_NOTICE, bankFileSummary, classificationLabel, summarizeBankWarnings } from './bankUiHelpers'
 import { ImportKind, ImportSteps, type ImportKindChoice, type QueuedImport } from './ImportSteps'
+import { REPO_URL } from '../site'
+import { CsvGuide } from './CsvGuide'
 
 type PreviewRow={draft:BankTransaction;original:BankTransactionRow;provenance:BankRowProvenance;selected:boolean;manual?:boolean;narration?:{leading:string[];trailing:string[]}}
-type PreviewSection={automatic?:boolean;id:string;bank:string;currency:string;hash:string;rows:PreviewRow[];accountId:string;newId:string;label:string;noTransactions:boolean;partial:boolean;warnings:ReturnType<typeof summarizeBankWarnings>}
+type PreviewSection={csv?:boolean;automatic?:boolean;id:string;bank:string;currency:string;hash:string;rows:PreviewRow[];accountId:string;newId:string;label:string;noTransactions:boolean;partial:boolean;warnings:ReturnType<typeof summarizeBankWarnings>}
 type Review={balanceConfirmations:NonNullable<ReturnType<typeof statementBalanceConfirmation>>[];balances:StatementBalanceCandidate[];balanceCount:number;balanceRevision:string;accounts:BankTransactionAccount[];rows:BankTransaction[];context:BankTransaction[]}
 // The ledger accounts a statement bank's balances may belong to.
 const ledgerChoices=(bank:string,accounts:readonly BankTransactionAccount[])=>accounts.filter(a=>bankStatementIdentity(a.bank)?.label===bankStatementIdentity(bank)?.label)
@@ -56,6 +59,11 @@ export function BankStatementImport({data,accounts,existing,rules,passwords,pass
  // The picker already shows names; the report uses them instead of a position.
  const name=files[index]?.name?.trim()||`檔案 ${index+1}`
  setProgress({processed:index,total:files.length,successes,failures,currentFile:name,complete:false})
+ if(isCsvFile(files[index])){
+  try{const csv=await csvPreview(files[index],name,[...next]);if(abort.signal.aborted)return;next.push(...csv.sections);nextBalances.push(...csv.balances);outcomes.push(...csv.reports);successes++}
+  catch(e){if(abort.signal.aborted)return;failures++;outcomes.push(`${name} · 無法匯入 CSV：${csvErrorText(e).replace(/。$/, '')}。未加入任何此檔資料。`)}
+  setProgress(p=>p?{...p,processed:index+1,successes,failures}:p);continue
+ }
  try{
  const file=files[index];if(file.size>20*1024*1024)throw new Error(BANK_PDF_ERRORS.size)
  const bytes=new Uint8Array(await file.arrayBuffer());if(abort.signal.aborted)return
@@ -91,6 +99,35 @@ export function BankStatementImport({data,accounts,existing,rules,passwords,pass
  stage='result'
  if(!abort.signal.aborted){setReports(outcomes);setSections(next);setBalances(nextBalances);setBalanceLedgers({});setFiles([]);setSectionIndex(0);setRowPage(0);setProgress(p=>p?{...p,currentFile:'',page:undefined,complete:true}:p)}
  }catch(e){if(!abort.signal.aborted)setError(bankStatementErrorMessage(e,stage))}finally{if(!abort.signal.aborted)setParsing(false)}
+ }
+ // A CSV file of bank rows (docs/csv-import.md): one preview section per account label and currency, mapped to the
+ // ledger account of that label when one exists. Closing balances go to asset history only for supported banks.
+ async function csvPreview(file:File,name:string,earlier:PreviewSection[]){
+  if(file.size>CSV_MAX_BYTES)throw new CsvError('CSV 超過 5 MB，請拆分後再匯入。')
+  const bytes=new Uint8Array(await file.arrayBuffer()),csv=readBankCsv(decodeCsv(bytes)),hash=await sha256(bytes)
+  const groups=new Map<string,typeof csv.rows>()
+  for(const row of csv.rows){const key=JSON.stringify([row.account.toUpperCase(),row.currency]);groups.set(key,[...(groups.get(key)??[]),row])}
+  const sections:PreviewSection[]=[],reports:string[]=[`${name} · CSV · ${csv.rows.length} 筆 · ${groups.size} 個帳戶區段`]
+  const same=(a:string,b:string)=>protectBankText(a).toUpperCase()===protectBankText(b).toUpperCase()
+  for(const rows of groups.values()){
+   // A supported bank is kept under its institution key, as statement imports keep it, so closing balances can attach.
+   const {account,currency}=rows[0],bank=statementInstitution(rows[0].bank)??rows[0].bank,label=protectBankText(account)
+   const existing=latest.current.accounts.find(a=>same(a.label,account)),pending=[...earlier,...sections].find(p=>p.accountId==='new'&&same(p.label,account))
+   // The account column names the ledger account, so the section is mapped without asking.
+   sections.push({csv:true,id:crypto.randomUUID(),bank,currency,hash,accountId:existing?.id??(pending?pending.newId:'new'),newId:crypto.randomUUID(),label,noTransactions:false,partial:false,warnings:[],
+    rows:rows.map(r=>{const row={date:r.date,description:protectBankText(r.description),currency:r.currency,direction:r.direction,amount:r.amount,...(r.classification&&{classification:r.classification})}
+     return {draft:{id:crypto.randomUUID(),accountId:'',...row},original:{...row,description:row.description||BANK_SUMMARY_PENDING},provenance:{page:1,sectionKey:'csv',rowKey:`line-${r.line}`},selected:true}})})
+  }
+  const balances:(StatementBalanceCandidate & {sectionId:string})[]=[]
+  for(const b of csv.balances){
+   const section=sections.find(s=>same(s.label,b.account)&&s.currency===b.currency)??sections.find(s=>same(s.label,b.account))
+   const institution=statementInstitution(b.bank)
+   if(!institution){reports.push(`${name} · ${protectBankText(b.account)} ${b.date} 的期末餘額未補入資產歷史：bank 欄需為已支援的銀行（台新、富邦、玉山、富邦奈米投、Wise，或 HSBC TW、HSBC SG、DBS TW、DBS SG）`);continue}
+   const ledger=latest.current.accounts.find(a=>a.id===section?.accountId)
+   if(ledger&&bankStatementIdentity(ledger.bank)?.label!==bankStatementIdentity(institution)?.label){reports.push(`${name} · ${b.date} 的期末餘額未補入資產歷史：流水帳戶「${ledger.label}」的銀行不是 ${statementAccountLabel(institution)}`);continue}
+   balances.push({bank:institution,date:b.date,currency:b.currency,quantity:b.quantity,fileHash:hash,ledgerAccountId:section?.newId??'',sectionId:section?.id??''})
+  }
+  return {sections,balances,reports}
  }
  async function prepare(){if(locked)return;const abort=new AbortController();controller.current=abort;setPreparing(true);setError('');setKeep(false)
  try{
@@ -145,14 +182,16 @@ export function BankStatementImport({data,accounts,existing,rules,passwords,pass
   <details className="bank-help"><summary>支援範圍與資料保護</summary>
    <p className="muted">不保存原始文件或完整擷取文字；確認後保存收支明細，並將已辨識的期末餘額補入資產歷史。{BANK_TEXT_NOTICE}</p>
    <p>辨識到的交易不代表完整月流水。新加坡星展目前支援 SGD 收支明細；玉山舊版綜合對帳單僅局部轉出明細，2023 年起的版型為完整活存明細。Wise 與奈米投記錄的是基金買賣的款項進出。未知或歧義列不自動推算，請核對並手動補登。</p>
+   <p>其他銀行可改用 CSV，步驟、欄位與 AI 提示詞見「用 CSV 匯入：教學與 AI 提示詞」或 <a href={`${REPO_URL}/blob/main/docs/csv-import.md`} target="_blank" rel="noreferrer">CSV 匯入格式</a>。</p>
   </details>
   <form onSubmit={parse} hidden={parsing && fromEntry}>
    <fieldset disabled={locked} className="bank-fields bank-upload-fields">
-    <label className="field"><span>銀行帳單 PDF（每份最多 20 MB）</span><input aria-label="銀行帳單 PDF" type="file" multiple accept=".pdf,application/pdf" onChange={e=>{setFiles(Array.from(e.target.files??[]));setPassword('')}}/></label>
+    <label className="field"><span>銀行帳單 PDF 或 CSV（PDF 每份最多 20 MB）</span><input aria-label="銀行帳單 PDF" type="file" multiple accept=".pdf,application/pdf,.csv,text/csv" onChange={e=>{setFiles(Array.from(e.target.files??[]));setPassword('')}}/></label>
     <label className="field"><span>PDF 密碼（選填，多組以逗號分隔）</span><input aria-label="銀行 PDF 密碼" type="password" autoComplete="off" value={password} onChange={e=>setPassword(e.target.value)}/><small className="muted">僅供本次解析，不會保存。</small></label>
    </fieldset>
    <div className="row bank-upload-actions"><button disabled={locked||!files.length} className="primary">{parsing?'正在本機處理…':'解析銀行帳單'}</button>{passwordScope && <button type="button" disabled={locked} onClick={onManagePasswords}>管理帳單密碼</button>}</div>
   </form>
+  {!sections.length && !parsing && <CsvGuide kinds={['bank']} where="在上方「銀行帳單 PDF 或 CSV」選擇檔案" />}
   {progress && <div className="notice bank-progress" role="status" aria-label="銀行解析進度" aria-live="polite"><progress value={progress.processed} max={progress.total} aria-label="銀行檔案處理進度"/><p>{progress.complete?'處理完成':'正在本機處理'} · {progress.processed}／{progress.total} 份 · {Math.floor(progress.processed/progress.total*100)}% · 成功 {progress.successes} 份 · 失敗 {progress.failures} 份（含未辨識）</p>{progress.currentFile && <p>目前檔案：{progress.currentFile}{progress.page && ` · ${progress.page.completed}／${progress.page.total} 頁完成文字擷取`}</p>}{progress.complete && <p>{previewCount} 筆預覽 · {previewCount||balances.length?'待核對匯入。':'沒有可匯入的預覽，請核對報告或手動補登。'}100% 表示檔案處理結束，尚未匯入或儲存；請檢查解析報告。</p>}</div>}
   {preparing && <p role="status" className="muted">正在準備重複交易與餘額核對…</p>}
   {reports.length>0 && <details className="bank-import-report" open={reports.some(r=>/無法解析|不支援／未辨識|無法自動讀取|無法在此瀏覽器解鎖/.test(r))||undefined}>
@@ -160,9 +199,9 @@ export function BankStatementImport({data,accounts,existing,rules,passwords,pass
    <ul aria-label="銀行解析結果">{reports.map((r,i)=><li key={i}>{r}</li>)}</ul>
   </details>}
   {balances.length>0 && <section className="notice bank-closing-balances" aria-label="帳單期末餘額"><h3>補入資產歷史</h3><p className="muted small">只補入帳單日期的現金餘額；目前持倉不變，其他資產不推算。</p>{[...new Set(balances.filter(b=>!b.sectionId).map(b=>b.bank))].filter(bank=>!statementLedgerAccount(bank,accounts)&&ledgerChoices(bank,accounts).length).map(bank=>{const key=statementAccountLabel(bank);return <label className="field" key={key}><span>{key} 餘額對應的流水帳戶</span><select aria-label={`${key} 餘額帳戶`} disabled={locked} value={balanceLedgers[key]??''} onChange={e=>{setError('');setReview(null);setBalanceLedgers(m=>({...m,[key]:e.target.value}))}}><option value="">請選擇流水帳戶</option>{ledgerChoices(bank,accounts).map(a=><option key={a.id} value={a.id}>{a.label} · {a.bank}</option>)}<option value="new">新增帳戶標籤 {key}</option></select></label>})}{balances.map((b,i)=>{const confirmation=statementBalanceConfirmation(b.bank,data.accounts);return <div key={i}><p><strong>{statementAccountLabel(b.bank)}</strong> · {b.date} · {b.currency==='TWD'?'NT$':b.currency} {fmt(b.quantity,2)}</p>{confirmation && <p className="muted small">既有資產帳戶為 {confirmation.assetLabel}，補登前會請你確認對應。</p>}</div>})}</section>}
-  {!!sections.length && <div className="bank-preview-navigation"><p className="muted" aria-label="銀行預覽總計">已選 {selectedCount}／{previewCount} 筆 · 共 {sections.length} 個區段，請逐一核對。</p><label className="field"><span>帳戶區段</span><select aria-label="銀行預覽區段" disabled={locked} value={sectionIndex} onChange={e=>{setSectionIndex(Number(e.target.value));setRowPage(0)}}>{sections.map((s,i)=><option value={i} key={s.id}>區段 {i+1} · {statementAccountLabel(s.bank)} · {s.currency} · {s.rows.filter(r=>r.selected).length}／{s.rows.length} 筆已選{s.warnings.length?' · 有解析警告':''}</option>)}</select></label><nav className="bank-pagination" aria-label="銀行預覽分頁"><button type="button" aria-label="銀行預覽上一頁" disabled={locked||currentRowPage===0} onClick={()=>setRowPage(currentRowPage-1)}>上一頁</button><span>第 {currentRowPage+1}／{previewPages} 頁 · 每頁最多 50 筆</span><button type="button" aria-label="銀行預覽下一頁" disabled={locked||currentRowPage+1===previewPages} onClick={()=>setRowPage(currentRowPage+1)}>下一頁</button></nav></div>}
+  {!!sections.length && <div className="bank-preview-navigation"><p className="muted" aria-label="銀行預覽總計">已選 {selectedCount}／{previewCount} 筆 · 共 {sections.length} 個區段，請逐一核對。</p><label className="field"><span>帳戶區段</span><select aria-label="銀行預覽區段" disabled={locked} value={sectionIndex} onChange={e=>{setSectionIndex(Number(e.target.value));setRowPage(0)}}>{sections.map((s,i)=><option value={i} key={s.id}>區段 {i+1} · {s.csv?s.label:statementAccountLabel(s.bank)} · {s.currency} · {s.rows.filter(r=>r.selected).length}／{s.rows.length} 筆已選{s.warnings.length?' · 有解析警告':''}</option>)}</select></label><nav className="bank-pagination" aria-label="銀行預覽分頁"><button type="button" aria-label="銀行預覽上一頁" disabled={locked||currentRowPage===0} onClick={()=>setRowPage(currentRowPage-1)}>上一頁</button><span>第 {currentRowPage+1}／{previewPages} 頁 · 每頁最多 50 筆</span><button type="button" aria-label="銀行預覽下一頁" disabled={locked||currentRowPage+1===previewPages} onClick={()=>setRowPage(currentRowPage+1)}>下一頁</button></nav></div>}
   {sections.map((s,index)=>index===sectionIndex&&<section key={s.id} className="bank-section" aria-label={`帳戶區段 ${index+1}`}>
-   <div className="bank-section-head"><h3>{statementAccountLabel(s.bank)}</h3><span className="muted small">{s.currency} · 區段 {index+1} · {s.rows.length} 筆</span></div>
+   <div className="bank-section-head"><h3>{s.csv?s.label:statementAccountLabel(s.bank)}</h3><span className="muted small">{s.currency} · 區段 {index+1} · {s.rows.length} 筆</span></div>
    {s.partial && <p role="status" className="bank-section-note">僅局部紀錄／轉出明細；不是完整月流水。</p>}
    {s.noTransactions && <p>此區段已有無交易證據；不捏造零金額交易。</p>}
    {s.warnings.length>0 && <div role="status" aria-label={`區段 ${index+1} 解析警告`} className="bank-review-flag bank-section-warning">
@@ -172,7 +211,7 @@ export function BankStatementImport({data,accounts,existing,rules,passwords,pass
      <ul>{s.warnings.map(w=><li key={w.code}>{w.text} · {w.count} 個事件</li>)}</ul>
     </details>
    </div>}
-   {s.automatic ? <p className="bank-section-note">自動記入 {statementAccountLabel(s.bank)}，同銀行與國家沿用既有流水。</p> : <div className="bank-fields bank-account-mapping">
+   {s.csv ? <p className="bank-section-note">依 CSV 的 account 記入「{s.label}」{s.accountId==='new'||!accounts.some(a=>a.id===s.accountId)?'（新增流水帳戶）':'（既有流水帳戶）'}。要改帳戶請修改 CSV 後重新解析。</p> : s.automatic ? <p className="bank-section-note">自動記入 {statementAccountLabel(s.bank)}，同銀行與國家沿用既有流水。</p> : <div className="bank-fields bank-account-mapping">
     {s.rows.every(r=>r.manual) && <label className="field"><span>銀行名稱</span><input aria-label={`區段 ${index+1} 銀行`} disabled={locked} maxLength={100} value={s.bank} onChange={e=>patch(s.id,{bank:e.target.value})}/></label>}
     <label className="field"><span>選擇獨立流水帳戶</span><select aria-label={`區段 ${index+1} 帳戶`} disabled={locked} value={s.accountId} onChange={e=>patch(s.id,{accountId:e.target.value})}><option value="">請選擇流水帳戶</option>{accounts.map(a=><option key={a.id} value={a.id}>{a.label} · {a.bank}</option>)}<option value="new">新增獨立帳戶標籤</option></select></label>
     {s.accountId==='new' && <label className="field"><span>新帳戶標籤</span><input aria-label={`區段 ${index+1} 新標籤`} disabled={locked} maxLength={100} value={s.label} onChange={e=>patch(s.id,{label:e.target.value})}/></label>}
