@@ -1,4 +1,4 @@
-import { importStatementBalances, statementBalanceRevision, bankStatementIdentity, statementAccountLabel, type StatementBalanceCandidate } from './bankStatementAssets'
+import { createStatementAssets, importStatementBalances, statementBalanceRevision, bankStatementIdentity, statementAccountLabel, type StatementBalanceCandidate } from './bankStatementAssets'
 import { validateBankLedger, type BankCategoryRule, type BankTransaction, type BankTransactionAccount } from './bankTransactions'
 import { dataVersion } from './dataVersion'
 import { parseExpenseCategoryRules, type Expense, type ExpenseCategoryRule } from './expenses'
@@ -13,6 +13,8 @@ export interface BankLedgerPatch {
   rules?: BankCategoryRule[]
   balances?: readonly StatementBalanceCandidate[]
   balanceRevision?: string
+  // Create asset accounts for this import's banks that have none, so today's total includes them.
+  createAssets?: boolean
 }
 
 // Throws when the ledger or the balance revision is no longer valid.
@@ -21,7 +23,8 @@ export function applyBankLedger(data: WealthData, patch: BankLedgerPatch): Wealt
   if (patch.balances?.length && patch.balanceRevision !== statementBalanceRevision(data)) throw new Error('資產歷史已變更，請重新預覽')
   const next = { ...data, bankTransactionAccounts: validated.accounts, bankTransactions: validated.transactions, bankCategoryRules: validated.rules }
   const imported = importStatementBalances(next, patch.balances ?? [])
-  return { ...imported.data, version: dataVersion(imported.data) }
+  const withAssets = patch.createAssets ? createStatementAssets(imported.data, new Set((patch.balances ?? []).map((b) => statementAccountLabel(b.bank)))) : imported.data
+  return { ...withAssets, version: dataVersion(withAssets) }
 }
 
 // Keep legacy mapping identities unchanged; presentation follows the bank and country recognized from the PDF.

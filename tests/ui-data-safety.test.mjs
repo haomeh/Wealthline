@@ -244,6 +244,21 @@ test('cancelling import preview never changes the source data', async () => {
   assert.equal(closed, 1)
 })
 
+
+test('statement balances without an asset account are flagged and created in one click', async () => {
+  const { importStatementBalances } = await server.ssrLoadModule('/src/bankStatementAssets.ts')
+  const ledger = { id: 'synthetic-ledger', label: '台新銀行', bank: 'Taishin' }
+  const data = importStatementBalances({ ...fixture(), bankTransactionAccounts: [ledger] }, [{ bank: 'Taishin', date: '2026-09-30', currency: 'TWD', quantity: 700000, fileHash: 'a'.repeat(64), ledgerAccountId: ledger.id }], '2026-10-14T12:00:00Z').data
+  await render(Overview, { data, onGoRates: () => {}, onNewAccount: () => {}, onImport: () => {}, onOpenAccount: () => {}, onGoAccounts: () => {} })
+  assert.match(document.body.textContent, /台新銀行 \(TW\) 還沒有資產帳戶/)
+  assert.ok(button('到帳戶頁建立'))
+  let latest
+  await render(Accounts, { data, onChange: (next) => { latest = next }, view: { page: 'list' }, setView: () => {}, onBack: () => {}, onRefreshPrices: async () => {}, priceError: '' })
+  assert.match(document.querySelector('[aria-label="尚未建立的資產帳戶"]').textContent, /台新銀行 \(TW\) · TWD 700,000/)
+  await click(button('建立 1 個資產帳戶'))
+  assert.deepEqual(latest.accounts.map((a) => [a.id, a.name, a.positions[0].quantity]), [[ledger.id, '台新銀行', 700000]])
+})
+
 // All liability examples below are synthetic, not transcribed from financial documents.
 const syntheticDebt = { id: 'synthetic-debt', name: '合成貸款', kind: 'personal', currency: 'TWD', balance: 800 }
 const field = (label) => [...document.querySelectorAll('label.field')].find((l) => l.querySelector('span')?.textContent === label)?.querySelector('input,select,textarea') ?? [...document.querySelectorAll('input[aria-label],select[aria-label]')].find(i => i.getAttribute('aria-label') === label)

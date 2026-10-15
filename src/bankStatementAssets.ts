@@ -1,4 +1,4 @@
-import { accountIdentity, accountLabel, type Account, type WealthData } from './model'
+import { accountIdentity, accountLabel, newId, type Account, type WealthData } from './model'
 import type { BankTransactionAccount } from './bankTransactions'
 import { historyCatalog, instrumentKey, parseQuantityDays, validDate, validatePastDate, type QuantityEntry, type QuantityDay } from './quantityHistory'
 const CASH_CURRENCIES=new Set(['TWD','USD','SGD','JPY','EUR','GBP','AUD','CAD','HKD','CHF','NZD','CNY'])
@@ -106,4 +106,27 @@ export function importStatementBalances(data:WealthData,candidates:readonly Stat
  }
  if(!added)return {data,added,skipped}
  return {data:{...data,version:14 as const,bankStatementBalances:parseBankStatementBalances(records,data.bankTransactionAccounts??[]),history:{...data.history,quantityDays:days.sort((a,b)=>a.date.localeCompare(b.date))}},added,skipped}
+}
+
+export interface StatementAsset { accountId:string; bank:string; label:string; balances:{currency:string;quantity:number;date:string}[] }
+/** Banks whose imported closing balances count in history under an id no asset account has, so today's total misses them. */
+export function missingStatementAssets(data:WealthData):StatementAsset[] {
+ const ids=new Set(data.accounts.map(a=>a.id)),byAccount=new Map<string,BankStatementBalance[]>()
+ for(const b of data.bankStatementBalances??[])if(!ids.has(b.accountId))byAccount.set(b.accountId,[...(byAccount.get(b.accountId)??[]),b])
+ return [...byAccount].flatMap(([accountId,records])=>{
+  const bank=records[0].bank,identity=bankStatementIdentity(bank)
+  // A same-named asset account under another id needs the user's mapping; creating one would duplicate it.
+  if(!identity||matchingStatementAssets(bank,data.accounts).length)return []
+  // Each currency's newest statement; a later import of the same date replaced the history entry, so it wins here too.
+  const latest=new Map<string,BankStatementBalance>()
+  for(const r of records){const prev=latest.get(r.currency);if(!prev||r.date>=prev.date)latest.set(r.currency,r)}
+  const balances=[...latest.values()].filter(r=>r.quantity>0).map(r=>({currency:r.currency,quantity:r.quantity,date:r.date})).sort((a,b)=>a.currency.localeCompare(b.currency))
+  return [{accountId,bank,label:identity.label,balances}]
+ })
+}
+/** Asset accounts for the missing banks (only those labels when given), under the ids their history already uses. */
+export function createStatementAssets(data:WealthData,labels?:ReadonlySet<string>):WealthData {
+ const added=missingStatementAssets(data).filter(s=>!labels||labels.has(s.label)).map((s):Account=>{const identity=bankStatementIdentity(s.bank)!
+  return {id:s.accountId,name:identity.name,kind:'bank',country:identity.country,category:'現金與外幣活存',positions:s.balances.map(b=>({id:newId(),type:'cash',currency:b.currency,symbol:'',quantity:b.quantity,price:1}))}})
+ return added.length?{...data,accounts:[...data.accounts,...added]}:data
 }

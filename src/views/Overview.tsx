@@ -24,6 +24,7 @@ import {
 import { colorize } from '../chartColors'
 import { ChangeSinceLast } from './AssetChange'
 import { accountChange } from '../accountTrend'
+import { missingStatementAssets } from '../bankStatementAssets'
 import type { ColoredSlice } from '../chartColors'
 import { CashflowSummary } from './CashflowSummary'
 import type { CashflowMonthTotals } from '../cashflow'
@@ -104,6 +105,7 @@ export function Overview({ data: loaded, onGoHistory, onGoRates, onGoLiabilities
 
   const totals = balanceSheet(data, now)
   const missing = missingRates(data)
+  const unlinked = missingStatementAssets(data)
   const byCategory = breakdown(data, (a) => a.category)
   const accounts = breakdown(data, accountLabel).slices
   const hasCountry = data.accounts.some((a) => a.country)
@@ -130,6 +132,12 @@ export function Overview({ data: loaded, onGoHistory, onGoRates, onGoLiabilities
           {onGoHistory && <button className={current ? 'desktop-only' : ''} onClick={() => onGoHistory(current ? undefined : point.date)}>{current ? '查看歷史明細' : '查看這天的明細'}</button>}
         </div>
       </div>
+      {current && unlinked.length > 0 && (
+        <p className="notice">
+          <span aria-hidden>⚠</span> 已匯入帳單的 {unlinked.map((u) => u.label).join('、')} 還沒有資產帳戶，目前總資產沒有算進去。
+          {onGoAccounts && <button className="link" onClick={onGoAccounts}>到帳戶頁建立</button>}
+        </p>
+      )}
       {current && missing.length > 0 && (
         <p className="notice">
           <span aria-hidden>⚠</span> {missing.join('、')} 沒有匯率；資產總額可能不完整，相關負債與淨資產暫不換算。

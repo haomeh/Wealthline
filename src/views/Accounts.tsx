@@ -5,6 +5,7 @@ import { CSV_MAX_BYTES, CsvError, csvErrorText, decodeCsv, hasCsvHeader } from '
 import { REPO_URL } from '../site'
 import { ACCOUNT_KINDS, accountBaseValue, breakdown, cashCurrencies, type Account, type AccountKind, type Slice, type WealthData } from '../model'
 import { accountChange } from '../accountTrend'
+import { createStatementAssets, missingStatementAssets } from '../bankStatementAssets'
 import { displaySymbol } from '../quotes'
 import { useCalendarNow } from '../useCalendarNow'
 import { AccountDetail } from './AccountDetail'
@@ -109,6 +110,7 @@ export function Accounts({ data, onChange, view, setView, onBack, onRefreshPrice
           <button key={k} className={k === filter ? 'on' : ''} aria-pressed={k === filter} onClick={() => setFilter(k)}>{label} {n}</button>)}
       </div>}
       {showImport && <ImportPanel data={data} onChange={onChange} onDone={() => setShowImport(false)} />}
+      {!showImport && <StatementAssets data={data} onChange={onChange} />}
       {data.accounts.length === 0 && !showImport && (
         <section className="panel empty">
           <p className="muted">還沒有帳戶。按「新增帳戶」定義你的第一個銀行或投資帳戶，再點進去填餘額或持倉。</p>
@@ -251,6 +253,27 @@ function ImportPanel({ data, onChange, onDone }: Props & { onDone: () => void })
           onDone()
         }}>確認匯入並取代上述資料</button>
       </div>}
+    </section>
+  )
+}
+
+// Banks whose imported statement balances have no asset account: history counts them, today's total does not.
+function StatementAssets({ data, onChange }: Props) {
+  const missing = missingStatementAssets(data)
+  if (!missing.length) return null
+  return (
+    <section className="notice statement-assets" aria-label="尚未建立的資產帳戶">
+      <p><strong>已匯入的銀行帳單有 {missing.length} 個帳戶還沒有資產帳戶。</strong>它們的期末餘額只出現在資產歷史，目前總資產沒有算進去。</p>
+      <ul>
+        {missing.map((m) => (
+          <li key={m.accountId}>
+            <strong>{m.label}</strong>
+            {m.balances.length ? m.balances.map((b) => ` · ${b.currency} ${fmt(b.quantity, 2)}（${b.date.replace(/-/g, '/')}）`).join('') : ' · 沒有正數餘額，建立空帳戶'}
+          </li>
+        ))}
+      </ul>
+      <p className="muted small">建立後目前餘額先用最新一期帳單的期末餘額，可再點進帳戶修改。變更後請按「儲存變更」。</p>
+      <button className="primary" onClick={() => onChange(createStatementAssets(data))}>建立 {missing.length} 個資產帳戶</button>
     </section>
   )
 }
