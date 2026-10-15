@@ -916,9 +916,9 @@ export default function App() {
           onCancel={() => { const from = importFrom.current; importFrom.current = 'cashflow'; navigate(tabPath(from), { replace: true }) }} onContinue={startPlan} />}
         {data && route.tab === 'cashflow' && route.importing && importPlan && (missing('ledger') ? (!groupLoad.ledger || groupLoad.ledger === 'loading') && waiting('ledger') : <StatementImportBatch
           plan={importPlan} dirty={dirty} onClose={() => go({ tab: 'cashflow' }, true)}
-          card={<Expenses key="batch-card" passwordScope={passwordScope} data={data} onChange={update} busy={busy} importing queued={{ files: importPlan.card, password: importPlan.password }}
+          card={<Expenses key="batch-card" passwordScope={passwordScope} data={data} onChange={update} busy={busy} importing queued={{ files: importPlan.card, password: importPlan.password, prepared: importPlan.prepared }}
             onImporting={(open) => { if (!open) finishPlan('card', '已取消，未匯入信用卡帳單。') }} onImported={(done) => { finishPlan('card', done); return true }} />}
-          bank={<BankTransactions key="batch-bank" passwordScope={passwordScope} data={data} onChange={update} busy={busy} importing queued={{ files: importPlan.bank, password: importPlan.password }}
+          bank={<BankTransactions key="batch-bank" passwordScope={passwordScope} data={data} onChange={update} busy={busy} importing queued={{ files: importPlan.bank, password: importPlan.password, prepared: importPlan.prepared }}
             historyReady={!missing('history')} historyStatus={groupLoad.history} onLoadHistory={() => void loadGroup('history')}
             onImporting={(open) => { if (!open) finishPlan('bank', '已取消，未匯入銀行對帳單。') }} onImported={(done) => { finishPlan('bank', done); return true }} />} />)}
         {data && route.tab === 'cashflow' && !route.importing && (

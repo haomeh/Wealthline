@@ -1,17 +1,43 @@
 import { PasswordException } from 'pdfjs-dist/legacy/build/pdf.mjs'
-import { openStatementDocument } from './statementDocument'
+import { openStatementDocument, type StatementPageText, type StatementPdf } from './statementDocument'
 import { readStatementText } from './statementText'
 import { hsbcMerchantRegions, hsbcSgPage, hsbcTransactionBounds, ocrMerchantLine, statementMetadata, taishinCardPage, textLines, textRows } from './statements'
 
-export async function readStatementPdf(bytes: Uint8Array, password:string | readonly string[], signal:AbortSignal, fileName = '', onProgress?:(message:string)=>void): Promise<{lines:string[];title:string;ocrUsed:boolean;ocrError?:string;transactionIndexes?:number[]}> {
+export type StatementPdfRead = {lines:string[];title:string;ocrUsed:boolean;ocrError?:string;transactionIndexes?:number[]}
+
+export async function readStatementPdf(bytes: Uint8Array, password:string | readonly string[], signal:AbortSignal, fileName = '', onProgress?:(message:string)=>void): Promise<StatementPdfRead> {
   const task = openStatementDocument('credit-card',bytes,password,signal)
-  let ocr:Awaited<ReturnType<typeof import('./statementOcr').createStatementOcr>> | undefined
-  let ocrModule:typeof import('./statementOcr') | undefined
-  const cancel = () => { ocr?.close();void task.destroy() }
+  const cancel = () => {void task.destroy()}
   signal.addEventListener('abort',cancel,{once:true})
   if(signal.aborted) {cancel();throw new Error('已取消解析')}
   try {
-    const pdf = await task.promise
+    return await readStatementPages(await task.promise,signal,fileName,onProgress)
+  } catch(e) {
+    throw statementPdfError(e)
+  } finally {
+    signal.removeEventListener('abort',cancel)
+    await task.destroy()
+  }
+}
+
+/** The message a failed card statement read reports: its own messages, else a generic one (PDF errors may hold document text). */
+export function statementPdfError(e:unknown):Error {
+  if(e instanceof PasswordException) return new Error('帳單需要密碼，或密碼不正確。請重新輸入。')
+  return new Error(e instanceof Error && /帳單|PDF 沒有|已取消/.test(e.message) ? e.message : '無法讀取此 PDF，請確認檔案完整且為支援的文字帳單。')
+}
+
+/**
+ * Card statement lines from an open document. `texts` is each page's text when it was already read
+ * (the import entry reads it once to decide the kind); otherwise each page's text is read here.
+ * Errors are raw: callers map them with `statementPdfError`. The caller destroys the document.
+ */
+export async function readStatementPages(pdf:StatementPdf, signal:AbortSignal, fileName = '', onProgress?:(message:string)=>void, texts?:readonly StatementPageText[]): Promise<StatementPdfRead> {
+  let ocr:Awaited<ReturnType<typeof import('./statementOcr').createStatementOcr>> | undefined
+  let ocrModule:typeof import('./statementOcr') | undefined
+  const closeOcr = () => ocr?.close()
+  signal.addEventListener('abort',closeOcr,{once:true})
+  try {
+    if(signal.aborted) throw new Error('已取消解析')
     if(pdf.numPages > 100) throw new Error('帳單超過 100 頁，請拆分後再匯入')
     const metadata = await pdf.getMetadata().catch(()=>null)
     const info = metadata?.info as {Title?:unknown} | undefined
@@ -25,7 +51,7 @@ export async function readStatementPdf(bytes: Uint8Array, password:string | read
       const at=`第 ${i}／${pdf.numPages} 頁`
       onProgress?.(`讀取文字 · ${at}`)
       const page = await pdf.getPage(i)
-      const text = await readStatementText(page)
+      const text = texts?.[i-1] ?? await readStatementText(page)
       let pageLines=textLines(text.items)
       let allowed=pageLines.map((_,index)=>index)
       const pageInfo=statementMetadata(pageLines,title,fileName)
@@ -116,14 +142,10 @@ export async function readStatementPdf(bytes: Uint8Array, password:string | read
     }
     if(!lines.length) throw new Error('此 PDF 沒有可讀取的文字。第一版暫不支援掃描／圖片帳單。')
     return {lines,title,ocrUsed,ocrError,...(scoped && {transactionIndexes})}
-  } catch(e) {
-    if(e instanceof PasswordException) throw new Error('帳單需要密碼，或密碼不正確。請重新輸入。')
-    throw new Error(e instanceof Error && /帳單|PDF 沒有|已取消/.test(e.message) ? e.message : '無法讀取此 PDF，請確認檔案完整且為支援的文字帳單。')
   } finally {
     // A working OCR worker goes on to the next file of this import run.
     if(ocr && ocrModule) ocrModule.releaseStatementOcr(signal,ocr)
     else ocr?.close()
-    signal.removeEventListener('abort',cancel)
-    await task.destroy()
+    signal.removeEventListener('abort',closeOcr)
   }
 }
