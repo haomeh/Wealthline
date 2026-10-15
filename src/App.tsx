@@ -31,7 +31,6 @@ import { Expenses } from './views/Expenses'
 import { BankTransactions } from './views/BankTransactions'
 import { StatementImportEntry, type ImportPlan } from './views/StatementImportEntry'
 import { StatementImportBatch, type BatchResults } from './views/StatementImportBatch'
-import type { ImportKindChoice } from './views/ImportSteps'
 import { Overview } from './views/Overview'
 import { Cashflow } from './views/Cashflow'
 import { HistoryView } from './views/History'
@@ -614,6 +613,18 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [missingAuto])
 
+  // Holdings without a price yet (a sheet or CSV import gives only symbol and quantity): fetch their quotes right away.
+  // Opening the data fetches every quote already, so this waits until that is done, then fetches what is still unpriced
+  // (a holding added during it). The same set is fetched once, so a quote that is not found is not retried in a loop.
+  const unpriced = data ? data.accounts.flatMap((a) => a.positions.filter((p) => p.type === 'holding' && p.symbol && !p.price && !p.priceManual).map((p) => p.id)).join() : ''
+  const quotedUnpriced = useRef('')
+  useEffect(() => {
+    if (!unpriced || !data || refreshing || quotedUnpriced.current === unpriced) return
+    quotedUnpriced.current = unpriced
+    void refreshMarket(data)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [unpriced, refreshing])
+
   // An account that no longer exists (deleted, or an old link) shows the account list instead.
   const missingAccount = !!data && 'id' in route && !data.accounts.some((a) => a.id === route.id)
   useEffect(() => {
@@ -669,19 +680,20 @@ export default function App() {
 
   const go = (r: Route, replace = false) => navigate(routePath(r), { replace })
   const goAccounts = (view: AccountsView, replace = false) => go({ tab: 'accounts', ...view }, replace)
-  // Card and bank statements share one import screen, opened on the page its rows land on. Coming from
-  // another page adds a history entry; a page's own button, the kind switch and closing replace it.
+  // Card and bank statements share one import entry, /cashflow/import, which detects each file's kind.
+  // The card and bank pages open it too; cancelling returns to the page it was opened from.
+  // /expenses/import and /bank-transactions/import still open a kind's own screen, for old links.
   const passwordScope = local ? 'local' : user ? `google:${user.sub}` : undefined
   const goImport = (kind: 'expenses' | 'bank-transactions', importing = true, replace = true) => go({ tab: kind, importing }, replace)
-  // The import entry (自動判斷) and the kind switch on every import screen.
-  const selectImportKind = (kind: ImportKindChoice) => { setImportPlan(null); if (kind === 'auto') go({ tab: 'cashflow', importing: true }, true); else goImport(kind === 'card' ? 'expenses' : 'bank-transactions') }
+  const importFrom = useRef<Tab>('cashflow')
+  const openImportFrom = (from: Tab) => { importFrom.current = from; go({ tab: 'cashflow', importing: true }) }
   // A detected batch stays on the entry's URL: its card and bank statements import side by side, one tab each.
   const startPlan = (plan: ImportPlan) => setImportPlan({ ...plan, results: {} })
   const finishPlan = (kind: 'card' | 'bank', result: string) => setImportPlan((p) => p && { ...p, results: { ...p.results, [kind]: result } })
   const importingStatements = (route.tab === 'expenses' || route.tab === 'bank-transactions') && !!route.importing
   // Files and the typed password of a detected batch stay in memory only while one of its import screens is open.
   const inImport = importingStatements || (route.tab === 'cashflow' && !!route.importing)
-  useEffect(() => { if (!inImport) setImportPlan(null) }, [inImport])
+  useEffect(() => { if (!inImport) { setImportPlan(null); importFrom.current = 'cashflow' } }, [inImport])
   const goTab = (t: Tab) => { if (t !== tab || !importingStatements) navigate(tabPath(t)) }
   // The one statement import entry (/cashflow/import), fixed in the sidebar and the phone's 收支 tabs.
   // An import already open keeps its screen; its kind switch offers 自動判斷.
@@ -901,9 +913,9 @@ export default function App() {
         {/* The cashflow page shows the stored totals while the records load; a failed load still needs its 重試. */}
         {data && tab === 'cashflow' && missing('ledger') && groupLoad.ledger && groupLoad.ledger !== 'loading' && waiting('ledger')}
         {data && route.tab === 'cashflow' && route.importing && !importPlan && <StatementImportEntry passwords={data.statementPasswords ?? []} passwordScope={passwordScope} busy={busy}
-          onCancel={() => go({ tab: 'cashflow' }, true)} onSelectKind={selectImportKind} onContinue={startPlan} />}
+          onCancel={() => { const from = importFrom.current; importFrom.current = 'cashflow'; navigate(tabPath(from), { replace: true }) }} onContinue={startPlan} />}
         {data && route.tab === 'cashflow' && route.importing && importPlan && (missing('ledger') ? (!groupLoad.ledger || groupLoad.ledger === 'loading') && waiting('ledger') : <StatementImportBatch
-          plan={importPlan} onClose={() => go({ tab: 'cashflow' }, true)}
+          plan={importPlan} dirty={dirty} onClose={() => go({ tab: 'cashflow' }, true)}
           card={<Expenses key="batch-card" passwordScope={passwordScope} data={data} onChange={update} busy={busy} importing queued={{ files: importPlan.card, password: importPlan.password }}
             onImporting={(open) => { if (!open) finishPlan('card', '已取消，未匯入信用卡帳單。') }} onImported={(done) => { finishPlan('card', done); return true }} />}
           bank={<BankTransactions key="batch-bank" passwordScope={passwordScope} data={data} onChange={update} busy={busy} importing queued={{ files: importPlan.bank, password: importPlan.password }}
@@ -941,7 +953,7 @@ export default function App() {
             if (savingRef.current) throw new Error('背景儲存中，請稍後再儲存歷史修改。')
             if (dirtyRef.current) throw new Error('請先儲存或捨棄其他未儲存修改，再儲存歷史。')
             update(next); void persist(next)
-          }} onOpenAccount={(id) => goAccounts({ page: 'detail', id })} />}
+          }} onOpenAccount={(id) => goAccounts({ page: 'detail', id })} onNewAccount={() => goAccounts({ page: 'new' })} />}
         {data && route.tab === 'accounts' && route.page === 'detail' && missing('history') && waiting('history')}
         {data && route.tab === 'accounts' && !(route.page === 'detail' && missing('history')) && (
           <Accounts
@@ -959,9 +971,9 @@ export default function App() {
         {data && tab === 'expenses' && missing('ledger') && waiting('ledger')}
         {data && tab === 'bank-transactions' && !bankShown && waiting('ledger', ledgerWanted)}
         {data && tab === 'expenses' && !missing('ledger') && <Expenses recordId={route.tab==='expenses'?route.recordId:undefined} returnTo={route.tab==='expenses'?route.returnTo:undefined} key={`${local?'local':user?.sub}:${route.recordId??''}`}  passwordScope={local?'local':user?`google:${user.sub}`:undefined} data={data} onChange={update} busy={busy}
-          importing={route.tab === 'expenses' && !!route.importing} onImporting={(open) => goImport('expenses', open)} onSelectKind={selectImportKind} />}
+          importing={route.tab === 'expenses' && !!route.importing} onImporting={(open) => goImport('expenses', open)} onOpenImport={() => openImportFrom('expenses')} />}
         {data && tab === 'bank-transactions' && bankShown && <BankTransactions recordId={route.tab==='bank-transactions'?route.recordId:undefined} returnTo={route.tab==='bank-transactions'?route.returnTo:undefined} key={`${local?'local':user?.sub}:${route.recordId??''}`}  passwordScope={local?'local':user?`google:${user.sub}`:undefined} data={data} onChange={update} busy={busy} historyReady={!missing('history')} historyStatus={groupLoad.history} onLoadHistory={()=>void loadGroup('history')}
-          importing={route.tab === 'bank-transactions' && !!route.importing} onImporting={(open) => goImport('bank-transactions', open)} onSelectKind={selectImportKind}
+          importing={route.tab === 'bank-transactions' && !!route.importing} onImporting={(open) => goImport('bank-transactions', open)} onOpenImport={() => openImportFrom('bank-transactions')}
           ledger={ledger ? { ...ledger, status: groupLoad.ledger, onLoadEarlier: () => loadEarlier(ledger.next), onLoadAll: () => loadEarlier(''), onLoadMonth: (month) => void loadGroup('ledger', [ledgerPart(`${month}-01`)]) } : undefined} />}
         {data && tab === 'rates' && <Rates data={data} onChange={update} onRefresh={async () => void (await refreshRates(data))} error={ratesError} />}
       </main>

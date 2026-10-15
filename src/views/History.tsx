@@ -22,9 +22,10 @@ interface Props {
   onSave: () => void
   onChange: (d: WealthData) => void
   onOpenAccount: (id: string) => void
+  onNewAccount?: () => void
 }
 
-export function HistoryView({ initialDate, data, dirty, busy, onSave, onChange, onOpenAccount }: Props) {
+export function HistoryView({ initialDate, data, dirty, busy, onSave, onChange, onOpenAccount, onNewAccount }: Props) {
   const historical = useHistoricalValuations(data)
   const [sourceDate, setSourceDate] = useState(initialDate ?? '')
   const sourcePanel = useRef<HTMLElement>(null)
@@ -51,12 +52,23 @@ export function HistoryView({ initialDate, data, dirty, busy, onSave, onChange, 
   const accountNames = new Map<string, string>()
   for (const s of points) for (const a of s.accounts) accountNames.set(a.id, a.name)
 
+  // Nothing recorded and nothing to record yet: say how history starts instead of showing empty tools.
+  if (!data.accounts.length && !data.liabilities?.length && !saved.length && !changes.length && !data.history.quantityDays?.length && !data.history.holdingPeriods?.length && !data.history.liabilityChanges?.length) return (
+    <div className="history-page history-management">
+      <div className="page-head history-heading"><div><h2>歷史明細</h2></div></div>
+      <section className="panel empty">
+        <p className="muted">還沒有歷史紀錄。建立帳戶並儲存後，每天第一次開啟時會自動記下當天的資產，修改也會留下前後數字。</p>
+        {onNewAccount && <div className="row"><button className="primary" onClick={onNewAccount}>建立第一個帳戶</button></div>}
+      </section>
+    </div>
+  )
+
   return (
     <div className="history-page history-management">
       <div className="page-head history-heading">
         <div>
           <h2>歷史明細</h2>
-          <p className="muted">逐日查看總覽的資料明細與估值來源，補登或修正過去的持有數量。</p>
+          <p className="muted">每天的資產紀錄。也可以補登過去的持倉數量，讓走勢更完整。</p>
         </div>
         {!savedToday && !dirty && (data.accounts.length > 0 || !!data.liabilities?.length) && (
           <button className="primary" onClick={onSave} disabled={busy}>
@@ -67,11 +79,12 @@ export function HistoryView({ initialDate, data, dirty, busy, onSave, onChange, 
 
       {dirty && <p className="notice">請先儲存或捨棄其他未儲存修改，再編輯歷史。</p>}
       <section className="history-source" aria-label="歷史資料與行情來源">
-        <div className="history-source-head"><h3>資料與行情</h3>{!!(data.history.quantityDays?.length || data.history.holdingPeriods?.length) && <button disabled={historical.loading} onClick={historical.refresh}>{historical.loading ? '查詢歷史行情中…' : '重新查詢歷史行情'}</button>}</div>
-        <div className="history-source-notes">
-          <p><strong>紀錄規則</strong><span>原始快照保留原值；期間推算補上沒有快照的日期，單日補登優先。</span></p>
-          <p><strong>市場來源</strong><span>價格與匯率採 Yahoo 實際行情日期，可能延遲。缺價或缺匯率保持未知，不使用儲存價格代替。</span></p>
-        </div>
+        <div className="history-source-head"><details className="history-source-about"><summary>這些數字怎麼來的</summary>
+          <div className="history-source-notes">
+            <p><strong>紀錄規則</strong><span>每天的快照保留當時的數字；沒有快照的日子依補登的持倉推算，單日補登優先。</span></p>
+            <p><strong>市場來源</strong><span>過去的價格與匯率來自 Yahoo，可能延遲。查不到價格或匯率的日子會留空，不拿現在的價格代替。</span></p>
+          </div>
+        </details>{!!(data.history.quantityDays?.length || data.history.holdingPeriods?.length) && <button disabled={historical.loading} onClick={historical.refresh}>{historical.loading ? '查詢歷史行情中…' : '重新查詢歷史行情'}</button>}</div>
         {historical.omittedDays > 0 && <p className="muted small">總覽時間線略過 {historical.omittedDays} 個沒有原始紀錄、且持倉數量不足的推算日；不代表資產為零。明確未知及缺少行情的日期仍保留缺口。</p>}
         {historical.status && <p className="muted small" aria-live="polite">{historical.status}</p>}
         {historical.error && <p role="alert" className="banner error">{historical.error}</p>}

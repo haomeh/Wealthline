@@ -106,14 +106,15 @@ function LiveCashflow({ data, onChange, busy = false, dirty, sessionIdentity, ca
     {editing.error && <p role="alert">{editing.error}</p>}
     <div className="page-head cashflow-page-head">
       <h2>收支總覽</h2>
-      <div className="cashflow-page-controls">{!empty && <button onClick={onImport}>匯入帳單</button>}<CashflowPeriodControls state={period} /></div>
+      {/* With no records yet the period and view controls have nothing to show; the empty card offers the import. */}
+      {!empty && <div className="cashflow-page-controls"><button className="desktop-only" onClick={onImport}>匯入帳單</button><CashflowPeriodControls state={period} /></div>}
     </div>
-    <div className="segmented cashflow-panels" role="group" aria-label="檢視"><button aria-pressed={query.panel === 'records'} className={query.panel === 'records' ? 'on' : ''} onClick={() => onQuery({...query,panel:'records'})}>收支明細</button><button aria-pressed={query.panel === 'review'} className={query.panel === 'review' ? 'on' : ''} onClick={() => onQuery({...query,range:'month',month:panelMonth,year:undefined,panel:'review',page:1})}>{query.range === 'month' ? '每月核對' : `核對 ${panelMonth}`}</button><button onClick={()=>onQuery({...query,range:'month',month:panelMonth,year:undefined,panel:'report',page:1})}>每月報表</button></div>
+    {!empty && <div className="segmented cashflow-panels" role="group" aria-label="檢視"><button aria-pressed={query.panel === 'records'} className={query.panel === 'records' ? 'on' : ''} onClick={() => onQuery({...query,panel:'records'})}>收支明細</button><button aria-pressed={query.panel === 'review'} className={query.panel === 'review' ? 'on' : ''} onClick={() => onQuery({...query,range:'month',month:panelMonth,year:undefined,panel:'review',page:1})}>{query.range === 'month' ? '每月核對' : `核對 ${panelMonth}`}</button><button onClick={()=>onQuery({...query,range:'month',month:panelMonth,year:undefined,panel:'report',page:1})}>每月報表</button></div>}
     {query.panel === 'review' && query.month && <MonthlyReviewPanel key={`${query.month}:${sessionIdentity}`} data={data} month={query.month} today={period.today} readiness={readiness} onChange={onChange} busy={busy} dirty={dirty} sessionIdentity={sessionIdentity} captureReviewGuard={captureReviewGuard} onUnclassified={source => choose({...query,panel:'records',source,metric:'all',category:'unclassified',page:1})} />}
     {empty && readiness!=='ready' && <div role={readiness==='error'?'alert':'status'}>{readiness==='error' ? <>{ledgerError || '無法載入明細'}<button onClick={onRetryLedger}>重試明細</button></> : '正在載入明細…'}</div>}
     {empty ? <section className="panel empty">
-      <p className="muted">還沒有收支紀錄。匯入信用卡帳單或銀行帳單後，這裡會合併成同一套收支。</p>
-      <p className="muted small">兩種帳單可一起選，會自動判斷類型。</p>
+      <p className="muted">還沒有收支紀錄。匯入信用卡帳單或銀行帳單後，這裡會合併算出每月的收入與花費。</p>
+      <p className="muted small">兩種帳單可以一起選，會自動分辨。</p>
       <div className="row center"><button className="primary" onClick={onImport}>匯入帳單</button></div>
     </section> : <>
       {converting && <p role="status" className="notice">正在換算每月匯率…</p>}
@@ -175,7 +176,7 @@ function LiveCashflow({ data, onChange, busy = false, dirty, sessionIdentity, ca
       </div>}
       <CashflowRecords editing={editing} query={query} fx={fx} readiness={readiness} ledgerError={ledgerError} onRetry={onRetryLedger} onQuery={onQuery} focusSelection={focusSelection} period={period} data={data} loading={readiness!=='ready'} onGoExpenses={onGoExpenses} onGoBankTransactions={onGoBankTransactions} />
       {shown?.investmentRecovery.hasRecords && <p className="notice small" role="note">投資回收款：可能包含投入本金，不代表投資收益</p>}
-      <p className="cashflow-footnote muted small">依已匯入紀錄，不代表完整月份。{period.isCurrentMonth ? '本月尚未結束。' : ''}金額統一換算 TWD，依各月月底已完成匯率；本月採最新已完成匯率（最多回溯 7 日）。</p>
+      <details className="cashflow-footnote muted small"><summary>金額怎麼算</summary><p>依已匯入紀錄，不代表完整月份。{period.isCurrentMonth ? '本月尚未結束。' : ''}金額統一換算 TWD，依各月月底已完成匯率；本月採最新已完成匯率（最多回溯 7 日）。</p></details>
     </>}
     </div>
   </>

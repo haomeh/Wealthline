@@ -112,7 +112,10 @@ const BUILTIN_BANK_RULES: {direction: 'credit' | 'debit'; pattern: RegExp; class
   {direction:'credit',pattern:/薪資入帳|薪資轉入|薪資|\bSALARY\b|\bPAYROLL\b/,classification:{kind:'income',category:'薪資'}},
   {direction:'credit',pattern:/存款利息|利息入帳|\bINTEREST (?:CREDIT|PAID)\b/,classification:{kind:'income',category:'利息'}},
   {direction:'credit',pattern:/股利入帳|現金股利|\bDIVIDEND\b/,classification:{kind:'income',category:'股利'}},
-  {direction:'debit',pattern:/信用卡繳款|繳信用卡款|\bCREDIT CARD PAYMENT\b/,classification:{kind:'excluded',reason:'信用卡繳款'}},
+  // Card payments: the card statement already lists the spending, so the payment is not counted twice.
+  // A bare 卡費/卡款 also names card fees (金融卡補發卡費, 換卡費, 悠遊卡費), so it counts only right after an issuer's name.
+  // Seen in real statements: 富邦 信用卡轉, 玉山 玉山卡款扣繳, 台新 台新卡費.
+  {direction:'debit',pattern:/信用卡(?:繳款|帳?款|費|自動扣繳|自扣|轉)|繳(?:信用)?卡(?:款|費)|(?:台新|國泰|玉山|中信|中國信託|富邦|永豐|聯邦|滙豐|匯豐|花旗|星展|元大|第一|一銀|華南|彰銀|兆豐|合庫|台企|新光|遠東|凱基|樂天|渣打|土銀|上海|安泰|王道|陽信)卡(?:費|款)|\bCREDIT CARD PAYMENT\b/,classification:{kind:'excluded',reason:'信用卡繳款'}},
 ]
 export function bankClassificationEvidence(transaction: Pick<BankTransaction,'description'|'direction'|'classification'>, rules: readonly BankCategoryRule[] = []): {classification: Classification; evidence: ClassificationEvidence} {
   if (transaction.classification !== undefined) return {classification:parseBankClassification(transaction.classification),evidence:{basis:'manual'}}

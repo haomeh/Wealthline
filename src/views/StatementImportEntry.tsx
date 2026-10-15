@@ -3,7 +3,7 @@ import { BANK_PDF_ERRORS, pdfFormatError } from '../bankStatementErrors'
 import { CSV_MAX_BYTES, CsvError, csvErrorText, csvImportType, decodeCsv, isCsvFile } from '../csvImport'
 import { unlockStatementPasswords, type StatementPassword } from '../statementPasswords'
 import type { StatementKind } from '../statementKind'
-import { ImportKind, ImportSteps, type ImportKindChoice } from './ImportSteps'
+import { ImportSteps } from './ImportSteps'
 import { REPO_URL } from '../site'
 import { CsvGuide } from './CsvGuide'
 
@@ -29,7 +29,7 @@ function planNote(d: Detected): string {
 
 // One import entry: each PDF's text layer decides card or bank, then the files go to that kind's import screen.
 // A file that is neither, or both, stays here as 無法辨識 until the user picks a kind or leaves it out.
-export function StatementImportEntry({ passwords, passwordScope, busy, onCancel, onSelectKind, onContinue }: { passwords: StatementPassword[]; passwordScope?: string; busy: boolean; onCancel: () => void; onSelectKind: (kind: ImportKindChoice) => void; onContinue: (plan: ImportPlan) => void }) {
+export function StatementImportEntry({ passwords, passwordScope, busy, onCancel, onContinue }: { passwords: StatementPassword[]; passwordScope?: string; busy: boolean; onCancel: () => void; onContinue: (plan: ImportPlan) => void }) {
   const [files, setFiles] = useState<File[]>([]), [password, setPassword] = useState(''), [detecting, setDetecting] = useState(false)
   const [progress, setProgress] = useState<{ processed: number; total: number; current: string } | null>(null)
   const [results, setResults] = useState<Detected[] | null>(null), [secret, setSecret] = useState(''), [notice, setNotice] = useState('')
@@ -98,14 +98,13 @@ export function StatementImportEntry({ passwords, passwordScope, busy, onCancel,
   const next = results && plan(results, secret, notice)
   return <section className="panel statement-import statement-entry">
     <div className="panel-head"><h2>匯入帳單</h2><ImportSteps step={1} /><button onClick={() => { controller.current?.abort(); onCancel() }}>取消匯入</button></div>
-    <ImportKind kind="auto" disabled={locked} onSelect={onSelectKind} />
-    <p className="statement-privacy">PDF、CSV 與解密都只在瀏覽器處理，原始檔不保存、不上傳。先讀取 PDF 文字或 CSV 的 type 欄判斷類型，再交給信用卡或銀行帳單的解析與預覽。</p>
+    <p className="statement-privacy">信用卡帳單和銀行帳單可以一起選，會自動分辨；分不出來的檔案會先列出，不會自動匯入。檔案只在這個瀏覽器讀取，原始帳單不保存、不上傳。</p>
     {!results ? <form onSubmit={detect}>
       <fieldset className="statement-upload-fields" disabled={locked}>
-        <label className="field statement-upload"><span>帳單 PDF 或 CSV（可選多份）</span><small className="muted">信用卡帳單與銀行對帳單可一起選 · PDF 每份最多 20 MB · CSV 依 type 欄判斷</small><input aria-label="帳單 PDF" type="file" multiple accept=".pdf,application/pdf,.csv,text/csv" onChange={e => { const chosen = Array.from(e.target.files ?? []); setFiles(chosen); setPassword(''); setProgress(null); if (chosen.some(f => !isCsvFile(f))) void import('../statementKind').then(m => m.warmStatementReader()).catch(() => {}) }} /></label>
+        <label className="field statement-upload"><span>帳單 PDF 或 CSV（可選多份）</span><small className="muted">PDF 每份最多 20 MB</small><input aria-label="帳單 PDF" type="file" multiple accept=".pdf,application/pdf,.csv,text/csv" onChange={e => { const chosen = Array.from(e.target.files ?? []); setFiles(chosen); setPassword(''); setProgress(null); if (chosen.some(f => !isCsvFile(f))) void import('../statementKind').then(m => m.warmStatementReader()).catch(() => {}) }} /></label>
         <label className="field statement-password"><span>PDF 密碼（多組以逗號 , 分隔）</span><input aria-label="帳單 PDF 密碼" type="password" autoComplete="off" placeholder="未加密的帳單可留空" value={password} onChange={e => setPassword(e.target.value)} /><small className="muted">已設定的帳單密碼會自動套用。這裡輸入的只供本次匯入，不會保存。</small></label>
       </fieldset>
-      <button className="primary" disabled={locked || !files.length}>{detecting ? '正在本機判斷類型…' : `判斷類型並解析${files.length ? `（${files.length} 份）` : ''}`}</button>
+      <button className="primary" disabled={locked || !files.length}>{detecting ? '正在本機判斷類型…' : `開始匯入${files.length ? `（${files.length} 份）` : ''}`}</button>
     </form> : <section className="notice statement-entry-report" aria-label="帳單類型判斷結果">
       <h3>有檔案無法自動判斷</h3>
       <p className="muted small">無法辨識的檔案預設不匯入。確定是哪一種帳單時再選擇類型；選錯類型可能解析出錯誤金額。</p>

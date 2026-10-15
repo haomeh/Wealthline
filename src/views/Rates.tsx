@@ -99,12 +99,12 @@ export function Rates({ data, onChange, onRefresh, error }: Props) {
           </div>
         )}
       </section>
-      <div className="tiles">
+      {currencies.length > 0 && <div className="tiles">
         <section className="panel span-2">
-          <h3>手動覆寫</h3>
-          <p className="muted small">點匯率直接改，改完自動固定，不被每天的自動更新覆蓋。法幣來自 ExchangeRate-API，穩定幣與加密貨幣來自 CoinGecko。缺匯率時，相關負債與淨資產暫不換算。</p>
+          <h3>想用自己的匯率？</h3>
+          <p className="muted small">直接點表格裡的匯率修改，改過的會固定下來，不被每天的自動更新覆蓋。法幣來自 ExchangeRate-API，穩定幣與加密貨幣來自 CoinGecko。</p>
         </section>
-      </div>
+      </div>}
     </>
   )
 }

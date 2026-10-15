@@ -2839,9 +2839,11 @@ section.daily .scroll { max-width: 100%; overflow-x: auto; }
 .history-page > .panel, .history-page > .stats, .history-page > .page-head { margin: 0; }
 .history-heading { align-items: center; }
 .history-heading p { margin-top: 8px; }
-.history-source { padding: 20px 24px; border: 1px solid var(--hairline); background: var(--surface-2); border-radius: var(--tile-radius); min-width: 0; }
+.history-source { padding: 16px 24px; border: 1px solid var(--hairline); background: var(--surface-2); border-radius: var(--tile-radius); min-width: 0; }
 .history-source-head { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
 .history-source-head h3 { margin: 0; font-size: 1rem; }
+.history-source-about { flex: 1 1 260px; min-width: 0; }
+.history-source-about > summary { cursor: pointer; font-weight: 600; font-size: .9375rem; color: var(--ink); }
 .history-source button { min-height: 44px; max-width: 100%; white-space: normal; }
 .history-source-notes { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 20px; margin-top: 16px; }
 .history-source-notes p { display: grid; align-content: start; gap: 6px; font-size: .875rem; color: var(--ink-2); line-height: 1.6; }
@@ -3059,6 +3061,8 @@ dialog.expense-rule-dialog { max-width: 440px; }
 .cashflow-no-record p { margin: 0; }
 .cashflow-pending { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; }
 .cashflow-footnote { margin: 0; }
+.cashflow-footnote > summary { cursor: pointer; }
+.cashflow-footnote > p { margin: 8px 0 0; line-height: 1.6; }
 @media (max-width: 700px) {
   .cashflow-nested { grid-template-columns: minmax(0, 1fr); gap: 24px; }
   .cashflow-ring-chart { max-width: 264px; }
@@ -3453,8 +3457,6 @@ button.pin-chip:hover:not(:disabled) { background: var(--ink); opacity: 0.85; }
 .import-steps { display: flex; gap: 6px; list-style: none; margin: 0 0 0 auto; padding: 0; font-size: 13px; }
 .import-steps li { padding: 6px 12px; border-radius: 999px; background: var(--surface-2); color: var(--ink-2); white-space: nowrap; }
 .import-steps li.on { background: var(--ink); color: var(--page); font-weight: 700; }
-/* The statement kind of the shared import screen: auto, card or bank. */
-.import-kind { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; margin: 0 0 12px; }
 /* 自動判斷: the detection report, with a kind choice for each unrecognized file. */
 .statement-entry-report h3 { margin: 0 0 4px; font-size: 15px; }
 .statement-entry-report ul { list-style: none; padding: 0; margin: 12px 0; display: grid; gap: 10px; }

@@ -1,8 +1,8 @@
-import { useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import type { WealthData } from '../model'
 import { bankCategoryRuleIndex, type BankCategoryRule, type BankTransaction } from '../bankTransactions'
 import type { Expense } from '../expenses'
-import { bankDisplayAccounts, removeBankTransaction, removeExpense, saveBankRule, saveBankTransaction, saveExpense, saveExpenseRule } from '../ledgerEdits'
+import { removeBankTransaction, removeExpense, saveBankRule, saveBankTransaction, saveExpense, saveExpenseRule } from '../ledgerEdits'
 import { BankRuleDialog } from './BankCategoryRules'
 import { BankTransactionEditor } from './BankTransactionEditor'
 import { CategoryRuleDialog } from './ExpenseCategoryRules'
@@ -23,7 +23,6 @@ export function useRecordEditing({ data, onChange, busy, loading }: { data: Weal
   const [error, setError] = useState('')
   const on = !!onChange && !loading
   const bankRules = data.bankCategoryRules ?? [], expenseRules = data.expenseCategoryRules ?? []
-  const accounts = useMemo(() => bankDisplayAccounts(data.bankTransactionAccounts ?? []), [data.bankTransactionAccounts])
 
   // Applies one edit to the latest data; a rejected edit (an invalid ledger) is reported, not saved.
   const apply = (edit: (current: WealthData) => WealthData) => {
@@ -32,7 +31,7 @@ export function useRecordEditing({ data, onChange, busy, loading }: { data: Weal
     try { emit(edit(current)); setError(''); return true } catch (e) { setError(e instanceof Error ? e.message : '無法套用修改'); return false }
   }
 
-  const editor: ReactNode = bankEdit ? <BankTransactionEditor transaction={bankEdit} accounts={accounts} rules={bankRules} busy={busy}
+  const editor: ReactNode = bankEdit ? <BankTransactionEditor transaction={bankEdit} accounts={data.bankTransactionAccounts ?? []} rules={bankRules} busy={busy}
     onCancel={() => setBankEdit(null)}
     onSave={(row) => { if (apply((d) => saveBankTransaction(d, row))) setBankEdit(null) }}
     onRemove={() => { if (apply((d) => removeBankTransaction(d, bankEdit.id))) setBankEdit(null) }} />

@@ -8,7 +8,8 @@ const TAB_NAMES: Record<StatementKind, string> = { card: '信用卡帳單', bank
 
 // A detected batch: the card and bank statement imports side by side, one tab each. Both stay mounted,
 // so a parsed preview survives switching tabs; each tab confirms or cancels its own kind.
-export function StatementImportBatch({ plan, card, bank, onClose }: { plan: ImportPlan & { results: BatchResults }; card: ReactNode; bank: ReactNode; onClose: () => void }) {
+// `dirty`: there are unsaved edits, so the closing summary asks for a save only then.
+export function StatementImportBatch({ plan, card, bank, onClose, dirty = true }: { plan: ImportPlan & { results: BatchResults }; card: ReactNode; bank: ReactNode; onClose: () => void; dirty?: boolean }) {
   const done = plan.results
   const kinds = (['card', 'bank'] as const).filter((k) => plan[k].length)
   const [chosen, setChosen] = useState<StatementKind>(kinds[0] ?? 'card')
@@ -21,7 +22,7 @@ export function StatementImportBatch({ plan, card, bank, onClose }: { plan: Impo
       <details className="bank-import-report statement-kind-report" open={!finished || undefined}><summary><span>自動判斷結果</span><span className="muted">{plan.notes.length} 項</span></summary>
         <ul aria-label="帳單類型判斷結果">{plan.notes.map((n, i) => <li key={i}>{n}</li>)}</ul>
       </details>
-      {finished && <ul className="notice" aria-label="匯入結果">{kinds.map((k) => <li key={k}><strong>{TAB_NAMES[k]}</strong>：{done[k]}</li>)}<li className="muted small">匯入的資料要按「儲存變更」才會保存。</li></ul>}
+      {finished && <ul className="notice" aria-label="匯入結果">{kinds.map((k) => <li key={k}><strong>{TAB_NAMES[k]}</strong>：{done[k]?.replace('請按「儲存變更」。', '')}</li>)}{dirty && <li className="muted small">匯入的資料要按「儲存變更」才會保存。</li>}</ul>}
       {!finished && kinds.length > 1 && <div className="segmented statement-batch-tabs" role="tablist" aria-label="匯入類型">{kinds.map((k) =>
         <button key={k} type="button" role="tab" id={`batch-tab-${k}`} aria-controls={`batch-panel-${k}`} aria-selected={k === active} className={k === active ? 'on' : ''} onClick={() => setChosen(k)}>
           {TAB_NAMES[k]} · {plan[k].length} 份{done[k] ? ' ✓' : ''}

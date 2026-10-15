@@ -43,7 +43,9 @@ test('only clear directed income and card payment semantics get built-in suggest
   assert.deepEqual(bank.classifyBankTransaction(tx({description:'薪資入帳'})),{kind:'income',category:'薪資'})
   assert.deepEqual(bank.classifyBankTransaction(tx({description:'薪資入帳',direction:'debit'})),{kind:'pending'})
   assert.deepEqual(bank.classifyBankTransaction(tx({description:'存款利息'})),{kind:'income',category:'利息'})
-  assert.deepEqual(bank.classifyBankTransaction(tx({description:'信用卡繳款',direction:'debit'})),{kind:'excluded',reason:'信用卡繳款'})
+  for(const description of ['信用卡繳款','繳信用卡款','國泰信用卡費','玉山卡費','信用卡款','信用卡帳款','台新信用卡自動扣繳','繳卡費','信用卡轉','玉山卡款扣繳','CREDIT CARD PAYMENT']) assert.deepEqual(bank.classifyBankTransaction(tx({description,direction:'debit'})),{kind:'excluded',reason:'信用卡繳款'},description)
+  for(const description of ['金融卡費','晶片卡費用','簽帳卡費','金融卡款','金融卡補發卡費','金融卡換卡費','悠遊卡費','補發卡費','DEBIT CARD PAYMENT']) assert.deepEqual(bank.classifyBankTransaction(tx({description,direction:'debit'})),{kind:'pending'},description)
+  assert.deepEqual(bank.classifyBankTransaction(tx({description:'國泰信用卡費'})),{kind:'pending'},'a credit is a refund, not a payment')
 })
 
 test('short account labels are not identifiers while complete and transient identifiers remain protected',()=>{
