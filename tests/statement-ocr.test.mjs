@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict'
-import {before,after,test} from 'node:test'
+import {before,after,test,mock} from 'node:test'
 import {createServer} from 'vite'
-let server,createStatementOcr
+let server,createStatementOcr,takeStatementOcr,releaseStatementOcr
 const originalWorker=globalThis.Worker
 before(async()=>{
   server=await createServer({configFile:false,envDir:false,server:{middlewareMode:true,watch:null,hmr:false,ws:false}})
-  ;({createStatementOcr}=await server.ssrLoadModule('/src/statementOcr.ts'))
+  ;({createStatementOcr,takeStatementOcr,releaseStatementOcr}=await server.ssrLoadModule('/src/statementOcr.ts'))
 })
 after(async()=>{globalThis.Worker=originalWorker;await server.close()})
 function fakeWorker(handler) {
@@ -59,4 +59,22 @@ test('page layout recognition requests TSV and restores single-line mode for mer
   assert.equal(calls.at(-2).payload.params.tessedit_pageseg_mode,'7')
   assert.equal(calls.at(-1).payload.output.tsv,false)
   ocr.close()
+})
+
+test('the files of one import run reuse a released OCR worker; other runs, abort and idle time do not',async()=>{
+  const {calls,instances}=fakeWorker(success)
+  const run=new AbortController(),other=new AbortController()
+  const first=await takeStatementOcr(run.signal);releaseStatementOcr(run.signal,first)
+  assert.equal(await takeStatementOcr(run.signal),first,'the next file of the run gets the loaded worker')
+  assert.equal(calls.filter(m=>m.action==='loadLanguage').length,1)
+  const second=await takeStatementOcr(run.signal);assert.notEqual(second,first,'a worker in use is never shared')
+  releaseStatementOcr(run.signal,first);releaseStatementOcr(run.signal,second);assert.ok(instances[1].terminated,'only one idle worker is kept')
+  assert.notEqual(await takeStatementOcr(other.signal),first,'another run loads its own')
+  run.abort();assert.ok(instances[0].terminated,'abort terminates the idle worker')
+  await assert.rejects(takeStatementOcr(run.signal),/已取消/)
+  const idle=new AbortController();mock.timers.enable({apis:['setTimeout']})
+  try {const ocr=await takeStatementOcr(idle.signal);releaseStatementOcr(idle.signal,ocr);const worker=instances.at(-1)
+    mock.timers.tick(9999);assert.equal(worker.terminated,0);mock.timers.tick(1);assert.ok(worker.terminated)
+    assert.notEqual(await takeStatementOcr(idle.signal),ocr)} finally {mock.timers.reset()}
+  other.abort();idle.abort()
 })

@@ -4,8 +4,9 @@ import { readStatementText } from './statementText'
 import { hsbcMerchantRegions, hsbcSgPage, hsbcTransactionBounds, ocrMerchantLine, statementMetadata, taishinCardPage, textLines, textRows } from './statements'
 
 export async function readStatementPdf(bytes: Uint8Array, password:string | readonly string[], signal:AbortSignal, fileName = '', onProgress?:(message:string)=>void): Promise<{lines:string[];title:string;ocrUsed:boolean;ocrError?:string;transactionIndexes?:number[]}> {
-  const task = openStatementDocument('credit-card',bytes,password)
+  const task = openStatementDocument('credit-card',bytes,password,signal)
   let ocr:Awaited<ReturnType<typeof import('./statementOcr').createStatementOcr>> | undefined
+  let ocrModule:typeof import('./statementOcr') | undefined
   const cancel = () => { ocr?.close();void task.destroy() }
   signal.addEventListener('abort',cancel,{once:true})
   if(signal.aborted) {cancel();throw new Error('已取消解析')}
@@ -48,7 +49,7 @@ export async function readStatementPdf(bytes: Uint8Array, password:string | read
           const canvas=document.createElement('canvas')
           try {
             onProgress?.(`正在載入本機 OCR（英文／繁中）· ${at}`)
-            if(!ocr) {const {createStatementOcr}=await import('./statementOcr');ocr=await createStatementOcr(signal)}
+            if(!ocr) {ocrModule??=await import('./statementOcr');ocr=await ocrModule.takeStatementOcr(signal)}
             if(signal.aborted) throw new Error('已取消解析')
             const base=page.getViewport({scale:1})
             const scale=Math.min(4,4096/Math.max(base.width,base.height),Math.sqrt(16_000_000/(base.width*base.height)))
@@ -101,9 +102,10 @@ export async function readStatementPdf(bytes: Uint8Array, password:string | read
             }
           } catch(e) {
             if(signal.aborted) throw new Error('已取消解析')
+            // A worker that failed is not passed on to the next file.
+            ocr?.close();ocr=undefined
             if(!scopeReady) throw new Error('帳單無法定位前期餘額／交易明細區段，請重新解析或對照原帳單；尚未匯入任何資料')
             ocrError=e instanceof Error && /^OCR /.test(e.message)?e.message:'OCR 未完成，請手動補上商家並核對繳款'
-            ocr?.close();ocr=undefined
           } finally {canvas.width=0;canvas.height=0}
         }
       }
@@ -118,7 +120,9 @@ export async function readStatementPdf(bytes: Uint8Array, password:string | read
     if(e instanceof PasswordException) throw new Error('帳單需要密碼，或密碼不正確。請重新輸入。')
     throw new Error(e instanceof Error && /帳單|PDF 沒有|已取消/.test(e.message) ? e.message : '無法讀取此 PDF，請確認檔案完整且為支援的文字帳單。')
   } finally {
-    ocr?.close()
+    // A working OCR worker goes on to the next file of this import run.
+    if(ocr && ocrModule) ocrModule.releaseStatementOcr(signal,ocr)
+    else ocr?.close()
     signal.removeEventListener('abort',cancel)
     await task.destroy()
   }

@@ -86,6 +86,8 @@ export function StatementImportEntry({ passwords, passwordScope, busy, onCancel,
         }
       }
       setProgress({ processed: files.length, total: files.length, current: '' })
+      // Detection is over: leaving the entry must not count as a cancel, which would close the shared PDF worker.
+      if (controller.current === abort) controller.current = null
       setFiles([]); setNotice(note)
       // Every file recognized: go straight on. Otherwise the report stays for the user to read and decide.
       if (found.every(d => d.kind === 'card' || d.kind === 'bank')) onContinue(plan(found, typed, note))
@@ -100,7 +102,7 @@ export function StatementImportEntry({ passwords, passwordScope, busy, onCancel,
     <p className="statement-privacy">PDF、CSV 與解密都只在瀏覽器處理，原始檔不保存、不上傳。先讀取 PDF 文字或 CSV 的 type 欄判斷類型，再交給信用卡或銀行帳單的解析與預覽。</p>
     {!results ? <form onSubmit={detect}>
       <fieldset className="statement-upload-fields" disabled={locked}>
-        <label className="field statement-upload"><span>帳單 PDF 或 CSV（可選多份）</span><small className="muted">信用卡帳單與銀行對帳單可一起選 · PDF 每份最多 20 MB · CSV 依 type 欄判斷</small><input aria-label="帳單 PDF" type="file" multiple accept=".pdf,application/pdf,.csv,text/csv" onChange={e => { setFiles(Array.from(e.target.files ?? [])); setPassword(''); setProgress(null) }} /></label>
+        <label className="field statement-upload"><span>帳單 PDF 或 CSV（可選多份）</span><small className="muted">信用卡帳單與銀行對帳單可一起選 · PDF 每份最多 20 MB · CSV 依 type 欄判斷</small><input aria-label="帳單 PDF" type="file" multiple accept=".pdf,application/pdf,.csv,text/csv" onChange={e => { const chosen = Array.from(e.target.files ?? []); setFiles(chosen); setPassword(''); setProgress(null); if (chosen.some(f => !isCsvFile(f))) void import('../statementKind').then(m => m.warmStatementReader()).catch(() => {}) }} /></label>
         <label className="field statement-password"><span>PDF 密碼（多組以逗號 , 分隔）</span><input aria-label="帳單 PDF 密碼" type="password" autoComplete="off" placeholder="未加密的帳單可留空" value={password} onChange={e => setPassword(e.target.value)} /><small className="muted">已設定的帳單密碼會自動套用。這裡輸入的只供本次匯入，不會保存。</small></label>
       </fieldset>
       <button className="primary" disabled={locked || !files.length}>{detecting ? '正在本機判斷類型…' : `判斷類型並解析${files.length ? `（${files.length} 份）` : ''}`}</button>
