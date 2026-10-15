@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import {before,after,test} from 'node:test'
+import {before,after,test,mock} from 'node:test'
 import {createServer} from 'vite'
 import {hsbc,compact,item,right,page,mast,hsbcHeader,compactHeader} from './fixtures/bank-statements/layouts.mjs'
 import {observedSg,observedFubon,observedEsun} from './fixtures/bank-statements/fragmented.mjs'
@@ -126,13 +126,14 @@ test('positional parser limits, invalid coordinates and duplicate pages reject w
 test('neutral PDF lifecycle bounds, local resources, retries, abort and cleanup without card scoping',async()=>{
  const mockServer=await createServer({cacheDir:'node_modules/.vite-bank-pdf-lifecycle',configFile:false,envDir:false,ssr:{noExternal:['pdfjs-dist']},server:{middlewareMode:true,watch:null,hmr:false,ws:false},plugins:[{name:'bank-pdf-lifecycle-mock',enforce:'pre',resolveId(id){if(id==='pdfjs-dist/legacy/build/pdf.mjs')return '\0bank-pdf-test'},load(id){if(id==='\0bank-pdf-test')return `
  export const GlobalWorkerOptions={};export class PasswordException extends Error{};
- export function getDocument(options){const s=globalThis.__bankPdfLifecycle;s.options=options;s.opened++;if(s.openFailure)throw new Error('SECRET OPEN FAILURE');let reject;const task={destroy:async()=>{s.destroyed++;reject?.(new Error('destroyed'));if(s.destroyFailure)throw new Error('SECRET CLEANUP FAILURE')}};
+ export class PDFWorker{constructor(){const s=globalThis.__bankPdfLifecycle;s.workers.push(this);this.destroyed=0;this.promise=Promise.resolve()}destroy(){this.destroyed++}}
+ export function getDocument(options){const s=globalThis.__bankPdfLifecycle;s.options=options;s.opened++;if(s.openFailure)throw new Error('SECRET OPEN FAILURE');let reject;const task={destroy:async()=>{s.destroyed++;if(s.destroyHang)return new Promise(resolve=>{s.unhang=resolve});reject?.(new Error('destroyed'));if(s.destroyFailure)throw new Error('SECRET CLEANUP FAILURE')}};
  task.promise=new Promise((resolve,fail)=>{reject=fail;queueMicrotask(()=>{try {if(s.documentError)throw s.documentError;if(s.documentFailure)throw new Error('SECRET DOCUMENT FAILURE');if(s.password){for(let n=0;n<10;n++){let candidate;task.onPassword(value=>candidate=value);if(candidate instanceof Error)throw new PasswordException();s.tried.push(candidate);if(candidate===s.password)break;if(n===9)throw new PasswordException()}}
  resolve({numPages:s.numPages??1,getMetadata:async()=>({info:{Title:'Synthetic title'}}),getPage:async()=>{if(s.pageError)throw s.pageError;if(s.pageFailure)throw new Error('SECRET PAGE FAILURE');const streamTextContent=()=>{
  const stream=new ReadableStream({start(controller){try{s.onText?.();if(s.textError)throw s.textError;if(s.failure)throw new Error('SECRET RAW CUSTOMER');const chunks=s.chunks??[{items:s.items??[{str:'HSBC Taiwan',transform:[1,0,0,1,30,820],width:60,height:9}],styles:{},lang:null}];for(const chunk of chunks)controller.enqueue(chunk);controller.close()}catch(error){controller.error(error)}}});
  if(s.noIterator)Object.defineProperty(stream,Symbol.asyncIterator,{value:undefined});s.stream=stream;return stream;
 };return {getViewport:()=>({width:612,height:864,convertToViewportPoint:(x,y)=>[x,864-y]}),isPureXfa:!!s.xfa,streamTextContent,getTextContent:async()=>{if(s.xfa)return {items:s.items,styles:{},lang:null};const text={items:[],styles:{},lang:null};for await(const chunk of streamTextContent()){text.items.push(...chunk.items);Object.assign(text.styles,chunk.styles);text.lang??=chunk.lang}return text},cleanup:()=>s.cleaned++}}});}catch(e){fail(e)}})});return task;}`}}]})
- const reset=extra=>globalThis.__bankPdfLifecycle={opened:0,destroyed:0,cleaned:0,tried:[],...extra}
+ const reset=extra=>globalThis.__bankPdfLifecycle={opened:0,destroyed:0,cleaned:0,tried:[],workers:[],...extra}
  try {const doc=await mockServer.ssrLoadModule('/src/statementDocument.ts');
   const progress=[],extracted=[];reset({numPages:3,onText:()=>extracted.push(true)});
   const reader=await mockServer.ssrLoadModule('/src/bankStatements.ts');await reader.readBankStatementPdf(new Uint8Array([1]),'',new AbortController().signal,value=>{progress.push(value);assert.equal(value.completed,extracted.length,'only extracted pages count as completed')});
@@ -171,6 +172,36 @@ test('neutral PDF lifecycle bounds, local resources, retries, abort and cleanup 
   state=reset({});await assert.rejects(doc.readBankDocument(new Uint8Array(20*1024*1024+1),'',new AbortController().signal),/20MB/);assert.equal(state.opened,0)
   controller.abort();await assert.rejects(doc.readBankDocument(new Uint8Array([1]),'',controller.signal),/取消/);assert.equal(state.opened,0)
   const card=await mockServer.ssrLoadModule('/src/statementPdf.ts');state=reset({items:[{str:'09/01 STORE 100',transform:[1,0,0,1,30,700],width:90,height:9}]});const cardResult=await card.readStatementPdf(new Uint8Array([1]),'',new AbortController().signal);assert.deepEqual(cardResult,{lines:['09/01 STORE 100'],title:'Synthetic title',ocrUsed:false,ocrError:undefined});assert.equal(state.destroyed,1)
+  // Statement documents share one PDF.js worker; aborting one signal destroys its documents only.
+  // Close the worker the cases above shared.
+  const flush=new AbortController();await doc.readBankDocument(new Uint8Array([1]),'',flush.signal);flush.abort();await new Promise(resolve=>setTimeout(resolve,10))
+  const run=new AbortController(),other=new AbortController();state=reset({})
+  await doc.readBankDocument(new Uint8Array([1]),'',run.signal);await card.readStatementPdf(new Uint8Array([1]),'',run.signal);await doc.readBankDocument(new Uint8Array([1]),'',other.signal)
+  assert.equal(state.workers.length,1);assert.equal(state.destroyed,3);assert.equal(state.workers[0].destroyed,0,'documents end, the worker stays for the next file')
+  assert.equal(state.options.worker,state.workers[0])
+  state.onText=()=>run.abort();const kept=await doc.readBankDocument(new Uint8Array([1]),'',other.signal);assert.equal(kept.pages.length,1,'another signal keeps reading')
+  await new Promise(resolve=>setTimeout(resolve,10));assert.equal(state.workers[0].destroyed,0,'the worker stays while other documents use it')
+  await assert.rejects(doc.readBankDocument(new Uint8Array([1]),'',run.signal),/取消/);assert.equal(state.opened,4)
+  other.abort();await new Promise(resolve=>setTimeout(resolve,10));assert.equal(state.workers[0].destroyed,1,'an abort with no open documents closes the idle worker at once')
+  // Abort while a document is open: the document is destroyed, then the worker closed.
+  const busy=new AbortController();state=reset({onText:()=>busy.abort()});await assert.rejects(doc.readBankDocument(new Uint8Array([1]),'',busy.signal),/取消/)
+  await new Promise(resolve=>setTimeout(resolve,10));assert.equal(state.destroyed,1);assert.equal(state.workers[0].destroyed,1)
+  // A worker that never finishes destroying an aborted document is terminated.
+  const hung=new AbortController();state=reset({onText:()=>{state.destroyHang=true;hung.abort()}});mock.timers.enable({apis:['setTimeout']})
+  try {const reading=doc.readBankDocument(new Uint8Array([1]),'',hung.signal);await new Promise(resolve=>setImmediate(resolve));mock.timers.tick(999);assert.equal(state.workers[0].destroyed,0);mock.timers.tick(1);assert.equal(state.workers[0].destroyed,1);void reading.catch(()=>{})
+   // ...but not while another signal's document is open on it.
+   const first=new AbortController(),second=new AbortController();state=reset({destroyHang:true})
+   for(const run of [first,second])doc.openStatementDocument('bank',new Uint8Array([1]),'',run.signal).promise.catch(()=>{})
+   first.abort();mock.timers.tick(1000);assert.equal(state.workers.length,1);assert.equal(state.workers[0].destroyed,0,'the other import keeps the worker')
+   state.destroyHang=false;state.unhang();second.abort();await new Promise(resolve=>setImmediate(resolve));mock.timers.tick(0);assert.equal(state.workers[0].destroyed,1,'closed once both imports ended')
+   second.abort()} finally {mock.timers.reset()}
+  // Without abort, the worker closes once no document has used it for a short while.
+  const idle=new AbortController();state=reset({});mock.timers.enable({apis:['setTimeout']})
+  try {await doc.readBankDocument(new Uint8Array([1]),'',idle.signal);mock.timers.tick(2999);assert.equal(state.workers[0].destroyed,0);mock.timers.tick(1);assert.equal(state.workers[0].destroyed,1)
+   await doc.readBankDocument(new Uint8Array([1]),'',idle.signal);assert.equal(state.workers.length,2,'a later file starts a new worker')
+   // Warming while files are chosen starts the worker the next document uses, and closes it if none follows.
+   mock.timers.tick(3000);state=reset({});doc.warmStatementWorker();assert.equal(state.workers.length,1);await doc.readBankDocument(new Uint8Array([1]),'',idle.signal);assert.equal(state.workers.length,1)
+   mock.timers.tick(3000);state=reset({});doc.warmStatementWorker();mock.timers.tick(14999);assert.equal(state.workers[0].destroyed,0);mock.timers.tick(1);assert.equal(state.workers[0].destroyed,1)} finally {mock.timers.reset()}
  }finally {await mockServer.close();delete globalThis.__bankPdfLifecycle}
 })
 

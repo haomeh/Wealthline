@@ -39,3 +39,23 @@ export async function createStatementOcr(signal:AbortSignal) {
     }}
   } catch(e) {close();throw e}
 }
+
+type StatementOcr = Awaited<ReturnType<typeof createStatementOcr>>
+// Loading the language models takes longer than reading a statement's merchants, so the files of
+// one import run (one AbortSignal) pass a finished OCR worker on to the next file. One file uses a
+// worker at a time; aborting the run terminates it, and an unused worker closes after a short wait.
+const OCR_IDLE_MS = 10_000
+const parked = new WeakMap<AbortSignal, {ocr:StatementOcr;drop:()=>void}>()
+export async function takeStatementOcr(signal:AbortSignal): Promise<StatementOcr> {
+  const idle = parked.get(signal)
+  if(idle && !signal.aborted) {idle.drop();return idle.ocr}
+  return createStatementOcr(signal)
+}
+export function releaseStatementOcr(signal:AbortSignal, ocr:StatementOcr) {
+  if(signal.aborted || parked.has(signal)) {ocr.close();return}
+  const close = () => {drop();ocr.close()}
+  const timer = setTimeout(close,OCR_IDLE_MS)
+  const drop = () => {clearTimeout(timer);signal.removeEventListener('abort',close);if(parked.get(signal)?.ocr === ocr) parked.delete(signal)}
+  signal.addEventListener('abort',close,{once:true})
+  parked.set(signal,{ocr,drop})
+}
