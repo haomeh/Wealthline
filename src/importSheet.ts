@@ -1,6 +1,7 @@
 // Imports rows copied from the user's existing asset spreadsheet (tab-separated).
 // Expected columns: 機構, 類別, 子類別, 幣別, 數量, 單價, 原幣市值, 匯率, 台幣市值, 佔比, 用途
 
+import { CsvError, readPositionCsv, type PositionCsvRow } from './csvImport'
 import { isSupportedCurrency } from './currencies'
 import { BASE_CURRENCY, newId, type Account, type WealthData } from './model'
 
@@ -108,5 +109,62 @@ export function importSheet(data: WealthData, text: string): ImportResult {
     accounts: imported.size, rows, skipped: errors.length, errors,
     replaced: data.accounts.filter((a) => imported.has(a.name.trim().toUpperCase())),
     rateChanges,
+  }
+}
+
+// The CSV form of the same import (type=position, docs/csv-import.md): named columns instead of positions.
+// Rows with the same account name become one account whose positions replace the stored ones. A position
+// already held keeps its id, added date and price; a new holding without a price is priced by the next
+// quote update.
+export function importPositionCsv(data: WealthData, text: string): ImportResult {
+  const empty = { data, accounts: 0, rows: 0, skipped: 0, replaced: [], rateChanges: [] }
+  let rows: PositionCsvRow[]
+  try {
+    rows = readPositionCsv(text)
+  } catch (e) {
+    const issues = e instanceof CsvError ? [e.message, ...e.issues] : ['無法讀取 CSV。']
+    // Line 0: the message already names its line, or is about the whole file.
+    return { ...empty, skipped: issues.length, errors: issues.map((message) => ({ line: 0, message })) }
+  }
+  const errors: ImportResult['errors'] = []
+  const imported = new Map<string, Account>()
+  for (const r of rows) {
+    const key = r.account.toUpperCase()
+    const existing = data.accounts.filter((a) => a.name.trim().toUpperCase() === key)
+    if (existing.length > 1) { errors.push({ line: r.line, message: '同名帳戶有多筆，請使用帳戶頁編輯以免套用到錯誤帳戶' }); continue }
+    let account = imported.get(key)
+    if (!account) {
+      account = {
+        id: existing[0]?.id ?? newId(),
+        name: r.account,
+        kind: r.kind,
+        country: r.country || existing[0]?.country || guessCountry(r.account, r.category),
+        category: r.category || existing[0]?.category || (r.kind === 'bank' ? '現金與外幣活存' : '其他'),
+        positions: [],
+      }
+      imported.set(key, account)
+    } else if (account.kind !== r.kind) {
+      errors.push({ line: r.line, message: '同一帳戶的 kind 不一致' })
+      continue
+    }
+    const held = existing[0]?.positions.find((p) => r.symbol ? p.type === 'holding' && p.symbol.toUpperCase() === r.symbol : p.type === 'cash' && p.currency === r.currency)
+    if (account.positions.some((p) => r.symbol ? p.symbol === r.symbol : p.type === 'cash' && p.currency === r.currency)) {
+      errors.push({ line: r.line, message: r.symbol ? `「${r.symbol}」在同一帳戶重複` : `${r.currency} 現金在同一帳戶重複` })
+      continue
+    }
+    const base = { id: held?.id ?? newId(), ...(held?.addedAt && { addedAt: held.addedAt }) }
+    account.positions.push(r.symbol
+      ? { ...base, type: 'holding', currency: r.currency, symbol: r.symbol, quantity: r.quantity,
+          ...(r.price !== undefined ? { price: r.price, priceManual: true }
+            : { price: held?.price ?? 0, ...(held?.priceManual && { priceManual: true }), ...(held?.priceUpdatedAt && { priceUpdatedAt: held.priceUpdatedAt }) }),
+          ...(held?.name && { name: held.name }) }
+      : { ...base, type: 'cash', currency: r.currency, symbol: '', quantity: r.quantity, price: 1 })
+  }
+  if (errors.length) return { ...empty, skipped: errors.length, errors }
+  const accounts = data.accounts.map((a) => imported.get(a.name.trim().toUpperCase()) ?? a)
+  for (const a of imported.values()) if (!data.accounts.some((x) => x.name.trim().toUpperCase() === a.name.trim().toUpperCase())) accounts.push(a)
+  return {
+    data: { ...data, accounts }, accounts: imported.size, rows: rows.length, skipped: 0, errors: [],
+    replaced: data.accounts.filter((a) => imported.has(a.name.trim().toUpperCase())), rateChanges: [],
   }
 }

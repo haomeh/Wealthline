@@ -7,7 +7,7 @@ export function ImportSteps({step}: {step:1|2}) {
 // skips detection and opens that kind's screen. A page mounted on its own has no other choice (no `onSelect`).
 export type ImportKindChoice = 'auto' | 'card' | 'bank'
 const KIND_HINTS: Record<ImportKindChoice, string> = {
-  auto: '依每份 PDF 的內容判斷信用卡帳單或銀行帳單，可一起選；無法辨識的檔案會列出，不會自動匯入。',
+  auto: '依每份 PDF 的內容或 CSV 的 type 欄判斷信用卡帳單或銀行帳單，可一起選；無法辨識的檔案會列出，不會自動匯入。',
   card: '只解析信用卡帳單，匯入到信用卡消費。銀行對帳單請改選「銀行帳單」或「自動判斷」，選錯類型可能解析出錯誤金額。',
   bank: '只解析銀行對帳單，匯入到銀行流水。信用卡帳單請改選「信用卡帳單」或「自動判斷」。',
 }

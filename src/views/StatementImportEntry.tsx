@@ -1,8 +1,11 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { BANK_PDF_ERRORS, pdfFormatError } from '../bankStatementErrors'
+import { CSV_MAX_BYTES, CsvError, csvErrorText, csvImportType, decodeCsv, isCsvFile } from '../csvImport'
 import { unlockStatementPasswords, type StatementPassword } from '../statementPasswords'
 import type { StatementKind } from '../statementKind'
 import { ImportKind, ImportSteps, type ImportKindChoice } from './ImportSteps'
+import { REPO_URL } from '../site'
+import { CsvGuide } from './CsvGuide'
 
 /** Files sorted by kind, handed to the card and bank import screens in turn. `notes` is the detection report. */
 export type ImportPlan = { card: File[]; bank: File[]; password: string; notes: string[] }
@@ -52,6 +55,21 @@ export function StatementImportEntry({ passwords, passwordScope, busy, onCancel,
       for (let index = 0; index < files.length; index++) {
         const file = files[index], name = file.name?.trim() || `檔案 ${index + 1}`
         setProgress({ processed: index, total: files.length, current: name })
+        // A CSV says its kind in the type column; balances and holdings belong to the accounts page.
+        if (isCsvFile(file)) {
+          try {
+            if (file.size > CSV_MAX_BYTES) throw new CsvError('CSV 超過 5 MB，請拆分後再匯入。')
+            const type = csvImportType(decodeCsv(new Uint8Array(await file.arrayBuffer())))
+            if (abort.signal.aborted) return
+            found.push(type === 'position'
+              ? { file, name, kind: 'error', reason: '這是帳戶餘額與持倉 CSV，請到「帳戶」頁的「從試算表或 CSV 匯入」', choice: 'skip' }
+              : { file, name, kind: type, reason: 'CSV 檔', choice: type })
+          } catch (error) {
+            if (abort.signal.aborted) return
+            found.push({ file, name, kind: 'error', reason: csvErrorText(error), choice: 'skip' })
+          }
+          continue
+        }
         try {
           if (file.size > 20 * 1024 * 1024) throw new Error(BANK_PDF_ERRORS.size)
           const bytes = new Uint8Array(await file.arrayBuffer())
@@ -81,10 +99,10 @@ export function StatementImportEntry({ passwords, passwordScope, busy, onCancel,
   return <section className="panel statement-import statement-entry">
     <div className="panel-head"><h2>匯入帳單</h2><ImportSteps step={1} /><button onClick={() => { controller.current?.abort(); onCancel() }}>取消匯入</button></div>
     <ImportKind kind="auto" disabled={locked} onSelect={onSelectKind} />
-    <p className="statement-privacy">PDF 與解密都只在瀏覽器處理，原始帳單不保存、不上傳。先讀取 PDF 文字判斷類型，再交給信用卡或銀行帳單的解析與預覽。</p>
+    <p className="statement-privacy">PDF、CSV 與解密都只在瀏覽器處理，原始檔不保存、不上傳。先讀取 PDF 文字或 CSV 的 type 欄判斷類型，再交給信用卡或銀行帳單的解析與預覽。</p>
     {!results ? <form onSubmit={detect}>
       <fieldset className="statement-upload-fields" disabled={locked}>
-        <label className="field statement-upload"><span>帳單 PDF（可選多份）</span><small className="muted">信用卡帳單與銀行對帳單可一起選 · 每份最多 20 MB</small><input aria-label="帳單 PDF" type="file" multiple accept=".pdf,application/pdf" onChange={e => { const chosen = Array.from(e.target.files ?? []); setFiles(chosen); setPassword(''); setProgress(null); if (chosen.length) void import('../statementKind').then(m => m.warmStatementReader()).catch(() => {}) }} /></label>
+        <label className="field statement-upload"><span>帳單 PDF 或 CSV（可選多份）</span><small className="muted">信用卡帳單與銀行對帳單可一起選 · PDF 每份最多 20 MB · CSV 依 type 欄判斷</small><input aria-label="帳單 PDF" type="file" multiple accept=".pdf,application/pdf,.csv,text/csv" onChange={e => { const chosen = Array.from(e.target.files ?? []); setFiles(chosen); setPassword(''); setProgress(null); if (chosen.some(f => !isCsvFile(f))) void import('../statementKind').then(m => m.warmStatementReader()).catch(() => {}) }} /></label>
         <label className="field statement-password"><span>PDF 密碼（多組以逗號 , 分隔）</span><input aria-label="帳單 PDF 密碼" type="password" autoComplete="off" placeholder="未加密的帳單可留空" value={password} onChange={e => setPassword(e.target.value)} /><small className="muted">已設定的帳單密碼會自動套用。這裡輸入的只供本次匯入，不會保存。</small></label>
       </fieldset>
       <button className="primary" disabled={locked || !files.length}>{detecting ? '正在本機判斷類型…' : `判斷類型並解析${files.length ? `（${files.length} 份）` : ''}`}</button>
@@ -101,7 +119,8 @@ export function StatementImportEntry({ passwords, passwordScope, busy, onCancel,
         <button type="button" className="primary" disabled={busy || !next || !(next.card.length + next.bank.length)} onClick={() => { if (next) { setSecret(''); onContinue(next) } }}>{next && next.card.length + next.bank.length ? `繼續匯入${next.card.length ? ` · 信用卡 ${next.card.length} 份` : ''}${next.bank.length ? ` · 銀行 ${next.bank.length} 份` : ''}` : '沒有可匯入的檔案'}</button>
       </div>
     </section>}
+    {!results && !detecting && <CsvGuide kinds={['card', 'bank']} where="在上方「帳單 PDF 或 CSV」選擇檔案（可和 PDF 一起選）" />}
     {detecting && progress && <p role="status" aria-label="帳單類型判斷進度">正在本機判斷類型 · {progress.processed}／{progress.total} 份{progress.current && ` · ${progress.current}`}</p>}
-    <details className="statement-help"><summary>怎麼判斷類型</summary><p className="muted small">讀得到已支援的銀行交易表（日期、摘要、支出／存入、餘額）就是銀行帳單；否則帳單上有信用卡帳單字樣（如「本期應繳總額」「最低應繳」「消費日／入帳日」）就是信用卡帳單。兩者都不是的檔案列為無法辨識，不會自動匯入。銀行與版型的支援範圍與各自的匯入畫面相同。</p></details>
+    <details className="statement-help"><summary>怎麼判斷類型</summary><p className="muted small">讀得到已支援的銀行交易表（日期、摘要、支出／存入、餘額）就是銀行帳單；否則帳單上有信用卡帳單字樣（如「本期應繳總額」「最低應繳」「消費日／入帳日」）就是信用卡帳單。兩者都不是的檔案列為無法辨識，不會自動匯入。銀行與版型的支援範圍與各自的匯入畫面相同。CSV 依 type 欄：card 是信用卡消費，bank 是銀行流水，格式見 <a href={`${REPO_URL}/blob/main/docs/csv-import.md`} target="_blank" rel="noreferrer">CSV 匯入格式</a>。</p></details>
   </section>
 }

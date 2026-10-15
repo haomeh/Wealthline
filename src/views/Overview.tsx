@@ -96,7 +96,7 @@ export function Overview({ data: loaded, onGoHistory, onGoRates, onGoLiabilities
             建立第一個帳戶
           </button>
           {onGoLiabilities && <button onClick={onGoLiabilities}>新增負債</button>}
-          <button onClick={onImport}>從試算表匯入</button>
+          <button onClick={onImport}>從試算表或 CSV 匯入</button>
         </div>
       </section>{cashflow}</div>
     )
