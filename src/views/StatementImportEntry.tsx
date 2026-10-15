@@ -2,21 +2,25 @@ import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { BANK_PDF_ERRORS, pdfFormatError } from '../bankStatementErrors'
 import { CSV_MAX_BYTES, CsvError, csvErrorText, csvImportType, decodeCsv, isCsvFile } from '../csvImport'
 import { unlockStatementPasswords, type StatementPassword } from '../statementPasswords'
-import type { StatementKind } from '../statementKind'
+import type { PreparedStatement, StatementKind } from '../statementKind'
 import { ImportSteps } from './ImportSteps'
 import { REPO_URL } from '../site'
 import { CsvGuide } from './CsvGuide'
 
-/** Files sorted by kind, handed to the card and bank import screens in turn. `notes` is the detection report. */
-export type ImportPlan = { card: File[]; bank: File[]; password: string; notes: string[] }
-type Detected = { file: File; name: string; kind: StatementKind | 'unknown' | 'error'; bank?: string; reason?: string; choice: StatementKind | 'skip' }
+/**
+ * Files sorted by kind, handed to the card and bank import screens in turn. `notes` is the detection report.
+ * `prepared`: what detection already read from each recognized file, so the import screens do not read it again.
+ */
+export type ImportPlan = { card: File[]; bank: File[]; password: string; notes: string[]; prepared: Map<File, PreparedStatement> }
+type Detected = { file: File; name: string; kind: StatementKind | 'unknown' | 'error'; bank?: string; reason?: string; choice: StatementKind | 'skip'; prepared?: PreparedStatement }
 
 const KIND_NAMES: Record<StatementKind, string> = { card: '信用卡帳單', bank: '銀行帳單' }
 // Messages the reader and the format check own; anything else is not shown, as it may hold document text.
 const KNOWN_ERRORS = new Set<string>(Object.values(BANK_PDF_ERRORS))
 function plan(list: Detected[], password: string, note: string): ImportPlan {
   const pick = (kind: StatementKind) => list.filter(d => d.choice === kind).map(d => d.file)
-  return { card: pick('card'), bank: pick('bank'), password, notes: [...(note ? [note] : []), ...list.map(planNote)] }
+  const prepared = new Map(list.flatMap(d => d.prepared && d.choice === d.prepared.kind ? [[d.file, d.prepared] as const] : []))
+  return { card: pick('card'), bank: pick('bank'), password, notes: [...(note ? [note] : []), ...list.map(planNote)], prepared }
 }
 const errorText = (e: unknown) => e instanceof Error && KNOWN_ERRORS.has(e.message) ? e.message.replace('原始銀行對帳單', '原始帳單') : BANK_PDF_ERRORS.unreadable
 
@@ -31,7 +35,8 @@ function planNote(d: Detected): string {
 // A file that is neither, or both, stays here as 無法辨識 until the user picks a kind or leaves it out.
 export function StatementImportEntry({ passwords, passwordScope, busy, onCancel, onContinue }: { passwords: StatementPassword[]; passwordScope?: string; busy: boolean; onCancel: () => void; onContinue: (plan: ImportPlan) => void }) {
   const [files, setFiles] = useState<File[]>([]), [password, setPassword] = useState(''), [detecting, setDetecting] = useState(false)
-  const [progress, setProgress] = useState<{ processed: number; total: number; current: string } | null>(null)
+  // `step`: what is being done to the current file, while a card statement is read on (OCR).
+  const [progress, setProgress] = useState<{ processed: number; total: number; current: string; step?: string } | null>(null)
   const [results, setResults] = useState<Detected[] | null>(null), [secret, setSecret] = useState(''), [notice, setNotice] = useState('')
   const controller = useRef<AbortController | null>(null)
   useEffect(() => () => controller.current?.abort(), [])
@@ -77,7 +82,7 @@ export function StatementImportEntry({ passwords, passwordScope, busy, onCancel,
           const formatError = pdfFormatError(bytes); if (formatError) throw new Error(formatError)
           let reader: typeof import('../statementKind')
           try { reader = await import('../statementKind') } catch { throw new Error(BANK_PDF_ERRORS.module) }
-          const kind = await reader.detectStatementKind(bytes, candidates, abort.signal, name)
+          const kind = await reader.detectStatementKind(bytes, candidates, abort.signal, name, step => { if (!abort.signal.aborted) setProgress(p => p && p.processed === index ? { ...p, step } : p) })
           if (abort.signal.aborted) return
           found.push({ file, name, ...kind, choice: kind.kind === 'unknown' ? 'skip' : kind.kind })
         } catch (error) {
@@ -104,7 +109,7 @@ export function StatementImportEntry({ passwords, passwordScope, busy, onCancel,
         <label className="field statement-upload"><span>帳單 PDF 或 CSV（可選多份）</span><small className="muted">PDF 每份最多 20 MB</small><input aria-label="帳單 PDF" type="file" multiple accept=".pdf,application/pdf,.csv,text/csv" onChange={e => { const chosen = Array.from(e.target.files ?? []); setFiles(chosen); setPassword(''); setProgress(null); if (chosen.some(f => !isCsvFile(f))) void import('../statementKind').then(m => m.warmStatementReader()).catch(() => {}) }} /></label>
         <label className="field statement-password"><span>PDF 密碼（多組以逗號 , 分隔）</span><input aria-label="帳單 PDF 密碼" type="password" autoComplete="off" placeholder="未加密的帳單可留空" value={password} onChange={e => setPassword(e.target.value)} /><small className="muted">已設定的帳單密碼會自動套用。這裡輸入的只供本次匯入，不會保存。</small></label>
       </fieldset>
-      <button className="primary" disabled={locked || !files.length}>{detecting ? '正在本機判斷類型…' : `開始匯入${files.length ? `（${files.length} 份）` : ''}`}</button>
+      <button className="primary" disabled={locked || !files.length}>{detecting ? '正在本機讀取帳單…' : `開始匯入${files.length ? `（${files.length} 份）` : ''}`}</button>
     </form> : <section className="notice statement-entry-report" aria-label="帳單類型判斷結果">
       <h3>有檔案無法自動判斷</h3>
       <p className="muted small">無法辨識的檔案預設不匯入。確定是哪一種帳單時再選擇類型；選錯類型可能解析出錯誤金額。</p>
@@ -119,7 +124,7 @@ export function StatementImportEntry({ passwords, passwordScope, busy, onCancel,
       </div>
     </section>}
     {!results && !detecting && <CsvGuide kinds={['card', 'bank']} where="在上方「帳單 PDF 或 CSV」選擇檔案（可和 PDF 一起選）" />}
-    {detecting && progress && <p role="status" aria-label="帳單類型判斷進度">正在本機判斷類型 · {progress.processed}／{progress.total} 份{progress.current && ` · ${progress.current}`}</p>}
+    {detecting && progress && <p role="status" aria-label="帳單類型判斷進度">{progress.processed < progress.total ? `正在本機讀取並判斷類型 · 第 ${progress.processed + 1}／${progress.total} 份 · ${progress.current}${progress.step ? ` · ${progress.step}` : ''}` : `已讀取 ${progress.total}／${progress.total} 份`}</p>}
     <details className="statement-help"><summary>怎麼判斷類型</summary><p className="muted small">讀得到已支援的銀行交易表（日期、摘要、支出／存入、餘額）就是銀行帳單；否則帳單上有信用卡帳單字樣（如「本期應繳總額」「最低應繳」「消費日／入帳日」）就是信用卡帳單。兩者都不是的檔案列為無法辨識，不會自動匯入。銀行與版型的支援範圍與各自的匯入畫面相同。CSV 依 type 欄：card 是信用卡消費，bank 是銀行流水，格式見 <a href={`${REPO_URL}/blob/main/docs/csv-import.md`} target="_blank" rel="noreferrer">CSV 匯入格式</a>。</p></details>
   </section>
 }

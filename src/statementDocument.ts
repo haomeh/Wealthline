@@ -103,15 +103,24 @@ export function openStatementDocument(mode: StatementDocumentMode, bytes: Uint8A
     return task;
 }
 /** Raw pages are memory-only: do not persist/log them or PDF metadata. Bank mode has no OCR/card filter. */
-export async function readBankDocument(bytes: Uint8Array, password: string | readonly string[], signal: AbortSignal, onPageProgress?: (progress: BankPageProgress) => void): Promise<{
+export type StatementPdf = Awaited<ReturnType<typeof openStatementDocument>['promise']>;
+export type StatementPageText = Awaited<ReturnType<typeof readStatementText>>;
+/**
+ * `withDocument` runs on the still open document after every page is read, with each page's text, so a
+ * caller can go on (classify, read card lines) without opening and reading the file again. It handles its
+ * own errors: anything it throws is reported as a bank reading error.
+ */
+export async function readBankDocument<T = never>(bytes: Uint8Array, password: string | readonly string[], signal: AbortSignal, onPageProgress?: (progress: BankPageProgress) => void, withDocument?: (pdf: StatementPdf, texts: readonly StatementPageText[], pages: readonly BankPage[]) => Promise<T>): Promise<{
     pages: BankPage[];
     mode: 'bank';
+    extra?: T;
 }> {
     if (signal.aborted)
         throw new Error('已取消解析');
     let task: ReturnType<typeof openStatementDocument> | undefined;
     let stage: BankImportStage = 'open', failed = false, cleanupFailure: string | undefined;
-    const pages: BankPage[] = [];
+    const pages: BankPage[] = [], texts: StatementPageText[] = [];
+    let extra: T | undefined;
     const cancel = () => { void task?.destroy().catch(() => {}); };
     try {
         task = openStatementDocument('bank', bytes, password, signal);
@@ -142,6 +151,7 @@ export async function readBankDocument(bytes: Uint8Array, password: string | rea
                 if (chars > 500000)
                     throw new Error(BANK_PDF_ERRORS.textLimit);
                 pages.push({ page: n, width: viewport.width, height: viewport.height, items });
+                if (withDocument) texts.push(text);
                 onPageProgress?.({ completed: n, total: pdf.numPages });
             }
             finally {
@@ -150,6 +160,7 @@ export async function readBankDocument(bytes: Uint8Array, password: string | rea
         }
         if (!chars)
             throw new Error(BANK_PDF_ERRORS.noText);
+        if (withDocument) extra = await withDocument(pdf, texts, pages);
     }
     catch (e) {
         failed = true;
@@ -172,5 +183,5 @@ export async function readBankDocument(bytes: Uint8Array, password: string | rea
     }
     if (signal.aborted) throw new Error('已取消解析');
     if (cleanupFailure) throw new Error(cleanupFailure);
-    return { pages, mode: 'bank' };
+    return { pages, mode: 'bank', ...(withDocument && { extra }) };
 }

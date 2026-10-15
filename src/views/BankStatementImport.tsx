@@ -33,7 +33,7 @@ export function BankStatementImport({data,accounts,existing,rules,passwords,pass
  useEffect(()=>{latest.current={accounts,existing,busy,data}},[accounts,existing,busy,data])
  useEffect(()=>()=>controller.current?.abort(),[])
  // Files the import entry detected as bank statements are parsed at once, with the password typed there.
- useEffect(()=>{if(!queued)return;setFromEntry(true);void run(queued.files,queued.password)
+ useEffect(()=>{if(!queued)return;setFromEntry(true);void run(queued.files,queued.password,queued.prepared)
  // eslint-disable-next-line react-hooks/exhaustive-deps
  },[])
  // Files handed over by the import entry: the empty picker stays hidden while they parse.
@@ -42,7 +42,7 @@ export function BankStatementImport({data,accounts,existing,rules,passwords,pass
  function patch(id:string,change:Partial<PreviewSection>){setError('');setSections(list=>list.map(s=>s.id===id?{...s,...change}:s));setReview(null);setKeep(false)}
  function patchRow(id:string,index:number,draft:BankTransaction){setError('');setSections(list=>list.map(s=>s.id===id?{...s,rows:s.rows.map((r,i)=>i===index?{...r,draft}:r)}:s));setReview(null);setKeep(false)}
  function parse(e:FormEvent){e.preventDefault();if(locked||!files.length)return;if(sections.length && !confirm('重新解析會捨棄目前預覽、手動補登、帳戶映射及選取狀態。確定捨棄並重新解析？'))return;const secret=password;setPassword('');setFromEntry(false);void run(files,secret)}
- async function run(files:File[],secret:string){controller.current?.abort();const abort=new AbortController();controller.current=abort;setParsing(true);setError('');setReview(null);const outcomes:string[]=[],next:PreviewSection[]=[],nextBalances:(StatementBalanceCandidate & {sectionId:string})[]=[]
+ async function run(files:File[],secret:string,preparedFiles?:QueuedImport['prepared']){controller.current?.abort();const abort=new AbortController();controller.current=abort;setParsing(true);setError('');setReview(null);const outcomes:string[]=[],next:PreviewSection[]=[],nextBalances:(StatementBalanceCandidate & {sectionId:string})[]=[]
  let successes=0,failures=0
  setProgress({processed:0,total:files.length,successes,failures,currentFile:'',complete:false})
  let stage:BankImportStage='setup'
@@ -69,11 +69,17 @@ export function BankStatementImport({data,accounts,existing,rules,passwords,pass
  const bytes=new Uint8Array(await file.arrayBuffer());if(abort.signal.aborted)return
  const formatError=pdfFormatError(bytes);if(formatError)throw new Error(formatError)
  stage='fingerprint';const hash=await sha256(bytes)
+ // A file the import entry already read and parsed while detecting its kind is not read again.
+ const prepared=preparedFiles?.get(files[index])
+ let result:BankStatementResult
+ if(prepared?.kind==='bank')result=prepared.result
+ else{
  stage='module';const {readBankStatementPdf,parseBankStatement}=await import('../bankStatements')
  stage='open';const document=await readBankStatementPdf(bytes,candidates,abort.signal,page=>{if(!abort.signal.aborted&&controller.current===abort)setProgress(p=>p&&!p.complete&&p.processed===index?{...p,page}:p)})
  if(abort.signal.aborted)return
  stage='parse'
- const result:BankStatementResult=parseBankStatement(document.pages)
+ result=parseBankStatement(document.pages)
+ }
  stage='preview';const fileReports:string[]=[],fileSections:PreviewSection[]=[]
  fileReports.push(bankFileSummary(name,result))
  for(const warning of summarizeBankWarnings(result.warnings))fileReports.push(`${name} · ${warning.text} · ${warning.count} 個事件`)
@@ -201,7 +207,7 @@ export function BankStatementImport({data,accounts,existing,rules,passwords,pass
    <div className="row bank-upload-actions"><button disabled={locked||!files.length} className="primary">{parsing?'正在本機處理…':'解析銀行帳單'}</button>{passwordScope && <button type="button" disabled={locked} onClick={onManagePasswords}>管理帳單密碼</button>}</div>
   </form>
   {!sections.length && !parsing && <CsvGuide kinds={['bank']} where="在上方「銀行帳單 PDF 或 CSV」選擇檔案" />}
-  {progress && <div className="notice bank-progress" role="status" aria-label="銀行解析進度" aria-live="polite"><progress value={progress.processed} max={progress.total} aria-label="銀行檔案處理進度"/><p>{progress.complete?'處理完成':'正在本機處理'} · {progress.processed}／{progress.total} 份 · {Math.floor(progress.processed/progress.total*100)}% · 成功 {progress.successes} 份 · 失敗 {progress.failures} 份（含未辨識）</p>{progress.currentFile && <p>目前檔案：{progress.currentFile}{progress.page && ` · ${progress.page.completed}／${progress.page.total} 頁完成文字擷取`}</p>}{progress.complete && <p>{previewCount} 筆預覽 · {previewCount||balances.length?'還沒匯入，請核對下方內容後按「確認匯入」。':'沒有可匯入的預覽，請核對報告或手動補登。'}</p>}</div>}
+  {progress && <div className="notice bank-progress" role="status" aria-label="銀行解析進度" aria-live="polite"><progress value={progress.processed} max={progress.total} aria-label="銀行檔案處理進度"/><p>{progress.complete?'處理完成':'正在本機處理'} · {progress.processed}／{progress.total} 份 · {Math.floor(progress.processed/progress.total*100)}% · 成功 {progress.successes} 份 · 失敗 {progress.failures} 份（含未辨識）</p>{progress.currentFile && <p>目前檔案（第 {progress.processed+1}／{progress.total} 份）：{progress.currentFile}{progress.page && ` · ${progress.page.completed}／${progress.page.total} 頁完成文字擷取`}</p>}{progress.complete && <p>{previewCount} 筆預覽 · {previewCount||balances.length?'還沒匯入，請核對下方內容後按「確認匯入」。':'沒有可匯入的預覽，請核對報告或手動補登。'}</p>}</div>}
   {preparing && <p role="status" className="muted">正在準備重複交易與餘額核對…</p>}
   {reports.length>0 && <details className="bank-import-report" open={reports.some(r=>/無法解析|不支援／未辨識|無法自動讀取|無法在此瀏覽器解鎖/.test(r))||undefined}>
    <summary><span>解析報告</span><span className="muted">{previewCount} 筆 · {sections.length} 個帳戶</span></summary>

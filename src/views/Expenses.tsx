@@ -92,7 +92,7 @@ function StatementImport({existing,busy,onCancel,onImport,rules,onAddRule,passwo
   useEffect(()=>{
     if(!queued) return
     setFromEntry(true)
-    void run(queued.files,queued.password)
+    void run(queued.files,queued.password,queued.prepared)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   },[])
   const locked = busy || parsing
@@ -117,7 +117,7 @@ function StatementImport({existing,busy,onCancel,onImport,rules,onAddRule,passwo
     setFromEntry(false)
     void run(files,secret)
   }
-  async function run(files:File[],secret:string) {
+  async function run(files:File[],secret:string,preparedFiles?:QueuedImport['prepared']) {
     controller.current?.abort()
     setError('');setReports([]);setProgress('');setCount(null);setParsing(true)
     const abort = new AbortController()
@@ -147,9 +147,17 @@ function StatementImport({existing,busy,onCancel,onImport,rules,onAddRule,passwo
           const formatError = pdfFormatError(bytes)
           if(formatError) throw new Error(formatError.replace('原始銀行對帳單','原始信用卡帳單'))
           const fileHash = await sha256(bytes)
-          const {readStatementPdf} = await import('../statementPdf')
-          if(abort.signal.aborted) return
-          const pdf = await readStatementPdf(bytes,candidates,abort.signal,file.name,message=>{if(!abort.signal.aborted)setProgress(message)})
+          // A file the import entry already read (and OCR'd) while detecting its kind is not read again.
+          const prepared = preparedFiles?.get(file)
+          let pdf:import('../statementPdf').StatementPdfRead
+          if(prepared?.kind === 'card') {
+            if('error' in prepared) throw new Error(prepared.error)
+            pdf = prepared.read
+          } else {
+            const {readStatementPdf} = await import('../statementPdf')
+            if(abort.signal.aborted) return
+            pdf = await readStatementPdf(bytes,candidates,abort.signal,file.name,message=>{if(!abort.signal.aborted)setProgress(message)})
+          }
           const info = statementMetadata(pdf.lines,pdf.title,file.name)
           const statementMonth = info.month || month
           const statementCard = card.trim() || (info.bank ? `${info.bank}${info.currency === 'SGD' ? ' (SG)' : ''}` : '')
@@ -207,7 +215,7 @@ function StatementImport({existing,busy,onCancel,onImport,rules,onAddRule,passwo
     <p className="statement-privacy">檔案只在這個瀏覽器讀取，原始帳單不保存、不上傳；設定的帳單密碼會加密保存。</p>
     {passwordScope && !drafts && <div className="statement-password-summary"><span className="muted small">{available.length?`已設定 ${available.length} 組密碼，解析時自動套用。`:'可先設定常用帳單密碼。'}{passwords.length>available.length?` ${passwords.length-available.length} 組需在此瀏覽器重新設定。`:''}</span><button disabled={locked} onClick={onManagePasswords}>管理帳單密碼</button></div>}
     {passwordNotice && <p role="status" className="notice">{passwordNotice}</p>}
-    {parsing && count && <div className="notice bank-progress" role="status" aria-label="信用卡帳單解析進度" aria-live="polite"><progress value={count.processed} max={count.total} aria-label="信用卡帳單處理進度"/><p>正在本機解析 · 第 {count.processed+1}／{count.total} 份{count.processed?` · 完成 ${count.processed} 份${count.failures?`（${count.failures} 份未匯入）`:''}`:''}</p><p>目前檔案：{count.current} · {progress || '讀取 PDF…'}</p></div>}
+    {parsing && count && <div className="notice bank-progress" role="status" aria-label="信用卡帳單解析進度" aria-live="polite"><progress value={count.processed} max={count.total} aria-label="信用卡帳單處理進度"/><p>正在本機解析 · 第 {count.processed+1}／{count.total} 份{count.processed?` · 完成 ${count.processed} 份${count.failures?`（${count.failures} 份未匯入）`:''}`:''}</p><p>目前檔案（第 {count.processed+1}／{count.total} 份）：{count.current} · {progress || '讀取 PDF…'}</p></div>}
     {error && <p className="banner error" role="alert">{error}</p>}
     {!!reports.length && <ul className="notice" aria-label="各帳單解析結果">{reports.map((r,i)=><li key={i}><strong>{r.name}</strong>：{r.error || `${r.bank} · ${r.month}（${r.source}）· ${r.count} 筆待核對${r.ocr?' · OCR 商家請核對':''}${r.note?` · ${r.note}`:''}${r.warning?` · ${r.warning}`:''}`}</li>)}</ul>}
     {!drafts ? <form onSubmit={parse} hidden={parsing && fromEntry}>
