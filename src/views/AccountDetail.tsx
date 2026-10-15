@@ -60,7 +60,7 @@ export function AccountDetail({ data, account: a, onChange, onEdit, onBack, onRe
   const balances = (
     <section className="panel">
       <h3>{a.kind === 'bank' ? '餘額' : '可用金額'}</h3>
-      {cash.length === 0 && <p className="muted">尚未設定幣別，請按「編輯帳戶」選擇持有幣別。</p>}
+      {cash.length === 0 && <p className="muted">{a.kind === 'bank' ? '還沒有幣別。按「編輯帳戶」選擇這個帳戶持有的幣別。' : '還沒有記錄帳戶裡的現金。需要的話，按「編輯帳戶」加入幣別。'}</p>}
       {cash.map((p) => (
         <div className="balance" key={p.id}>
           <span className="ccy-badge">{p.currency}</span>

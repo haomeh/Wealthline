@@ -1,8 +1,9 @@
 import { useCalendarNow } from '../useCalendarNow'
 import { useState } from 'react'
 import { fmt, pct } from '../format'
-import { totalPoints, snapshotOf } from '../history'
+import { totalPoints, snapshotOf, type Snapshot } from '../history'
 import type { WealthData } from '../model'
+import type { HistoricalPoint } from '../quantityHistory'
 import { TrendChart } from './TrendChart'
 
 const RANGES = [
@@ -24,13 +25,21 @@ function useAssetChange(data: WealthData) {
   return { points, today: points[points.length - 1] }
 }
 
+// A record that leaves out an account holding value today, or counts it as 0 for lack of any record,
+// would show that account's whole balance as a gain (a statement's balance for one account reads as +600%).
+const covers = (point: HistoricalPoint, today: Snapshot) => point.total !== null && today.accounts.every((a) => {
+  if (!a.value) return true
+  const known = point.accounts.some((x) => x.id === a.id && x.value !== null)
+  return known && !point.filled?.some((f) => f.id === a.id && f.from === null)
+})
+
 export function ChangeSinceLast({ data }: { data: WealthData }) {
   const { points } = useAssetChange(data)
   const now = useCalendarNow()
   const today = snapshotOf(data, now)
-  const previous = points.length > 1 ? points[points.length - 2] : null
-  if (!previous) return null
-  if (previous.total === null || today.total === null) return <p className="hero-change muted small">較 {shortDate(previous.date)} 的紀錄：資料不完整，無法比較。</p>
+  // Compare with the latest earlier record that covers every account; none shows nothing.
+  const previous = points.slice(0, -1).reverse().find((p) => p.date < today.date && covers(p, today))
+  if (!previous || previous.total === null) return null
   const diff = today.total - previous.total
   const gap = dayNumber(today.date) - dayNumber(previous.date)
   return (

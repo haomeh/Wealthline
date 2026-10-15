@@ -65,6 +65,7 @@ export function Overview({ data: loaded, onGoHistory, onGoRates, onGoLiabilities
   const now = useCalendarNow()
   const data = archive ? { ...loaded, history: { ...loaded.history, snapshots: [...archive.points, ...loaded.history.snapshots], changes: [...archive.carried, ...loaded.history.changes] } } : loaded
   const estimated = data.liabilities?.some(d => d.schedule)
+  const hasDebt = !!data.liabilities?.length
   // Without the earlier years, holding quantities are only known from where the loaded history starts.
   const historical = useHistoricalValuations(data, archive?.from)
   const [selected, setSelected] = useState('current')
@@ -147,7 +148,8 @@ export function Overview({ data: loaded, onGoHistory, onGoRates, onGoLiabilities
         </p>
       )}
       <div className="tiles overview-tiles">
-        <section className={`panel ${current ? 'span-3' : 'span-4'} snapshot-timeline`} aria-label="資產時間線">
+        {/* Without debts the net worth equals the total above, so the timeline takes its place. */}
+        <section className={`panel ${current && hasDebt ? 'span-3' : 'span-4'} snapshot-timeline`} aria-label="資產時間線">
           <div className="trend-head">
             {current ? <div className="hero">
               <span className="eyebrow">總資產</span>
@@ -164,7 +166,7 @@ export function Overview({ data: loaded, onGoHistory, onGoRates, onGoLiabilities
           </div>
           <TrendChart dates={chartPoints.map(p => p.date)} series={seriesFor(mode, chartPoints, accountNames)} area={mode === 'total'} />
           <details className="timeline-browse">
-            <summary>瀏覽過去的快照<span className="muted small">{current ? '目前資產' : point.date.replaceAll('-', '/')}</span></summary>
+            <summary>瀏覽過去的資產{!current && <span className="muted small">{point.date.replaceAll('-', '/')}</span>}</summary>
             <div className="timeline-controls">
               <div className="timeline-navigation">
                 <button className="timeline-arrow" aria-label="上一筆快照" title="上一筆快照" disabled={index === 0} onClick={() => setSelected(keys[index - 1])}><ActionIcon name="previous" /></button>
@@ -177,28 +179,27 @@ export function Overview({ data: loaded, onGoHistory, onGoRates, onGoLiabilities
               </div>
               <label className="field"><span>選擇時間節點</span><select value={keys[index]} onChange={e => setSelected(e.target.value)}>{points.map((p, i) => <option key={keys[i]} value={keys[i]}>{keys[i] === 'current' ? '目前資產' : `${p.date}${p.periodDerived ? ' · 期間推算' : p.manual ? ' · 補登' : ''}`}</option>)}</select></label>
             </div>
-            <p className="muted small">拖動滑桿或選擇紀錄，查看當時的餘額與配置。原始快照保留原值；期間推算補上缺少快照的日期，單日補登優先。</p>
+            <p className="muted small">拖動滑桿或選擇日期，查看當時的餘額與配置。</p>
           </details>
           {archive && onLoadHistory && <p className="muted small">{archive.from.slice(0, 4)} 年以前只顯示每月最後一筆原始快照，不含補登與期間推算。<button className="link" disabled={loadingHistory} onClick={onLoadHistory}>{loadingHistory ? '載入中…' : '載入完整歷史'}</button></p>}
-          {!!(data.history.quantityDays?.length || data.history.holdingPeriods?.length) && <button className="link" disabled={historical.loading} onClick={historical.refresh}>{historical.loading ? '查詢歷史行情中…' : '重新查詢歷史行情'}</button>}
           {historical.omittedDays > 0 && <p className="muted small">略過 {historical.omittedDays} 個數量不足的推算日，不代表資產為零。</p>}
           {historical.status && <p className="muted small" aria-live="polite">{historical.status}</p>}
           {historical.error && <p role="alert" className="banner error">{historical.error}</p>}
         </section>
         {current && <>
-          <section className="panel deep tile-stat overview-net" aria-label="淨資產">
+          {hasDebt && <section className="panel deep tile-stat overview-net" aria-label="淨資產">
             <span>{estimated ? '淨資產（預估）' : '淨資產'}</span>
             <strong>{totals.net === null ? '尚無法換算' : <><small>NT$ </small>{fmt(totals.net, 0)}</>}</strong>
             <small>{totals.net === null ? '總資產 − 總負債 · 請檢查匯率' : netChange === null ? '總資產 − 總負債' : `較上月 ${netChange >= 0 ? '+' : '−'}${Math.abs(netChange * 100).toFixed(1)}%`}</small>
-          </section>
+          </section>}
           <section className="panel tile-stat overview-debt" aria-label="總負債">
             <span>{loan ? `負債 · ${loan.name}` : estimated ? '總負債（含預估）' : '總負債'}</span>
             <strong>{totals.liabilities === null ? '尚無法換算' : <><small>NT$ </small>{fmt(totals.liabilities, 0)}</>}</strong>
             {repaid !== null ? <div className="meter" aria-hidden><span style={{ width: `${Math.min(100, Math.max(0, repaid * 100))}%` }} /></div>
               : !!totals.liabilities && byCategory.total > 0 && <div className="meter" aria-hidden><span style={{ width: `${Math.min(100, totals.liabilities / byCategory.total * 100)}%` }} /></div>}
             {repaid !== null ? <small>已還 {(repaid * 100).toFixed(1)}%（預估）<span className="desktop-only"> · 假設按期還款；不代表銀行餘額，不會扣除現金</span></small>
-              : <small>{data.liabilities?.length ?? 0} 筆{estimated ? <span className="desktop-only"> · 假設按期還款；不代表銀行餘額，不會扣除現金</span> : '手動記錄'}{!!totals.liabilities && byCategory.total > 0 && ` · 占總資產 ${(totals.liabilities / byCategory.total * 100).toFixed(1)}%`}</small>}
-            {onGoLiabilities && <button className="link" onClick={onGoLiabilities}>管理負債 →</button>}
+              : !data.liabilities?.length ? <small>還沒有負債</small> : <small>{data.liabilities.length} 筆{estimated ? <span className="desktop-only"> · 假設按期還款；不代表銀行餘額，不會扣除現金</span> : '手動記錄'}{!!totals.liabilities && byCategory.total > 0 && ` · 占總資產 ${(totals.liabilities / byCategory.total * 100).toFixed(1)}%`}</small>}
+            {onGoLiabilities && <button className="link" onClick={onGoLiabilities}>{data.liabilities?.length ? '管理負債 →' : '新增負債 →'}</button>}
           </section>
           {month && <MonthTile label={`${cashflowPeriod.selection.month} 月收支`} income={month.income} consumption={month.consumption} difference={month.difference} currency={month.currency} onClick={onGoCashflow} />}
           {data.accounts.length > 0 && <>

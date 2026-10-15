@@ -2,7 +2,7 @@ import { cashflowReturnTo } from '../cashflowQuery'
 import { navigate, REPO_URL } from '../site'
 import { ExpenseRecords } from './ExpenseRecords'
 import { ExpenseEditor } from './ExpenseEditor'
-import { ImportKind, ImportSteps, type ImportKindChoice, type QueuedImport } from './ImportSteps'
+import { ImportSteps, type QueuedImport } from './ImportSteps'
 import { DetailRecord } from './DetailRecord'
 import { CsvGuide } from './CsvGuide'
 import { fmt } from '../format'
@@ -18,7 +18,7 @@ import { mergeStatementPasswords, parseStatementPasswords, statementPasswordStat
 import type { WealthData } from '../model'
 import { removeExpense, saveExpense, saveExpenseRule } from '../ledgerEdits'
 
-export function Expenses({data,onChange,busy,passwordScope,recordId,returnTo,importing:routed,onImporting,onSelectKind,queued,onImported}: {recordId?:string;returnTo?:string;passwordScope?:string;data:WealthData;onChange:(next:WealthData)=>void;busy:boolean;importing?:boolean;onImporting?:(open:boolean)=>void;onSelectKind?:(kind:ImportKindChoice)=>void;queued?:QueuedImport;onImported?:(message:string)=>boolean}) {
+export function Expenses({data,onChange,busy,passwordScope,recordId,returnTo,importing:routed,onImporting,onOpenImport,queued,onImported}: {recordId?:string;returnTo?:string;passwordScope?:string;data:WealthData;onChange:(next:WealthData)=>void;busy:boolean;importing?:boolean;onImporting?:(open:boolean)=>void;onOpenImport?:()=>void;queued?:QueuedImport;onImported?:(message:string)=>boolean}) {
  const back = cashflowReturnTo(returnTo??null)
  const returnLink = back && <button type="button" className="link" onClick={()=>navigate(back,{scroll:'preserve',focus:'cashflow-records'})}>返回收支明細</button>
  const missingRecord = recordId && !data.expenses?.some(e=>e.id===recordId) ? <p role="status">找不到指定紀錄，可能已移除。</p> : null
@@ -38,7 +38,7 @@ export function Expenses({data,onChange,busy,passwordScope,recordId,returnTo,imp
     onChange(saveExpenseRule(data,rule,ruleExpense.index))
     setRuleExpense(null)
   }}/>
-  if(importing) return <>{ruleDialog}{passwordDialog}<StatementImport onSelectKind={onSelectKind} queued={queued} passwords={passwords} passwordScope={passwordScope} onManagePasswords={()=>setManagingPasswords(true)} onAddRule={(expense,index)=>setRuleExpense({expense,index})} rules={rules} existing={expenses} busy={busy} onCancel={()=>setImporting(false)} onImport={(rows,context)=>{
+  if(importing) return <>{ruleDialog}{passwordDialog}<StatementImport queued={queued} passwords={passwords} passwordScope={passwordScope} onManagePasswords={()=>setManagingPasswords(true)} onAddRule={(expense,index)=>setRuleExpense({expense,index})} rules={rules} existing={expenses} busy={busy} onCancel={()=>setImporting(false)} onImport={(rows,context)=>{
     const result = mergeExpenses(expenses,rows,context)
     if(result.added) onChange({...data,version:dataVersion(data, {minimumVersion:10}),expenses:result.expenses})
     const done = `已加入 ${result.added} 筆，略過 ${result.duplicates} 筆重複。`
@@ -56,19 +56,19 @@ export function Expenses({data,onChange,busy,passwordScope,recordId,returnTo,imp
   }}/></>
   return <div className="expenses-page">{returnLink}{missingRecord}
     {ruleDialog}{passwordDialog}
-    <div className="page-head"><div><h2>信用卡消費</h2><p className="muted">從信用卡帳單匯入並整理交易。修改後請按「儲存變更」保存；這些紀錄不會自動扣除資產或變更信用卡負債。</p></div><button className="primary" disabled={busy} onClick={()=>{setMessage('');setImporting(true)}}>匯入信用卡帳單</button></div>
+    <div className="page-head"><div><h2>信用卡消費</h2><p className="muted">從信用卡帳單匯入的每筆消費。只用來看花費，不會扣除資產或改變負債。</p></div><button className="primary" disabled={busy} onClick={()=>{setMessage('');if(onOpenImport)onOpenImport();else setImporting(true)}}>匯入信用卡帳單</button></div>
     {passwordScope && <div className="statement-password-summary"><span className="muted small">帳單密碼 · {passwords.length?`${passwords.length} 組設定`:'可設定後自動套用'}</span><button disabled={busy} onClick={()=>setManagingPasswords(true)}>管理帳單密碼</button></div>}
     <ExpenseCategoryRules rules={rules} busy={busy} onChange={expenseCategoryRules=>onChange({...data,version:dataVersion(data, {minimumVersion:11}),expenseCategoryRules})}/>
     {message && <p role="status" className="notice">{message}</p>}
-    {!expenses.length ? <section className="panel empty"><p>還沒有消費紀錄。選擇文字 PDF 帳單，預覽確認後即可匯入。</p></section> : <section className="panel">
+    {!expenses.length ? <section className="panel empty"><p>還沒有消費紀錄。按「匯入信用卡帳單」選擇 PDF 或 CSV 帳單，確認後就會列在這裡。</p></section> : <section className="panel">
       <h3>{expenses.length} 筆交易</h3>
-      <ExpenseRecords expenses={expenses} rules={rules} busy={busy} onEdit={setEditing} onRule={(expense,index)=>setRuleExpense({expense,index})} />
+      <ExpenseRecords expenses={expenses} rules={rules} busy={busy} showCategory onEdit={setEditing} onRule={(expense,index)=>setRuleExpense({expense,index})} />
     </section>}
   </div>
 }
 
 type Draft = Expense & {selected:boolean;amountText:string;needsReview?:boolean;sourceFile?:number}
-function StatementImport({existing,busy,onCancel,onImport,rules,onAddRule,passwords,passwordScope,onManagePasswords,onSelectKind,queued}: {onSelectKind?:(kind:ImportKindChoice)=>void;queued?:QueuedImport;passwords:StatementPassword[];passwordScope?:string;onManagePasswords:()=>void;onAddRule:(expense:Expense,index?:number)=>void;rules:ExpenseCategoryRule[];existing:Expense[];busy:boolean;onCancel:()=>void;onImport:(rows:Expense[],context:Expense[])=>void}) {
+function StatementImport({existing,busy,onCancel,onImport,rules,onAddRule,passwords,passwordScope,onManagePasswords,queued}: {queued?:QueuedImport;passwords:StatementPassword[];passwordScope?:string;onManagePasswords:()=>void;onAddRule:(expense:Expense,index?:number)=>void;rules:ExpenseCategoryRule[];existing:Expense[];busy:boolean;onCancel:()=>void;onImport:(rows:Expense[],context:Expense[])=>void}) {
   const [files,setFiles] = useState<File[]>([])
   const [reports,setReports] = useState<{name:string;bank?:string;month?:string;source?:string;currency?:string;count?:number;error?:string;ocr?:boolean;warning?:string;note?:string}[]>([])
   const [password,setPassword] = useState('')
@@ -203,9 +203,8 @@ function StatementImport({existing,busy,onCancel,onImport,rules,onAddRule,passwo
   }
 
   return <section className="panel statement-import">
-    <div className="panel-head"><h2>匯入帳單</h2><ImportSteps step={drafts ? 2 : 1} /><button onClick={()=>{controller.current?.abort();onCancel()}}>取消匯入</button></div>
-    <ImportKind kind="card" disabled={locked || !!drafts} onSelect={onSelectKind} />
-    <p className="statement-privacy">PDF 與解密都只在瀏覽器處理，原始帳單不保存、不上傳。選擇保存的密碼會加密；密碼設定與確認匯入的消費明細，儲存後才會存於本機或自己的 Google Drive。</p>
+    <div className="panel-head"><h2>{queued ? '信用卡帳單' : '匯入帳單'}</h2><ImportSteps step={drafts ? 2 : 1} /><button onClick={()=>{controller.current?.abort();onCancel()}}>取消匯入</button></div>
+    <p className="statement-privacy">檔案只在這個瀏覽器讀取，原始帳單不保存、不上傳；設定的帳單密碼會加密保存。</p>
     {passwordScope && !drafts && <div className="statement-password-summary"><span className="muted small">{available.length?`已設定 ${available.length} 組密碼，解析時自動套用。`:'可先設定常用帳單密碼。'}{passwords.length>available.length?` ${passwords.length-available.length} 組需在此瀏覽器重新設定。`:''}</span><button disabled={locked} onClick={onManagePasswords}>管理帳單密碼</button></div>}
     {passwordNotice && <p role="status" className="notice">{passwordNotice}</p>}
     {parsing && count && <div className="notice bank-progress" role="status" aria-label="信用卡帳單解析進度" aria-live="polite"><progress value={count.processed} max={count.total} aria-label="信用卡帳單處理進度"/><p>正在本機解析 · 第 {count.processed+1}／{count.total} 份{count.processed?` · 完成 ${count.processed} 份${count.failures?`（${count.failures} 份未匯入）`:''}`:''}</p><p>目前檔案：{count.current} · {progress || '讀取 PDF…'}</p></div>}
@@ -225,7 +224,7 @@ function StatementImport({existing,busy,onCancel,onImport,rules,onAddRule,passwo
       </details>
       <button className="primary" disabled={locked || !files.length}>{parsing?'正在本機解析…':`解析並預覽${files.length?`（${files.length} 份）`:''}`}</button>
     </form> : <div className="statement-preview-layout"><div className="statement-preview-main">
-      <div className="page-head"><div><h3>確認交易 · {reports.filter(r=>!r.error).length} 份帳單</h3><p className="muted">辨識 {drafts.length} 筆。可取消勾選或修改內容；相同交易依出現次數比對，保留同日同額的多筆消費。</p></div></div>
+      <div className="page-head"><div><h3>確認交易 · {reports.filter(r=>!r.error).length} 份帳單</h3><p className="muted">辨識 {drafts.length} 筆。取消勾選不要匯入的交易，或點一筆修改內容。已匯入過的交易會自動略過。</p></div></div>
       <div className="expense-preview">{[...reports.map((report,index)=>({report,index})).filter(({report})=>!report.error),...(drafts.some(r=>r.sourceFile===undefined)?[{report:{name:'手動補登'},index:undefined}]:[])].map(({report,index})=>
         <section className="statement-group" key={index ?? 'manual'} aria-label={`來源：${report.name}`}>
           <header><strong>{report.name}</strong><span className="muted small">{drafts.filter(r=>r.sourceFile===index).length} 筆</span></header>
@@ -241,7 +240,7 @@ function StatementImport({existing,busy,onCancel,onImport,rules,onAddRule,passwo
       <button disabled={busy} onClick={()=>setDrafts(rows=>[...(rows??[]),{id:crypto.randomUUID(),date:`${month || reports.find(r=>r.month)?.month || new Date().toISOString().slice(0,7)}-01`,description:'',amount:0,amountText:'',currency:reports.find(r=>r.month)?.currency || currency || 'TWD',card:card || reports.find(r=>r.bank)?.bank || '',selected:true}])}>＋ 補上一筆交易</button></div>
       {!!skipped.length && <details className="notice"><summary>未匯入的文字列（{skipped.length}）：含總計、繳款與無法辨識內容</summary><p className="small">只在本次預覽顯示，離開後不保存。未辨識商家及單獨的 I、l／分隔線不列為消費。請核對是否有漏掉的交易，確認後可用「補上一筆交易」手動補登。</p><ul>{skipped.map((line,i)=><li key={i}>{line}</li>)}</ul></details>}
     </div><aside className="statement-preview-summary" aria-label="匯入摘要">
-      <section className="panel tile-stat statement-files"><span>檔案</span>{reports.filter(r=>!r.error).map((r,i)=><strong key={i}>{r.bank} · {r.month}</strong>)}<small>在此瀏覽器解密與解析</small></section>
+      <section className="panel tile-stat statement-files"><span>檔案</span>{reports.filter(r=>!r.error).map((r,i)=><strong key={i}>{r.bank} · {r.month}</strong>)}<small>只在此瀏覽器讀取</small></section>
       <section className="panel deep tile-stat"><span>將匯入</span><strong>{result?.added ?? 0} 筆</strong><small role="status">選取 {selected.length} 筆 · 可新增 {result?.added ?? 0} 筆 · 略過重複 {result?.duplicates ?? 0} 筆</small></section>
       {validation && <p role="alert" className="banner error">{validation}</p>}
       {selected.some(r=>r.needsReview) && <section className="panel warn">{selected.filter(r=>r.needsReview).length} 筆標示「核對」的交易已勾選（OCR 商家或 CSV 帳單總額不符），請核對商家、日期與金額。</section>}

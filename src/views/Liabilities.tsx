@@ -29,10 +29,11 @@ export function Liabilities({ data, onChange }: { data: WealthData; onChange: (d
       <h2>負債</h2>
       <button className="primary" onClick={() => { setReset(false); setEditing('new') }}>＋ 新增負債</button>
     </div>
-    <div className="tiles">
+    {/* With no debts the totals are all zero; the empty card below says what to add. */}
+    {debts.length > 0 && <div className="tiles">
       <section className="panel deep tile-stat" aria-label="總負債">
         <span>{estimated ? '總負債（含預估）' : '總負債'}</span><strong>{totals.liabilities === null ? '尚無法換算' : fmt(totals.liabilities, 0)}</strong>
-        <small>{debts.length} 筆 · 餘額以正值記錄</small>
+        <small>{debts.length} 筆</small>
       </section>
       <section className="panel tile-stat" aria-label="淨資產">
         <span>{estimated ? '淨資產（預估）' : '淨資產'}</span><strong>{totals.net === null ? '尚無法換算' : fmt(totals.net, 0)}</strong>
@@ -43,8 +44,8 @@ export function Liabilities({ data, onChange }: { data: WealthData; onChange: (d
         <div className="meter" aria-hidden><span style={{ width: `${Math.min(100, (debtShare ?? 0) * 100)}%` }} /></div>
         <small>{debtShare === null ? '—' : `${(debtShare * 100).toFixed(1)}%`}</small>
       </section>
-    </div>
-    {!debts.length && <section className="panel empty"><p>尚未記錄負債。新增貸款或信用卡目前未償餘額。</p><p className="muted small">設定原始本金、利率、總期數與第一期還款日，就能自動推算預估欠款。</p></section>}
+    </div>}
+    {!debts.length && <section className="panel empty"><p>尚未記錄負債。新增貸款或信用卡目前未償餘額。</p><p className="muted small">貸款填入原始金額、利率、期數與第一期還款日，就會自動估算目前還欠多少。</p></section>}
     {selected && <div className="debt-layout">
       <section className="panel debt-picker" aria-label="負債清單">
         {debts.map((d) => {
@@ -176,24 +177,28 @@ function LiabilityForm({ liability, reset, onSave, onCancel }: { liability?: Lia
   }
   return <form className="panel form liability-form" onSubmit={submit}>
     <h3>{reset ? '校正餘額／重設基準' : liability ? '編輯負債' : '新增負債'}</h3>
-    <p className="muted small">第一期還款日是第一次應繳款的日期，不是撥款日。按月到期即計入預估已償本金；假設固定利率、按期繳足，不表示銀行已扣款。</p>
     {locked && <p className="notice">此處可修改名稱與備註。變更本金、利率、期數或還款日，請使用「校正餘額／重設基準」，避免回頭套用新條件。</p>}
     {error && <p role="alert" className="banner error">{error}</p>}
     <label className="field"><span>負債名稱</span><input required autoFocus value={draft.name} onChange={(e) => set('name', e.target.value)} /></label>
     <fieldset disabled={locked} className="loan-terms">
-    <label className="field"><span>負債類型</span><select value={draft.kind} onChange={(e) => { const kind = e.target.value as typeof draft.kind; setDraft(d => ({ ...d, kind, repaymentMethod: kind === 'credit' ? 'none' : d.repaymentMethod })); if (kind === 'credit') setMode('manual') }}>{Object.entries(LIABILITY_KINDS).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label>
+    {/* A card or other debt usually only needs what is owed now; loans ask for their terms. Other can still pick a schedule. */}
+    <label className="field"><span>負債類型</span><select value={draft.kind} onChange={(e) => {
+      const kind = e.target.value as typeof draft.kind, simple = kind === 'credit' || kind === 'other', fresh = !liability
+      setDraft(d => ({ ...d, kind, repaymentMethod: simple ? 'none' : fresh && d.repaymentMethod === 'none' ? 'annuity' : d.repaymentMethod }))
+      if (simple) setMode('manual'); else if (fresh) setMode('original')
+    }}>{Object.entries(LIABILITY_KINDS).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label>
     <label className="field"><span>幣別</span><input required list="liability-currencies" value={draft.currency} onChange={(e) => set('currency', e.target.value.toUpperCase())} /></label>
     <datalist id="liability-currencies">{[...new Set([...COMMON_CURRENCIES, 'USDC'])].map((c) => <option key={c} value={c} />)}</datalist>
-    <label className="field"><span>還款方式</span><select value={method} onChange={(e) => set('repaymentMethod', e.target.value)}>{Object.entries(REPAYMENT_METHODS).map(([key, label]) => <option key={key} value={key} disabled={draft.kind === 'credit' && key !== 'none'}>{label}</option>)}</select></label>
-    <details open={reset || (!!liability && !liability.schedule)}><summary>進階／既有剩餘本金模式</summary>
-      <label className="field"><span>計算基準</span><select value={mode} disabled={method === 'none'} onChange={(e) => {
+    {draft.kind !== 'credit' && <><label className="field"><span>還款方式</span><select value={method} onChange={(e) => { set('repaymentMethod', e.target.value); if (method === 'none' && e.target.value !== 'none' && !liability) setMode('original') }}>{Object.entries(REPAYMENT_METHODS).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label>
+    {method !== 'none' && <details open={reset || (!!liability && !liability.schedule)}><summary>不知道原始貸款條件？</summary>
+      <label className="field"><span>計算基準</span><select value={mode} onChange={(e) => {
         const nextMode = e.target.value as typeof mode
         setMode(nextMode)
         if (nextMode === 'original' && liability && !liability.schedule) setDraft(d => ({ ...d, balance: '', remainingInstallments: '', firstDueDate: '', monthlyDay: '' }))
       }}><option value="original" disabled={reset}>原始貸款，自動按期預估</option><option value="manual">手動記錄目前餘額，不自動扣減</option>{reset && <option value="correction">校正後從新基準按期預估</option>}</select></label>
-      <p className="muted small">舊資料保留原本金與剩餘期數，不反推原始貸款。信用卡、不規則還款與寬限期請使用手動模式。</p>
-    </details>
-    <label className="field"><span>{scheduled && mode === 'original' ? '原始貸款總額' : '目前未償餘額'}</span><input required inputMode="decimal" value={draft.balance} onChange={(e) => set('balance', e.target.value)} /><small className="muted">本金以正值記錄；已清償可填 0。</small></label>
+      <p className="muted small">舊資料保留原本金與剩餘期數，不反推原始貸款。不規則還款與寬限期請使用手動模式。</p>
+    </details>}</>}
+    <label className="field"><span>{scheduled && mode === 'original' ? '原始貸款總額' : '目前未償餘額'}</span><input required inputMode="decimal" value={draft.balance} onChange={(e) => set('balance', e.target.value)} /><small className="muted">已還清可填 0。</small></label>
     {method !== 'none' && <>
       <div className="liability-form-grid">
         <label className="field"><span>年利率（%）</span><input required inputMode="decimal" value={draft.annualRate} onChange={(e) => set('annualRate', e.target.value)} /></label>
@@ -201,11 +206,11 @@ function LiabilityForm({ liability, reset, onSave, onCancel }: { liability?: Lia
       </div>
       {scheduled && <>
         {mode === 'correction' && <label className="field"><span>校正基準日</span><input required type="date" value={draft.baseDate} onChange={e => set('baseDate', e.target.value)} /><small>本金為此日結束時的實際餘額。上方預填值仍為估算，請核對銀行資料。</small></label>}
-        <label className="field"><span>{mode === 'original' ? '第一期還款日' : '新基準後第一期還款日'}</span><input required type="date" value={draft.firstDueDate} onChange={e => set('firstDueDate', e.target.value)} /><small>到期當日依貸款時區計入預估已償本金，不是實際付款紀錄。</small></label>
-        <p className="muted small">貸款日曆時區：{draft.timeZone}；每月 {draft.monthlyDay || draft.firstDueDate.slice(-2) || '—'} 日，短月取月底，下月回到原訂日。</p>
-        <details><summary>調整每月日期／貸款時區</summary>
+        <label className="field"><span>{mode === 'original' ? '第一期還款日' : '新基準後第一期還款日'}</span><input required type="date" value={draft.firstDueDate} onChange={e => set('firstDueDate', e.target.value)} /><small>第一次要繳款的日期，不是撥款日。</small></label>
+        {(draft.monthlyDay || draft.firstDueDate) && <p className="muted small">之後每月 {draft.monthlyDay || Number(draft.firstDueDate.slice(-2))} 日還款，小月取月底。</p>}
+        {/* The calendar follows this device's time zone, or the one the loan was saved with, so other devices count the same days. */}
+        <details><summary>調整每月還款日</summary>
           <label className="field"><span>每月還款日（選填）</span><input inputMode="numeric" placeholder="預設第一期的日期" value={draft.monthlyDay} onChange={e => set('monthlyDay', e.target.value)} /><small>例如第一期為 2 月底、之後每月 31 日，可填 31；第一期日期須符合該月的還款日。</small></label>
-          <label className="field"><span>貸款日曆時區</span><input required value={draft.timeZone} onChange={e => set('timeZone', e.target.value)} /><small>IANA 時區，例如 Asia/Taipei。儲存後跨裝置使用相同時區。</small></label>
         </details>
       </>}
       <LoanProjection scheduled={scheduled} principal={number(draft.balance)} annualRate={number(draft.annualRate)} periods={number(draft.remainingInstallments)} method={method} currency={draft.currency} />
@@ -224,6 +229,6 @@ function LiabilityForm({ liability, reset, onSave, onCancel }: { liability?: Lia
       <label className="field"><span>備註（選填）</span><textarea rows={3} value={draft.notes} onChange={(e) => set('notes', e.target.value)} /></label>
     </details>
     <div className="row"><button type="submit" className="primary">套用負債</button><button type="button" onClick={onCancel}>取消</button></div>
-    <p className="muted small">套用後仍須按「儲存變更」才會寫入 Drive。自動估算不改寫本金、不建立付款紀錄、不扣現金。</p>
+    <p className="muted small">套用後還要按「儲存變更」才會保存。預估只用來顯示剩餘欠款，假設固定利率、按期繳足，不會扣現金或建立付款紀錄。</p>
   </form>
 }

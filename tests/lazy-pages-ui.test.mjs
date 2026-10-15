@@ -57,6 +57,8 @@ const render = async () => {
 const settle = () => act(async () => { for (let i = 0; i < 30; i++) await new Promise((r) => setTimeout(r, 0)) })
 const button = (text) => [...document.querySelectorAll('button')].find((b) => b.textContent === text || b.getAttribute('aria-label') === text)
 const click = async (element) => { assert.ok(element); await act(async () => element.click()) }
+// The page buttons open the shared import entry; each kind's own import screen stays at its URL.
+const openKindImport = async (path) => { await act(async () => { window.history.pushState(null, '', path); window.dispatchEvent(new PopStateEvent('popstate')) }); await settle() }
 const main = () => document.querySelector('main').textContent
 
 const snapshot = (date, total = 100) => ({ date, at: `${date}T04:00:00.000Z`, total, accounts: [], categories: {} })
@@ -148,7 +150,7 @@ test('bank records show before earlier years are loaded, and import waits for ba
   assert.doesNotMatch(main(), /正在載入往年歷史/)
   assert.match(main(), /Salary transfer/)
   assert.ok(!drive.reads.some(name=>name.startsWith('history-')))
-  await click(button('匯入銀行帳單'))
+  await openKindImport('/bank-transactions/import')
   assert.match(main(), /正在載入往年歷史/)
   assert.equal(document.querySelector('.bank-import form'), null)
   await drive.release('history')
@@ -193,7 +195,7 @@ test('cashflow loads summary-backed ledger details and month navigation reaches 
   assert.equal(document.querySelectorAll('.bank-record').length, 100)
   assert.match(document.querySelector('[aria-label="銀行流水分頁"]').textContent, /第 1／2 頁/)
   assert.ok(!drive.reads.some(name => name.startsWith('history-')))
-  await click(button('匯入銀行帳單'))
+  await openKindImport('/bank-transactions/import')
   assert.match(main(), /正在載入往年歷史/)
   assert.equal(document.querySelector('.bank-import form'), null)
   await drive.release('history')
@@ -413,7 +415,7 @@ test('importing a bank statement first loads every quarter, to find duplicates a
   await open('/bank-transactions')
   drive.hold('ledger')
   drive.hold('history')
-  await click(button('匯入銀行帳單'))
+  await openKindImport('/bank-transactions/import')
   assert.match(main(), /正在載入全部銀行流水/)
   assert.equal(document.querySelector('.bank-import form'), null)
   await drive.release('history')
@@ -460,44 +462,21 @@ test('a focused old bank record loads the complete ledger before deciding it is 
   assert.ok(!drive.reads.some(name=>name.startsWith('history-')))
 })
 
-// One import screen for card and bank statements: the kind is in the URL, and decides the parts to load.
-const kind = () => [...document.querySelectorAll('[aria-label="帳單類型"] button')].filter((b) => b.getAttribute('aria-pressed') === 'true').map((b) => b.textContent)
-
-test('the cashflow page opens the statement import entry, and its kind switch moves between auto, card and bank', async () => {
+// One import entry for card and bank statements: it detects each file's kind and needs no history.
+test('the cashflow page opens the statement import entry, with no kind switch, and closing returns to 收支總覽', async () => {
   const drive = await splitDrive()
   await open('/cashflow')
-  // Opening adds one history entry (Back returns to 收支總覽); switching kind and closing replace it.
+  // Opening adds one history entry (Back returns to 收支總覽); closing replaces it.
   const entries = window.history.length
   await click(button('匯入帳單'))
-  // The entry detects each file's kind; nothing is read until files are chosen.
   assert.equal(window.location.pathname, '/cashflow/import')
   assert.equal(window.history.length, entries + 1)
   assert.ok(document.querySelector('.statement-entry form'))
-  assert.deepEqual(kind(), ['自動判斷'])
+  assert.equal(document.querySelector('[aria-label="帳單類型"]'), null)
   assert.ok(!drive.reads.some((name) => name.startsWith('history-')), 'the entry needs no history')
-  await click(button('信用卡帳單'))
-  assert.equal(window.location.pathname, '/expenses/import')
-  assert.equal(window.history.length, entries + 1)
-  assert.ok(document.querySelector('.statement-import form'))
-  assert.deepEqual(kind(), ['信用卡帳單'])
-  assert.ok(!drive.reads.some((name) => name.startsWith('history-')), 'a card import needs no history')
-  drive.hold('history')
-  await click(button('銀行帳單'))
-  assert.equal(window.location.pathname, '/bank-transactions/import')
-  assert.match(main(), /正在載入往年歷史/)
-  assert.deepEqual(kind(), ['銀行帳單'])
-  assert.equal(document.querySelector('.bank-import form'), null)
-  await drive.release('history')
-  assert.ok(document.querySelector('.bank-import form'))
-  assert.deepEqual(kind(), ['銀行帳單'])
-  await click(button('信用卡帳單'))
-  assert.equal(window.location.pathname, '/expenses/import')
-  assert.ok(document.querySelector('.statement-import form'))
   await click(button('取消匯入'))
-  assert.equal(window.location.pathname, '/expenses')
+  assert.equal(window.location.pathname, '/cashflow')
   assert.equal(window.history.length, entries + 1)
-  assert.ok(button('匯入信用卡帳單'))
-  assert.match(main(), /Coffee shop/)
 })
 
 test('a bank import opened by its URL loads every quarter and the balance history by itself', async () => {
@@ -511,18 +490,21 @@ test('a bank import opened by its URL loads every quarter and the balance histor
   assert.match(main(), /Row older/)
 })
 
-test('the import buttons of the two pages open the same import screen', async () => {
+test('the import buttons of the two pages open the same import entry, and cancelling returns to each page', async () => {
   await splitDrive()
   await open('/bank-transactions')
   await click(button('匯入銀行帳單'))
-  assert.equal(window.location.pathname, '/bank-transactions/import')
-  assert.deepEqual(kind(), ['銀行帳單'])
+  assert.equal(window.location.pathname, '/cashflow/import')
+  assert.ok(document.querySelector('.statement-entry form'))
   await click(button('取消匯入'))
+  assert.equal(window.location.pathname, '/bank-transactions')
   await click([...document.querySelectorAll('.side-nav button')].find((b) => b.textContent.startsWith('信用卡消費')))
   await settle()
   await click(button('匯入信用卡帳單'))
-  assert.equal(window.location.pathname, '/expenses/import')
-  assert.deepEqual(kind(), ['信用卡帳單'])
+  assert.equal(window.location.pathname, '/cashflow/import')
+  await click(button('取消匯入'))
+  assert.equal(window.location.pathname, '/expenses')
+  assert.match(main(), /Coffee shop/)
 })
 
 test('clicking the page already open, in the sidebar or the phone tabs, does not close its import', async () => {
@@ -557,8 +539,8 @@ test('the sidebar and the phone tabs always offer the statement import entry, bu
   await click(button('取消匯入'))
   await click([...document.querySelectorAll('.side-nav button')].find((b) => b.textContent.startsWith('信用卡消費')))
   await settle()
-  await click(button('匯入信用卡帳單'))
-  assert.equal(window.location.pathname, '/expenses/import')
+  await openKindImport('/expenses/import')
+  assert.ok(document.querySelector('.statement-import form'))
   assert.ok(side().disabled && phone().disabled)
   await click(button('取消匯入'))
 })

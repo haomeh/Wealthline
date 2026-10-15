@@ -112,7 +112,9 @@ const BUILTIN_BANK_RULES: {direction: 'credit' | 'debit'; pattern: RegExp; class
   {direction:'credit',pattern:/薪資入帳|薪資轉入|薪資|\bSALARY\b|\bPAYROLL\b/,classification:{kind:'income',category:'薪資'}},
   {direction:'credit',pattern:/存款利息|利息入帳|\bINTEREST (?:CREDIT|PAID)\b/,classification:{kind:'income',category:'利息'}},
   {direction:'credit',pattern:/股利入帳|現金股利|\bDIVIDEND\b/,classification:{kind:'income',category:'股利'}},
-  {direction:'debit',pattern:/信用卡繳款|繳信用卡款|\bCREDIT CARD PAYMENT\b/,classification:{kind:'excluded',reason:'信用卡繳款'}},
+  // Card payments: the card statement already lists the spending, so the payment is not counted twice.
+  // 卡費 alone also names debit-card fees (金融卡費, 晶片卡費, 簽帳卡費); those stay unclassified.
+  {direction:'debit',pattern:/信用卡(?:繳款|帳?款|費|自動扣繳|自扣)|繳(?:信用)?卡(?:款|費)|(?<![金融晶片簽帳])卡費|\bCREDIT CARD PAYMENT\b/,classification:{kind:'excluded',reason:'信用卡繳款'}},
 ]
 export function bankClassificationEvidence(transaction: Pick<BankTransaction,'description'|'direction'|'classification'>, rules: readonly BankCategoryRule[] = []): {classification: Classification; evidence: ClassificationEvidence} {
   if (transaction.classification !== undefined) return {classification:parseBankClassification(transaction.classification),evidence:{basis:'manual'}}

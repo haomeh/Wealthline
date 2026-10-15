@@ -27,14 +27,15 @@ export function applyBankLedger(data: WealthData, patch: BankLedgerPatch): Wealt
   return { ...withAssets, version: dataVersion(withAssets) }
 }
 
-// Keep legacy mapping identities unchanged; presentation follows the bank and country recognized from the PDF.
+// Keep legacy mapping identities unchanged; presentation leads with the bank and country recognized from the PDF.
+// A label the user chose (typed in a CSV or the preview, or renamed) follows it, so their own name stays visible.
+const sameName = (a: string, b: string) => a.trim().toUpperCase().replace(/[ .()（）]/g, '') === b.trim().toUpperCase().replace(/[ .()（）]/g, '')
 export function bankDisplayAccounts(accounts: readonly BankTransactionAccount[]): BankTransactionAccount[] {
   return accounts.map((a) => {
-    const identity = bankStatementIdentity(a.bank)
-    if (!identity) return a
+    if (!bankStatementIdentity(a.bank)) return a
     const label = statementAccountLabel(a.bank)
-    const multiple = accounts.some((other) => other.id !== a.id && bankStatementIdentity(other.bank)?.label === identity.label)
-    return { ...a, label: multiple && a.label !== label ? `${label} · ${a.label}` : label }
+    const chosen = a.label.trim() && !sameName(a.label, a.bank) && !sameName(a.label, label)
+    return { ...a, label: chosen ? `${label} · ${a.label}` : label }
   })
 }
 

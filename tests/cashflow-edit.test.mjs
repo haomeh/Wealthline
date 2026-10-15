@@ -194,3 +194,13 @@ test('inline category editing preserves v16 evidence and query, updates filtered
   assert.equal(state.status,'stale')
   assert.equal(state.sources.find(r=>r.source.kind==='card').current,false)
 })
+
+test('a recognized bank ledger shows the bank name, followed by the label the user chose', () => {
+  const shown = edits.bankDisplayAccounts([
+    { id: 'csv', label: '台新 Richart', bank: 'Taishin' },
+    { id: 'pdf', label: 'DBS Singapore', bank: 'DBS Singapore' },
+    { id: 'same', label: '台新銀行 (TW)', bank: 'Taishin' },
+    { id: 'other', label: 'Wallet', bank: 'Unknown bank' },
+  ]).map((a) => a.label)
+  assert.deepEqual(shown, ['台新銀行 (TW) · 台新 Richart', 'DBS (SG)', '台新銀行 (TW)', 'Wallet'])
+})
