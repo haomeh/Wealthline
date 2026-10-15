@@ -57,3 +57,9 @@ export async function detectStatementKind(bytes: Uint8Array, password: string | 
   const document = await readBankDocument(bytes, password, signal)
   return classifyStatement(document.pages, fileName)
 }
+
+/** Loads the PDF reader and starts its worker ahead of detection. Best effort. */
+export async function warmStatementReader() {
+  const { warmStatementWorker } = await import('./statementDocument')
+  warmStatementWorker()
+}

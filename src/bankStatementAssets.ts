@@ -23,6 +23,12 @@ export function bankStatementIdentity(bank:string) {
  return identity ? {...identity,label:accountLabel(identity)} : undefined
 }
 const normalized=(text:string)=>text.trim().toUpperCase().replace(/[ .]/g,'')
+/** The institution a typed bank name means (CSV imports): its key, label or alias, with the country when the alias is shared. */
+export function statementInstitution(bank:string):string|undefined {
+ const typed=normalized(bank).replace(/[()（）]/g,'')
+ const matches=Object.entries(institutions).filter(([key,i])=>[key,accountLabel(i),...i.aliases.flatMap(a=>[a,`${a}${i.country}`])].some(name=>normalized(name).replace(/[()（）]/g,'')===typed))
+ return matches.length===1?matches[0][0]:undefined
+}
 export function matchingStatementAssets(bank:string,accounts:readonly Account[]) {
  const identity=bankStatementIdentity(bank);if(!identity)return []
  return accounts.filter(a=>a.country.trim().toUpperCase()===identity.country&&identity.aliases.some(name=>normalized(name)===normalized(a.name.trim().replace(new RegExp(`\\s+(?:${identity.country}|\\(${identity.country}\\))$`,'i'),''))))

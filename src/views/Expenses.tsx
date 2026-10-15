@@ -1,14 +1,16 @@
 import { cashflowReturnTo } from '../cashflowQuery'
-import { navigate } from '../site'
+import { navigate, REPO_URL } from '../site'
 import { ExpenseRecords } from './ExpenseRecords'
 import { ExpenseEditor } from './ExpenseEditor'
 import { ImportKind, ImportSteps, type ImportKindChoice, type QueuedImport } from './ImportSteps'
 import { DetailRecord } from './DetailRecord'
+import { CsvGuide } from './CsvGuide'
 import { fmt } from '../format'
 import { dataVersion } from '../dataVersion'
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { mergeExpenses, prepareExpenses, sha256, expenseCategory, EXPENSE_CATEGORIES, type ExpenseCategoryRule, type ExpenseCategory, type Expense } from '../expenses'
 import { pdfFormatError } from '../bankStatementErrors'
+import { CSV_MAX_BYTES, CsvError, csvErrorText, decodeCsv, isCsvFile, readCardCsv } from '../csvImport'
 import { assertCreditCardFile, parseStatement, statementMetadata } from '../statements'
 import { ExpenseCategoryRules, CategoryRuleButton, CategoryRuleDialog } from './ExpenseCategoryRules'
 import { StatementPasswordSettings } from './StatementPasswordSettings'
@@ -68,7 +70,7 @@ export function Expenses({data,onChange,busy,passwordScope,recordId,returnTo,imp
 type Draft = Expense & {selected:boolean;amountText:string;needsReview?:boolean;sourceFile?:number}
 function StatementImport({existing,busy,onCancel,onImport,rules,onAddRule,passwords,passwordScope,onManagePasswords,onSelectKind,queued}: {onSelectKind?:(kind:ImportKindChoice)=>void;queued?:QueuedImport;passwords:StatementPassword[];passwordScope?:string;onManagePasswords:()=>void;onAddRule:(expense:Expense,index?:number)=>void;rules:ExpenseCategoryRule[];existing:Expense[];busy:boolean;onCancel:()=>void;onImport:(rows:Expense[],context:Expense[])=>void}) {
   const [files,setFiles] = useState<File[]>([])
-  const [reports,setReports] = useState<{name:string;bank?:string;month?:string;source?:string;currency?:string;count?:number;error?:string;ocr?:boolean;warning?:string}[]>([])
+  const [reports,setReports] = useState<{name:string;bank?:string;month?:string;source?:string;currency?:string;count?:number;error?:string;ocr?:boolean;warning?:string;note?:string}[]>([])
   const [password,setPassword] = useState('')
   const [available,setAvailable] = useState<string[]>([])
   const [passwordNotice,setPasswordNotice] = useState('')
@@ -131,6 +133,13 @@ function StatementImport({existing,busy,onCancel,onImport,rules,onAddRule,passwo
         if(abort.signal.aborted) return
         setProgress('');setCount({processed:index,total:files.length,current:file.name?.trim() || `檔案 ${index+1}`,failures:outcomes.filter(r=>r.error).length})
         try {
+          if(isCsvFile(file)) {
+            const csv = await readCsv(file)
+            if(abort.signal.aborted) return
+            previews.push(...csv.drafts.map(r=>({...r,sourceFile:outcomes.length})))
+            outcomes.push(csv.report)
+            continue
+          }
           assertCreditCardFile(file.name)
           if(file.size > 20*1024*1024) throw new Error('帳單超過 20 MB，請拆分後再匯入')
           const bytes = new Uint8Array(await file.arrayBuffer())
@@ -168,6 +177,31 @@ function StatementImport({existing,busy,onCancel,onImport,rules,onAddRule,passwo
     } finally {if(!abort.signal.aborted) setParsing(false)}
   }
 
+  // A CSV file of card rows (docs/csv-import.md): rows grouped by card, then prepared like parsed statement rows.
+  async function readCsv(file:File):Promise<{drafts:Draft[];report:(typeof reports)[number]}> {
+    if(file.size > CSV_MAX_BYTES) throw new CsvError('CSV 超過 5 MB，請拆分後再匯入。')
+    const bytes = new Uint8Array(await file.arrayBuffer())
+    let csv:ReturnType<typeof readCardCsv>
+    try {csv = readCardCsv(decodeCsv(bytes))} catch(e) {throw new Error(csvErrorText(e))}
+    const fileHash = await sha256(bytes)
+    const cards = new Map<string,typeof csv.rows>()
+    for(const row of csv.rows) {const key=row.card.toUpperCase();cards.set(key,[...(cards.get(key)??[]),row])}
+    const drafts:Draft[] = []
+    for(const rows of cards.values()) {
+      const prepared = await prepareExpenses(rows.map(({date,description,amount,currency})=>({date,description,amount,currency})),rows[0].card,fileHash,rows.map(r=>r.line))
+      // A statement whose rows do not add up to its stated total is left for the user to check.
+      const unchecked = new Set(csv.checks.filter(c=>!c.matches).map(c=>JSON.stringify([c.card.toUpperCase(),c.month,c.currency])))
+      drafts.push(...prepared.map((e,i)=>{
+        const mismatch = unchecked.has(JSON.stringify([rows[i].card.toUpperCase(),rows[i].statementMonth ?? '',rows[i].currency]))
+        return {...e,...(rows[i].category && {category:rows[i].category}),selected:true,needsReview:mismatch,amountText:String(e.amount)}
+      }))
+    }
+    const months = [...new Set(csv.rows.map(r=>r.statementMonth ?? r.date.slice(0,7)))].sort()
+    const bad = csv.checks.filter(c=>!c.matches)
+    return {drafts,report:{name:file.name,bank:[...new Set(csv.rows.map(r=>r.card))].join('、'),month:months.length>1?`${months[0]}～${months[months.length-1]}`:months[0],source:'CSV',currency:[...new Set(csv.rows.map(r=>r.currency))].join('、'),count:csv.rows.length,
+      ...(bad.length ? {warning:`帳單總額不符：${bad.map(c=>`${c.card} ${c.month} 應為 ${fmt(c.expected,2)}，明細合計 ${fmt(c.actual,2)}`).join('；')}，請核對標示的交易`} : csv.checks.length ? {note:'帳單總額相符'} : {})}}
+  }
+
   return <section className="panel statement-import">
     <div className="panel-head"><h2>匯入帳單</h2><ImportSteps step={drafts ? 2 : 1} /><button onClick={()=>{controller.current?.abort();onCancel()}}>取消匯入</button></div>
     <ImportKind kind="card" disabled={locked || !!drafts} onSelect={onSelectKind} />
@@ -176,10 +210,10 @@ function StatementImport({existing,busy,onCancel,onImport,rules,onAddRule,passwo
     {passwordNotice && <p role="status" className="notice">{passwordNotice}</p>}
     {parsing && count && <div className="notice bank-progress" role="status" aria-label="信用卡帳單解析進度" aria-live="polite"><progress value={count.processed} max={count.total} aria-label="信用卡帳單處理進度"/><p>正在本機解析 · 第 {count.processed+1}／{count.total} 份{count.processed?` · 完成 ${count.processed} 份${count.failures?`（${count.failures} 份未匯入）`:''}`:''}</p><p>目前檔案：{count.current} · {progress || '讀取 PDF…'}</p></div>}
     {error && <p className="banner error" role="alert">{error}</p>}
-    {!!reports.length && <ul className="notice" aria-label="各帳單解析結果">{reports.map((r,i)=><li key={i}><strong>{r.name}</strong>：{r.error || `${r.bank} · ${r.month}（${r.source}）· ${r.count} 筆待核對${r.ocr?' · OCR 商家請核對':''}${r.warning?` · ${r.warning}`:''}`}</li>)}</ul>}
+    {!!reports.length && <ul className="notice" aria-label="各帳單解析結果">{reports.map((r,i)=><li key={i}><strong>{r.name}</strong>：{r.error || `${r.bank} · ${r.month}（${r.source}）· ${r.count} 筆待核對${r.ocr?' · OCR 商家請核對':''}${r.note?` · ${r.note}`:''}${r.warning?` · ${r.warning}`:''}`}</li>)}</ul>}
     {!drafts ? <form onSubmit={parse} hidden={parsing && fromEntry}>
       <fieldset className="statement-upload-fields" disabled={locked}>
-        <label className="field statement-upload"><span>帳單 PDF（可選多份）</span><small className="muted">選擇信用卡帳單 · 每份最多 20 MB</small><input type="file" multiple accept=".pdf,application/pdf" required onChange={e=>{setFiles(Array.from(e.target.files??[]));setPassword('');setError('');setReports([])}}/></label>
+        <label className="field statement-upload"><span>帳單 PDF 或 CSV（可選多份）</span><small className="muted">選擇信用卡帳單 · PDF 每份最多 20 MB · CSV 格式見下方說明</small><input type="file" multiple accept=".pdf,application/pdf,.csv,text/csv" required onChange={e=>{setFiles(Array.from(e.target.files??[]));setPassword('');setError('');setReports([])}}/></label>
         <label className="field statement-password"><span>PDF 密碼（多組以逗號 , 分隔）</span><input type="password" autoComplete="off" placeholder="未加密的帳單可留空" value={password} onChange={e=>setPassword(e.target.value)}/><small className="muted">僅供本次解析，不會保存。不同帳單的密碼以逗號分隔。</small></label>
       </fieldset>
       <details className="statement-options"><summary>進階選項<span className="muted small">辨識不到時再填寫</span></summary>
@@ -210,11 +244,12 @@ function StatementImport({existing,busy,onCancel,onImport,rules,onAddRule,passwo
       <section className="panel tile-stat statement-files"><span>檔案</span>{reports.filter(r=>!r.error).map((r,i)=><strong key={i}>{r.bank} · {r.month}</strong>)}<small>在此瀏覽器解密與解析</small></section>
       <section className="panel deep tile-stat"><span>將匯入</span><strong>{result?.added ?? 0} 筆</strong><small role="status">選取 {selected.length} 筆 · 可新增 {result?.added ?? 0} 筆 · 略過重複 {result?.duplicates ?? 0} 筆</small></section>
       {validation && <p role="alert" className="banner error">{validation}</p>}
-      {selected.some(r=>r.needsReview) && <section className="panel warn">{selected.filter(r=>r.needsReview).length} 筆 OCR 交易已勾選，請核對商家、日期與金額。</section>}
+      {selected.some(r=>r.needsReview) && <section className="panel warn">{selected.filter(r=>r.needsReview).length} 筆標示「核對」的交易已勾選（OCR 商家或 CSV 帳單總額不符），請核對商家、日期與金額。</section>}
       <button className="primary" disabled={busy || !!validation || !result?.added} onClick={()=>{try{onImport(selected.map(r=>({...r,amount:Number(r.amountText)})),drafts)}catch(e){setError(e instanceof Error?e.message:'匯入失敗')}}}>確認匯入 {result?.added ?? 0} 筆</button>
       <p className="muted small">原始帳單不保存；臨時密碼只留在記憶體。</p>
     </aside></div>}
-    <details className="statement-help"><summary>支援格式與注意事項</summary><p className="muted small">支援富邦、玉山、台新文字帳單與 SG 匯豐 SGD 帳單；匯豐圖片商家欄以本機 OCR 補上。OCR 交易預設全部勾選並標示「核對」，請核對商家、日期、金額，不要的取消勾選；商家讀不到的列預設不勾選。證券帳單不支援，其他排版可能漏辨識。退款以負數記錄，繳款與總計不當作消費。</p></details>
+    {!drafts && !parsing && <CsvGuide kinds={['card']} where="在上方「帳單 PDF 或 CSV」選擇檔案" />}
+    <details className="statement-help"><summary>支援格式與注意事項</summary><p className="muted small">支援富邦、玉山、台新文字帳單與 SG 匯豐 SGD 帳單；匯豐圖片商家欄以本機 OCR 補上。OCR 交易預設全部勾選並標示「核對」，請核對商家、日期、金額，不要的取消勾選；商家讀不到的列預設不勾選。證券帳單不支援，其他排版可能漏辨識。退款以負數記錄，繳款與總計不當作消費。</p><p className="muted small">其他銀行可改用 CSV，步驟、欄位與 AI 提示詞見「用 CSV 匯入：教學與 AI 提示詞」或 <a href={`${REPO_URL}/blob/main/docs/csv-import.md`} target="_blank" rel="noreferrer">CSV 匯入格式</a>。</p></details>
   </section>
 }
 
