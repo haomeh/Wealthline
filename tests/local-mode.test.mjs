@@ -148,6 +148,31 @@ test('saves go to IndexedDB and a reload reopens local mode with them', async ()
   noGoogle()
 })
 
+test('a holding imported while the opening quotes load is quoted once they finish', async () => {
+  const account = { id: 'acc', name: '券商', kind: 'investment', country: 'US', category: '股票', positions: [{ id: 'aaa', type: 'holding', currency: 'USD', symbol: 'AAA', quantity: 1, price: 10 }] }
+  seed(JSON.stringify({ ...fixture(), accounts: [account] }))
+  localStorage.setItem(ACTIVE_KEY, '1')
+  window.history.replaceState(null, '', '/accounts/import')
+  let release
+  const opening = new Promise((resolve) => { release = resolve })
+  globalThis.fetch = async (url) => { requests.push(String(url)); if (/symbol=AAA/.test(url)) await opening; throw new Error('offline') }
+  await render()
+  await settle()
+  const input = document.querySelector('[aria-label="帳戶 CSV"]')
+  const text = 'type,account,kind,currency,symbol,quantity\nposition,券商,investment,USD,AAA,1\nposition,券商,investment,USD,VOO,3'
+  Object.defineProperty(input, 'files', { configurable: true, value: [{ name: 'positions.csv', type: 'text/csv', size: text.length, arrayBuffer: async () => new TextEncoder().encode(text).buffer }] })
+  await act(async () => input.dispatchEvent(new Event('change', { bubbles: true })))
+  await settle()
+  await click([...document.querySelectorAll('button')].find((b) => b.textContent.startsWith('預覽 CSV 匯入')))
+  await settle()
+  await click([...document.querySelectorAll('button')].find((b) => b.textContent.startsWith('確認匯入')))
+  await settle()
+  assert.equal(requests.filter((u) => /symbol=VOO/.test(u)).length, 0, 'waits for the opening quotes')
+  release()
+  await settle()
+  assert.equal(requests.filter((u) => /symbol=VOO/.test(u)).length, 1, 'the new holding is quoted once, not retried in a loop')
+})
+
 test('the home page goes to the app while local mode is on', async () => {
   localStorage.setItem(ACTIVE_KEY, '1')
   await render()

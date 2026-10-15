@@ -469,6 +469,17 @@ test('the liability form asks a card or other debt only for what is owed, and a 
   assert.equal(field('還款方式').value, 'annuity')
   assert.ok(field('原始貸款總額'))
 })
+test('switching between loan kinds keeps the chosen balance mode', async () => {
+  await render(Liabilities, { data: fixture(), onChange: () => {} })
+  await click(button('＋ 新增負債'))
+  await selectValue('負債類型', 'personal')
+  await selectValue('計算基準', 'manual')
+  await selectValue('負債類型', 'mortgage')
+  assert.equal(field('計算基準').value, 'manual')
+  assert.ok(field('目前未償餘額'))
+  await selectValue('負債類型', 'personal')
+  assert.equal(field('計算基準').value, 'manual')
+})
 test('editing legacy manual debt retains values without inferring projection or remaining periods', async () => {
   const legacy = { ...syntheticDebt, annualRate: 2, paymentAmount: 20, totalInstallments: 24, paidInstallments: 3 }
   let changed

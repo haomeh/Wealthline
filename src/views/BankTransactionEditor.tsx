@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { EXPENSE_CATEGORIES } from '../expenses'
 import { BANK_EXCLUSION_REASONS, INCOME_CATEGORIES, classifyBankTransaction, parseBankTransactions, type BankTransaction, type BankTransactionAccount, type BankCategoryRule, type Classification } from '../bankTransactions'
 
+import { bankDisplayAccounts } from '../ledgerEdits'
 import { BANK_TEXT_NOTICE, classificationLabel } from './bankUiHelpers'
 export function ClassificationField({value,onChange,label='分類',caption,disabled=false,automatic=false}: {value?:Classification;onChange:(c:Classification|undefined)=>void;label?:string;caption?:string;disabled?:boolean;automatic?:boolean}) {
   const key=value ? value.kind==='income'||value.kind==='expense'?`${value.kind}:${value.category}`:value.kind==='excluded'?`excluded:${value.reason}`:'pending' : ''
@@ -19,10 +20,11 @@ export function BankRowFields({row,onChange,disabled=false,prefix='流水',rules
  {effective.kind==='income' && effective.category==='投資回收款' && <p>投資回收款可能包含投入本金，不代表投資收益。</p>}
  </fieldset>
 }
-export function BankTransactionEditor({transaction,accounts,rules,busy,onSave,onCancel,onRemove}: {transaction:BankTransaction;accounts:BankTransactionAccount[];rules:BankCategoryRule[];busy:boolean;onSave:(row:BankTransaction)=>void;onCancel:()=>void;onRemove:()=>void}) {
+/** `accounts` are the stored accounts: rows are validated against them, and the bank prefix is added only for display. */
+export function BankTransactionEditor({transaction,accounts,rules,busy,onSave,onCancel,onRemove}: {transaction:BankTransaction;accounts:readonly BankTransactionAccount[];rules:BankCategoryRule[];busy:boolean;onSave:(row:BankTransaction)=>void;onCancel:()=>void;onRemove:()=>void}) {
  const [row,setRow]=useState(transaction),[error,setError]=useState('')
  return <form className="panel bank-editor" onSubmit={e=>{e.preventDefault();if(busy)return;try{onSave(parseBankTransactions([row],accounts)[0])}catch{setError('請檢查日期、摘要、方向、幣別及非負金額。')}}}>
  <h2>編輯銀行流水</h2><p className="muted">{BANK_TEXT_NOTICE}</p><p>記帳日：同時有交易日與記帳日時採記帳日。帳戶及原始去重識別保留。</p>
- {!transaction.sourceKey && <label className="field"><span>獨立流水帳戶</span><select aria-label="流水帳戶" disabled={busy} value={row.accountId} onChange={e=>setRow({...row,accountId:e.target.value})}>{accounts.map(a=><option key={a.id} value={a.id}>{a.label}</option>)}</select></label>}<BankRowFields row={row} onChange={setRow} disabled={busy} rules={rules}/><p className="notice">{classificationLabel(row,rules)}</p>
+ {!transaction.sourceKey && <label className="field"><span>獨立流水帳戶</span><select aria-label="流水帳戶" disabled={busy} value={row.accountId} onChange={e=>setRow({...row,accountId:e.target.value})}>{bankDisplayAccounts(accounts).map(a=><option key={a.id} value={a.id}>{a.label}</option>)}</select></label>}<BankRowFields row={row} onChange={setRow} disabled={busy} rules={rules}/><p className="notice">{classificationLabel(row,rules)}</p>
  {error && <p role="alert">{error}</p>}<div className="row"><button className="primary" disabled={busy}>套用修改</button><button type="button" onClick={onCancel}>取消</button><button type="button" className="danger" disabled={busy} onClick={()=>{if(confirm('移除這筆銀行流水？儲存變更後才會保存。'))onRemove()}}>移除流水</button></div></form>
 }

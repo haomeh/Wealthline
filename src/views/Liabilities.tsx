@@ -184,8 +184,10 @@ function LiabilityForm({ liability, reset, onSave, onCancel }: { liability?: Lia
     {/* A card or other debt usually only needs what is owed now; loans ask for their terms. Other can still pick a schedule. */}
     <label className="field"><span>負債類型</span><select value={draft.kind} onChange={(e) => {
       const kind = e.target.value as typeof draft.kind, simple = kind === 'credit' || kind === 'other', fresh = !liability
+      const wasSimple = draft.kind === 'credit' || draft.kind === 'other'
       setDraft(d => ({ ...d, kind, repaymentMethod: simple ? 'none' : fresh && d.repaymentMethod === 'none' ? 'annuity' : d.repaymentMethod }))
-      if (simple) setMode('manual'); else if (fresh) setMode('original')
+      // Between loan kinds the mode the user chose stays.
+      if (simple) setMode('manual'); else if (fresh && wasSimple) setMode('original')
     }}>{Object.entries(LIABILITY_KINDS).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label>
     <label className="field"><span>幣別</span><input required list="liability-currencies" value={draft.currency} onChange={(e) => set('currency', e.target.value.toUpperCase())} /></label>
     <datalist id="liability-currencies">{[...new Set([...COMMON_CURRENCIES, 'USDC'])].map((c) => <option key={c} value={c} />)}</datalist>

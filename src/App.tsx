@@ -614,12 +614,16 @@ export default function App() {
   }, [missingAuto])
 
   // Holdings without a price yet (a sheet or CSV import gives only symbol and quantity): fetch their quotes right away.
-  // Opening the data fetches every quote already, so this waits until that is done.
+  // Opening the data fetches every quote already, so this waits until that is done, then fetches what is still unpriced
+  // (a holding added during it). The same set is fetched once, so a quote that is not found is not retried in a loop.
   const unpriced = data ? data.accounts.flatMap((a) => a.positions.filter((p) => p.type === 'holding' && p.symbol && !p.price && !p.priceManual).map((p) => p.id)).join() : ''
+  const quotedUnpriced = useRef('')
   useEffect(() => {
-    if (unpriced && data && !refreshing) void refreshMarket(data)
+    if (!unpriced || !data || refreshing || quotedUnpriced.current === unpriced) return
+    quotedUnpriced.current = unpriced
+    void refreshMarket(data)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [unpriced])
+  }, [unpriced, refreshing])
 
   // An account that no longer exists (deleted, or an old link) shows the account list instead.
   const missingAccount = !!data && 'id' in route && !data.accounts.some((a) => a.id === route.id)

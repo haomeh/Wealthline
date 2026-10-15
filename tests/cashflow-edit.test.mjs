@@ -87,6 +87,19 @@ test('a card row\'s tag button adds a rule, and its category shows under the des
   assert.match(document.querySelector('.cashflow-categories-tile').textContent, /購物/)
 })
 
+test('a long account label the user chose does not block edits once the bank name is shown before it', async () => {
+  const label = '帳'.repeat(90)
+  const { data } = await open({ ...baseData(), bankTransactionAccounts: [...baseData().bankTransactionAccounts, { id: 'tw', label, bank: 'Taishin' }] })
+  await click(buttonLabelled(/^編輯流水 move$/))
+  assert.ok([...document.querySelectorAll('[aria-label="流水帳戶"] option')].some((o) => o.textContent.length > 100), 'the shown label carries the bank name')
+  await choose(document.querySelector('[aria-label="流水分類"]'), 'expense:購物')
+  await click([...document.querySelectorAll('.bank-editor button')].find((b) => b.textContent === '套用修改'))
+  await wait(60)
+  assert.equal(document.querySelector('.bank-editor'), null)
+  assert.deepEqual(data().bankTransactions.find((r) => r.id === 'move').classification, { kind: 'expense', category: '購物' })
+  assert.equal(data().bankTransactionAccounts.find((a) => a.id === 'tw').label, label, 'the stored label is unchanged')
+})
+
 test('the row editors open over the page and bring it back unchanged', async () => {
   const { changes, data } = await open(baseData())
   await click(buttonLabelled(/^編輯流水 move$/))
