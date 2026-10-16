@@ -30,6 +30,8 @@ export interface SecuritiesStatementResult {
   trades: SecuritiesTrade[]
   cashflows: SecuritiesCashflow[]
   inTransit: SecuritiesInTransit[]
+  /** The statement's own figures this result was checked against (the CLI lists them, so a skipped check is visible). */
+  checked: string[]
   /** Net assets the statement states, when it lists no holdings of its own. */
   netAssets?: { currency: string; value: number }
   warnings: SecuritiesWarning[]
@@ -91,10 +93,11 @@ function parseMoomoo(pages: readonly BankPage[]): SecuritiesStatementResult | un
 
   const warnings: SecuritiesWarning[] = []
   const warn = (page: number, code: string, detail?: string) => warnings.push({ page, code, ...(detail && { detail }) })
-  const result: SecuritiesStatementResult = { status: 'recognized', broker: 'moomoo', account: 'moomoo', positions: [], closedCount: 0, cash: [], trades: [], cashflows: [], inTransit: [], warnings }
+  const result: SecuritiesStatementResult = { status: 'recognized', broker: 'moomoo', account: 'moomoo', positions: [], closedCount: 0, cash: [], trades: [], cashflows: [], inTransit: [], checked: [], warnings }
 
   const first = all[0]?.rows ?? []
-  const accountDigits = first.map(r => r.text.match(/Account Name\s+.*?\((\d{3,6})\)/)?.[1]).find(Boolean)
+  // The same account is labelled the same across layouts: by the end of its number (older statements name only "Universal Account").
+  const accountDigits = first.map(r => r.text.match(/Account Number\s+\d*?(\d{4})(?:\s|$)/)?.[1]).find(Boolean) ?? first.map(r => r.text.match(/Account Name\s+.*?\((\d{3,6})\)/)?.[1]).find(Boolean)
   if (accountDigits) result.account = `moomoo (${accountDigits})`
   const baseText = first.map(r => r.text.match(/Base Currency:\s*([A-Z]{3})/)?.[1]).find(Boolean)
   result.baseCurrency = baseText
@@ -104,7 +107,7 @@ function parseMoomoo(pages: readonly BankPage[]): SecuritiesStatementResult | un
 
   // Exchange rates and totals on page 1, for cross-checking what was read.
   const rates = new Map<string, number>()
-  const totals: { portfolio?: number; cash?: number } = {}
+  const totals: { portfolio?: number; cash?: number; nav?: number } = {}
   {
     const rows = first
     const endRow = rows.findIndex(r => /Ending Net Asset Value/.test(r.text))
@@ -118,6 +121,9 @@ function parseMoomoo(pages: readonly BankPage[]): SecuritiesStatementResult | un
         rates.set(head.text.trim(), value)
       }
     }
+    // "Net Asset Value:" is the sum of holdings, cash and the assets in transit.
+    const navRow = rows.find(r => r.items.some(i => /^Net Asset Value:/.test(i.text.trim())))
+    totals.nav = navRow && num(navRow.items.filter(i => i.x > 80).map(i => i.text).find(t => num(t) !== undefined) ?? '')
     const labelRow = rows.findIndex(r => r.items.some(i => i.text.trim() === 'Portfolio Value'))
     if (labelRow >= 0) {
       const labels = rows[labelRow].items.filter(i => ['Portfolio Value', 'Cash Balance'].includes(i.text.trim()))
@@ -177,7 +183,8 @@ function parseMoomoo(pages: readonly BankPage[]): SecuritiesStatementResult | un
     }
     return out
   }
-  const isTableEnd = (r: Row) => /^[A-Z]{3} Total\b/.test(r.text) || /^Total\b/.test(r.text) || r.items.some(i => i.x < 60 && /^(Securities|Funds|Trades|Ending Positions|Changes in)/.test(i.text.trim()) && r.items.length <= 3)
+  // A section heading is a line of its own; a holding named "Securities Co" is not one.
+  const isTableEnd = (r: Row) => /^[A-Z]{3} Total\b/.test(r.text) || /^Total\b/.test(r.text) || r.items.some(i => i.x < 60 && r.items.length <= 3 && /^(Securities|Funds|Ending Positions|Ending Assets in Transit|Trades - .*|Changes in .*)$/.test(i.text.trim()))
   const positionValueByCurrency = new Map<string, number>()
   const exact = new Map<string, { quantity: number; baseValue?: number; price?: number }>()
   const endingBase: { listed: number; stated?: number } = { listed: 0 }
@@ -218,6 +225,10 @@ function parseMoomoo(pages: readonly BankPage[]): SecuritiesStatementResult | un
           if (quantity === undefined || !currency) { warn(page, 'position-row-unrecognized', block.text); continue }
           sum += value
           if (quantity === 0) { if ((startQuantity ?? 0) !== 0) result.closedCount++; continue }
+          // The quantity is what gets imported: it has to agree with the printed price and value.
+          const printedValue = num(block.cells.get(8) ?? '')
+          if (price === undefined || printedValue === undefined) warn(page, 'position-price-missing', block.symbol)
+          else if (Math.abs(quantity * price - printedValue) > Math.max(0.02, Math.abs(printedValue) * 3e-4)) warn(page, 'position-value-mismatch', `${block.symbol} ${quantity}×${price} ≠ ${printedValue}`)
           result.positions.push({ symbol: block.symbol, name: block.name, exchange: block.cells.get(1) ?? '', currency, quantity, ...(price !== undefined && { price }), value, page })
           positionValueByCurrency.set(currency, (positionValueByCurrency.get(currency) ?? 0) + value)
         } else {
@@ -228,6 +239,13 @@ function parseMoomoo(pages: readonly BankPage[]): SecuritiesStatementResult | un
         }
       }
       const totalRow = rows[end]
+      // A table that runs to the end of the page without a total may go on over the page break.
+      if (!totalRow && body.length) {
+        const nextRows = all.find(x => x.page === page + 1)?.rows ?? []
+        // It goes on if the next page prints the heading again (that table is read too) or starts with the total.
+        const goesOn = nextRows.some(r => r.items.some(i => i.text.trim() === 'Symbol') && r.items.some(i => i.text.trim() === 'Currency')) || nextRows.filter(r => r.y < 560).slice(0, 3).some(r => /^([A-Z]{3} )?Total\b/.test(r.text))
+        if (!goesOn) warn(page, 'position-table-unterminated')
+      }
       if (movement) {
         sinceTotal += sum
         if (totalRow && /^[A-Z]{3} Total\b/.test(totalRow.text)) {
@@ -279,12 +297,14 @@ function parseMoomoo(pages: readonly BankPage[]): SecuritiesStatementResult | un
   }
   if (transitStated.stated !== undefined && Math.abs(transitStated.listed - transitStated.stated) > 0.011) warn(1, 'transit-total-mismatch', `${transitStated.listed.toFixed(2)} ≠ ${transitStated.stated}`)
   if (!transitStated.stated && result.inTransit.length) warn(1, 'transit-total-missing')
+  if (exact.size && endingBase.stated === undefined) warn(1, 'ending-positions-total-missing')
   if (endingBase.stated !== undefined && Math.abs(endingBase.listed - endingBase.stated) > 0.011 * 20) warn(1, 'ending-positions-total-mismatch', `${endingBase.listed.toFixed(2)} ≠ ${endingBase.stated}`)
   // Quantities of the ending table are exact (funds print four decimals above); the movement table supplies the rest.
   for (const p of result.positions) {
     const e = exact.get(`${p.symbol}|${p.currency}`)
     if (e && Math.abs(e.quantity - p.quantity) < 0.01 + Math.abs(p.quantity) * 1e-6) p.quantity = e.quantity
-    else if (exact.size && !e) warn(p.page, 'ending-position-missing', p.symbol)
+    else if (e) warn(p.page, 'ending-position-quantity-mismatch', `${p.symbol} ${p.quantity} ≠ ${e.quantity}`)
+    else if (exact.size) warn(p.page, 'ending-position-missing', p.symbol)
   }
   for (const key of exact.keys()) {
     const [symbol, currency] = key.split('|')
@@ -426,24 +446,27 @@ function parseMoomoo(pages: readonly BankPage[]): SecuritiesStatementResult | un
   }
 
   // --- Cross-check against the page-1 summary ---------------------------------------------------------------
-  if (totals.portfolio !== undefined && rates.size) {
-    let sum = 0, ok = true
-    for (const [currency, value] of positionValueByCurrency) {
-      const rate = rates.get(currency) ?? (currency === result.baseCurrency ? 1 : undefined)
-      if (rate === undefined) { ok = false; break }
-      sum += value * rate
+  // Nothing is imported on trust: a figure the statement should print and this reader cannot find is a warning too.
+  {
+    const base = result.baseCurrency
+    if (!base) warn(1, 'base-currency-missing')
+    const rateOf = (currency: string) => currency === base ? 1 : rates.get(currency)
+    const close = (a: number, b: number) => Math.abs(a - b) <= Math.max(0.5, Math.abs(b) * 0.0005)
+    for (const [label, value] of [['portfolio-value', totals.portfolio], ['cash-balance', totals.cash], ['net-asset-value', totals.nav]] as const) if (value === undefined) warn(1, `${label}-missing`)
+    const used = new Set([...positionValueByCurrency.keys(), ...result.cash.filter(c => c.ending !== 0).map(c => c.currency), ...result.inTransit.map(t => t.currency)])
+    const unrated = [...used].filter(c => rateOf(c) === undefined)
+    for (const c of unrated) warn(1, 'exchange-rate-missing', c)
+    if (!unrated.length && base) {
+      const holdings = [...positionValueByCurrency].reduce((sum, [c, v]) => sum + v * rateOf(c)!, 0)
+      const cash = result.cash.reduce((sum, c) => sum + (c.ending === 0 ? 0 : c.ending * rateOf(c.currency)!), 0)
+      const transit = result.inTransit.reduce((sum, t) => sum + (t.baseAmount ?? t.amount * rateOf(t.currency)!), 0)
+      if (totals.portfolio !== undefined) { result.checked.push('投資組合市值'); if (!close(holdings, totals.portfolio)) warn(1, 'portfolio-value-mismatch', `${holdings.toFixed(2)} ≠ ${totals.portfolio}`) }
+      if (totals.cash !== undefined) { result.checked.push('現金餘額'); if (!close(cash, totals.cash)) warn(1, 'cash-balance-mismatch', `${cash.toFixed(2)} ≠ ${totals.cash}`) }
+      if (totals.nav !== undefined) { result.checked.push('淨資產'); if (!close(holdings + cash + transit, totals.nav)) warn(1, 'net-asset-value-mismatch', `${(holdings + cash + transit).toFixed(2)} ≠ ${totals.nav}`) }
+      if (exact.size && endingBase.stated !== undefined) result.checked.push('持倉表合計')
+      if (transitStated.stated !== undefined) result.checked.push('在途合計')
+      if (result.trades.length) result.checked.push('成交合計與筆數')
     }
-    if (ok && Math.abs(sum - totals.portfolio) > Math.max(0.5, totals.portfolio * 0.0005)) warn(1, 'portfolio-value-mismatch', `${sum.toFixed(2)} ≠ ${totals.portfolio}`)
-    if (!ok) warn(1, 'exchange-rate-missing')
-  }
-  if (totals.cash !== undefined && rates.size) {
-    let sum = 0, ok = true
-    for (const c of result.cash) {
-      const rate = rates.get(c.currency) ?? (c.currency === result.baseCurrency ? 1 : undefined)
-      if (rate === undefined) { if (c.ending !== 0) ok = false; continue }
-      sum += c.ending * rate
-    }
-    if (ok && Math.abs(sum - totals.cash) > Math.max(0.5, Math.abs(totals.cash) * 0.0005)) warn(1, 'cash-balance-mismatch', `${sum.toFixed(2)} ≠ ${totals.cash}`)
   }
   if (warnings.length) result.status = 'partial'
   return result
@@ -468,7 +491,7 @@ function parseTaishinSecurities(pages: readonly BankPage[]): SecuritiesStatement
 
   const warnings: SecuritiesWarning[] = []
   const warn = (page: number, code: string, detail?: string) => warnings.push({ page, code, ...(detail && { detail }) })
-  const result: SecuritiesStatementResult = { status: 'recognized', broker: '台新證券', account: '台新證券', baseCurrency: 'TWD', positions: [], closedCount: 0, cash: [], trades: [], cashflows: [], inTransit: [], warnings }
+  const result: SecuritiesStatementResult = { status: 'recognized', broker: '台新證券', account: '台新證券', baseCurrency: 'TWD', positions: [], closedCount: 0, cash: [], trades: [], cashflows: [], inTransit: [], checked: ['成交小計'], warnings }
   const branchAccount = flat.map(r => r.text.replace(/\s+/g, '').match(/\(([^()-]*)-(\d{4,})\)/)).find(Boolean)
   const accountTail = branchAccount?.[2].slice(-4) ?? flat.map(r => r.text.replace(/\s+/g, '').match(/帳號[：:][\dA-Za-z]*-?(\d{4,})/)).find(Boolean)?.[1].slice(-4)
   if (accountTail) result.account = `台新證券 (${accountTail})`
@@ -571,20 +594,42 @@ function parseTaishinSecurities(pages: readonly BankPage[]): SecuritiesStatement
 const csvCell = (v: string | number) => { const t = String(v); return /[",\r\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t }
 
 /**
+ * Cash per currency as the accounts page should hold it: the ending cash plus the subscriptions and redemptions still
+ * in transit. The statement counts them in its net asset value but in neither the holdings nor the cash balance
+ * (a redemption in transit is negative: the fund still lists its units while the cash has already arrived).
+ */
+export function securitiesCash(r: SecuritiesStatementResult): { currency: string; amount: number }[] {
+  const byCurrency = new Map<string, number>()
+  for (const c of r.cash) byCurrency.set(c.currency, (byCurrency.get(c.currency) ?? 0) + c.ending)
+  for (const t of r.inTransit) byCurrency.set(t.currency, (byCurrency.get(t.currency) ?? 0) + t.amount)
+  // Rounded so that adding two printed figures leaves no float noise.
+  return [...byCurrency].map(([currency, amount]) => ({ currency, amount: Math.round(amount * 1e8) / 1e8 })).filter(c => c.amount !== 0)
+}
+
+/** The symbol a holding is saved under, and the price to pin: a listed ticker is left to the quote update. */
+function savedHolding(p: SecuritiesPosition): { symbol: string; price?: number } {
+  const symbol = p.symbol.toUpperCase()
+  if (p.exchange === 'SGX' && /^[A-Z0-9]{2,6}$/.test(symbol)) return { symbol: `${symbol}.SI` }
+  if (p.exchange === 'US' && /^[A-Z]{1,5}(?:[.-][A-Z])?$/.test(symbol)) return { symbol: symbol.replace('.', '-') }
+  if (p.exchange === 'HK' && /^\d{1,5}$/.test(symbol)) return { symbol: `${symbol.padStart(4, '0')}.HK` }
+  // Funds and anything else a quote lookup cannot find keep the statement's closing price.
+  return { symbol: p.symbol, ...(p.price !== undefined && { price: p.price }) }
+}
+
+/**
  * The statement's cash and holdings as a position CSV (docs/csv-import.md, type=position) for the accounts import.
- * A holding that a quote lookup can find (a plain ticker) is left unpriced, so the next quote update prices it;
- * funds and other codes carry the statement's closing price. `category` is only for a new account (an existing one
- * keeps its own). Empty when the statement lists neither.
+ * Listed tickers are left unpriced, so the next quote update prices them; funds and other codes carry the
+ * statement's closing price. `category` is only for a new account (an existing one keeps its own). Empty when the
+ * statement lists neither.
  */
 export function securitiesPositionCsv(r: SecuritiesStatementResult, accountName: string = r.account, category = ''): string {
-  const quotable = (symbol: string) => /^[A-Z]{1,5}$/.test(symbol) || /^[A-Z]\d{2}[A-Z]?$/.test(symbol)
   const country = r.broker === '台新證券' ? 'TW' : 'SG'
   const head = ['type', 'account', 'kind', 'country', ...(category ? ['category'] : []), 'currency', 'symbol', 'quantity', 'price']
   const cells = (currency: string, symbol: string, quantity: number, price?: number) =>
     ['position', accountName, 'investment', country, ...(category ? [category] : []), currency, symbol, quantity, price ?? ''].map(csvCell).join(',')
   const lines = [
-    ...r.cash.filter(c => c.ending !== 0).map(c => cells(c.currency, '', c.ending)),
-    ...r.positions.map(p => cells(p.currency, p.symbol, p.quantity, quotable(p.symbol) || p.price === undefined ? undefined : p.price)),
+    ...securitiesCash(r).map(c => cells(c.currency, '', c.amount)),
+    ...r.positions.map(p => { const h = savedHolding(p); return cells(p.currency, h.symbol, p.quantity, h.price) }),
   ]
   return lines.length ? [head.join(','), ...lines].join('\n') : ''
 }

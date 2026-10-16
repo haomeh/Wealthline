@@ -156,7 +156,7 @@ try {
           amount: Math.abs(f.amount), status })
         if (s.netAssets) emit({ ...common, kind: 'info', description: '資產總淨額（對帳單未列持倉明細）', currency: s.netAssets.currency, amount: s.netAssets.value })
         if (s.closedCount) emit({ ...common, kind: 'info', note: [note, `${s.closedCount} 檔期間內已全數賣出（不列入持倉）`].filter(Boolean).join('；') })
-        summary.push(`${status === 'ok' ? '完成' : '部分'}  ${file}：證券對帳單（${s.account}，${s.statementDate ?? '?'}）現金 ${s.cash.length}、持倉 ${s.positions.length}、成交 ${s.trades.length}、現金異動 ${s.cashflows.length}、在途 ${s.inTransit.length}${note ? `，${note}` : ''}`)
+        summary.push(`${status === 'ok' ? '完成' : '部分'}  ${file}：證券對帳單（${s.account}，${s.statementDate ?? '?'}）現金 ${s.cash.length}、持倉 ${s.positions.length}、成交 ${s.trades.length}、現金異動 ${s.cashflows.length}、在途 ${s.inTransit.length}；核對 ${s.checked.join('／') || '無'}${note ? `，${note}` : ''}`)
         continue
       }
     }

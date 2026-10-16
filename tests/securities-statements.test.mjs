@@ -2,13 +2,13 @@ import assert from 'node:assert/strict'
 import { before, after, test } from 'node:test'
 import { createServer } from 'vite'
 import { page } from './fixtures/bank-statements/layouts.mjs'
-import { row, summary, positionPage, cashPage } from './fixtures/securities-layouts.mjs'
+import { row, summary, positionPage, cashPage, endingPage } from './fixtures/securities-layouts.mjs'
 
-let server, parse, toCsv, kind, sheet, model
+let server, parse, toCsv, cashOf, kind, sheet, model
 before(async () => {
   server = await createServer({ cacheDir: 'node_modules/.vite-securities', configFile: false, envDir: false, server: { middlewareMode: true, watch: null, hmr: false, ws: false } })
   const mod = await server.ssrLoadModule('/src/securitiesStatements.ts')
-  parse = mod.parseSecuritiesStatement; toCsv = mod.securitiesPositionCsv
+  parse = mod.parseSecuritiesStatement; toCsv = mod.securitiesPositionCsv; cashOf = mod.securitiesCash
   kind = await server.ssrLoadModule('/src/statementKind.ts')
   sheet = await server.ssrLoadModule('/src/importSheet.ts')
   model = await server.ssrLoadModule('/src/model.ts')
@@ -97,7 +97,72 @@ test('cash and holdings become a position CSV the accounts import accepts: ticke
   assert.deepEqual(account.positions.map(p => [p.type, p.currency, p.symbol, p.quantity, p.price]), [['cash', 'SGD', '', 100, 1], ['cash', 'USD', '', 8, 1], ['holding', 'USD', 'EXMP', 2, 0]])
   // A fund code is not a ticker: it carries the statement's closing price.
   const fund = parse([summary('75.00'), positionPage(), cashPage()])
-  fund.positions[0].symbol = 'SGXZ40088619'
+  fund.positions[0].symbol = 'SGXZ40088619'; fund.positions[0].exchange = 'FD'
   assert.match(toCsv(fund, 'x'), /,SGXZ40088619,2,30$/m)
   assert.equal(toCsv(parse(bill()), 'x'), '')
+})
+
+const codes = (r) => r.warnings.map((w) => w.code)
+const withTransit = () => [summary('75.00', { transit: '20.00' }), positionPage(), endingPage(), cashPage()]
+
+test('money in transit is read, checked against the net asset value, and counted in the cash of its currency', () => {
+  const r = parse(withTransit())
+  assert.deepEqual(r.warnings, [])
+  assert.deepEqual(r.inTransit.map((t) => [t.type, t.symbol, t.currency, t.amount, t.baseAmount]), [['Subscription', 'SGXZ00000001', 'SGD', 20, 20]])
+  // 100 SGD of cash plus the 20 subscribed and not yet a holding.
+  assert.deepEqual(cashOf(r), [{ currency: 'SGD', amount: 120 }, { currency: 'USD', amount: 8 }])
+  assert.match(toCsv(r, 'x'), /^position,x,investment,SG,SGD,,120,$/m)
+  // A redemption in transit is negative: the cash has arrived while the fund still lists its units.
+  r.inTransit[0].amount = -30
+  assert.deepEqual(cashOf(r), [{ currency: 'SGD', amount: 70 }, { currency: 'USD', amount: 8 }])
+  // Transit the net asset value does not include is a statement that does not add up.
+  const off = parse([summary('75.00', { transit: '0.00', nav: '185.00' }), positionPage(), endingPage(), cashPage()])
+  assert.ok(codes(off).includes('transit-total-mismatch') || codes(off).includes('net-asset-value-mismatch'), JSON.stringify(off.warnings))
+})
+
+test('a reference figure the statement should print and the reader cannot find is a warning, never a skipped check', () => {
+  // No exchange rates on page 1: nothing can be converted, so nothing can be checked.
+  assert.ok(codes(parse([summary('75.00', { rates: false }), positionPage(), cashPage()])).includes('exchange-rate-missing'))
+  // Cash in a currency without a rate.
+  const hkd = page(5, [...row(553, ['HKD', 53, 15], ['Date/Time', 287, 36], ['Type', 418, 17], ['Amount', 548, 27], ['Comment', 679, 33]), ...row(529, ['Starting Cash', 53, 46], ['0.00', 243, 17]), ...row(505, ['Ending Cash', 53, 42], ['5,000.00', 235, 36])])
+  const withHkd = parse([summary('75.00'), positionPage(), cashPage(), hkd])
+  assert.deepEqual(withHkd.warnings.filter((w) => w.code === 'exchange-rate-missing').map((w) => w.detail), ['HKD'])
+  assert.ok(codes(parse([summary('75.00', { nav: null }), positionPage(), cashPage()])).includes('net-asset-value-missing'))
+})
+
+test('the quantity that gets imported has to agree with the printed price and value, and with the ending positions table', () => {
+  // 3 x 30 is not 60.
+  const wrong = parse([summary('75.00'), positionPage('60.00', '60.00', { quantity: '3' }), cashPage()])
+  assert.ok(codes(wrong).includes('position-value-mismatch'), JSON.stringify(wrong.warnings))
+  // The two position tables disagree on the quantity.
+  const disagree = parse([summary('75.00', { transit: '20.00' }), positionPage(), endingPage({ quantity: '3' }), cashPage()])
+  assert.ok(codes(disagree).includes('ending-position-quantity-mismatch'), JSON.stringify(disagree.warnings))
+  assert.equal(disagree.status, 'partial')
+})
+
+test('a holding whose name starts with a section heading is not the end of the table', () => {
+  const r = parse([summary('75.00'), positionPage('60.00', '60.00', { name: 'Securities Co' }), cashPage()])
+  assert.deepEqual(r.warnings, [])
+  assert.equal(r.positions[0].name, 'Securities Co')
+})
+
+test('listed tickers are left to the quote update under the symbol the lookup understands; funds keep the statement price', () => {
+  const r = parse([summary('75.00'), positionPage(), cashPage()])
+  const base = r.positions[0]
+  const csv = (p) => toCsv({ ...r, cash: [], positions: [{ ...base, ...p }] }, 'x').split('\n')[1]
+  assert.equal(csv({ exchange: 'SGX', symbol: 'C6L', currency: 'SGD' }), 'position,x,investment,SG,SGD,C6L.SI,2,')
+  assert.equal(csv({ exchange: 'US', symbol: 'BRK.B' }), 'position,x,investment,SG,USD,BRK-B,2,')
+  assert.equal(csv({ exchange: 'HK', symbol: '700', currency: 'HKD' }), 'position,x,investment,SG,HKD,0700.HK,2,')
+  assert.equal(csv({ exchange: 'FD', symbol: 'SGXZ40088619', currency: 'SGD' }), 'position,x,investment,SG,SGD,SGXZ40088619,2,30')
+})
+
+test('every figure the statement states about itself is checked: trades, cash, ending positions and money in transit', () => {
+  const expect = (pages, code) => { const r = parse(pages); assert.ok(codes(r).includes(code), `${code} ${JSON.stringify(r.warnings)}`); assert.equal(r.status, 'partial') }
+  expect([summary('75.00', { transit: '20.00' }), positionPage('60.00', '60.00', { count: '2' }), endingPage(), cashPage()], 'trade-count-mismatch')
+  expect([summary('75.00', { transit: '20.00' }), positionPage('60.00', '60.00', { grand: '11.00' }), endingPage(), cashPage()], 'trade-total-mismatch')
+  expect([summary('75.00', { transit: '20.00', cash: '111.00' }), positionPage(), endingPage(), cashPage()], 'cash-balance-mismatch')
+  expect([summary('75.00', { transit: '20.00' }), positionPage(), endingPage({ total: '76.00' }), cashPage()], 'ending-positions-total-mismatch')
+  expect([summary('75.00', { transit: '20.00' }), positionPage(), endingPage({ transitTotal: '21.00' }), cashPage()], 'transit-total-mismatch')
+  // A statement that checks out raises none of them.
+  assert.deepEqual(parse(withTransit()).warnings, [])
 })
