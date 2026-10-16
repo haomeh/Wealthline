@@ -486,6 +486,23 @@ test('each file is read once: the tabs use what detection read (card lines, bank
  assert.equal(card.calls.length,0,'the card reader does not read the files again');assert.equal(pdf.calls.length,0,'the bank reader does not read the file again')
  assert.match(box('各帳單解析結果').textContent,/card-2026-04\.pdf：.*1 筆待核對/);assert.match(box('各帳單解析結果').textContent,/taishin-2026-04\.pdf：帳單無法定位前期餘額／交易明細區段/)
 })
+test('several files are read at once (four cores: three); progress follows the first unfinished file and the report keeps the file order',async()=>{
+ const cores=Object.getOwnPropertyDescriptor(globalThis,'navigator');Object.defineProperty(globalThis,'navigator',{value:{hardwareConcurrency:4},configurable:true})
+ try {
+  drive(appData());const {kind}=await openEntry()
+  let finish;const held=new Promise(r=>finish=r)
+  kind.setKinds([async step=>{step('正在本機 OCR 整頁定位交易區段 · 第 2／4 頁（較慢）');await held;return {kind:'unknown',reason:'第一份'}},{kind:'unknown',reason:'第二份'},async step=>{step('讀取文字 · 第 1／1 頁');return {kind:'unknown',reason:'第三份'}},{kind:'unknown',reason:'第四份'}])
+  await entryFiles(['a.pdf','b.pdf','c.pdf','d.pdf']);await detect()
+  await settle(()=>kind.calls.length===4)
+  assert.deepEqual(kind.calls.map(c=>c.name),['a.pdf','b.pdf','c.pdf','d.pdf'],'the later files are read while the first one waits on OCR')
+  assert.equal(box('帳單類型判斷進度').textContent,'正在本機讀取並判斷類型 · 第 1／4 份 · a.pdf · 正在本機 OCR 整頁定位交易區段 · 第 2／4 頁（較慢）')
+  assert.equal(box('帳單類型判斷結果'),null,'the report waits for every file')
+  await act(async()=>finish())
+  await settle(()=>!!box('帳單類型判斷結果'))
+  assert.deepEqual([...box('帳單類型判斷結果').querySelectorAll('li > span')].map(x=>x.textContent.split(' · ')[0]),['a.pdf','b.pdf','c.pdf','d.pdf'])
+  assert.match(box('帳單類型判斷結果').textContent,/a\.pdf · 無法辨識：第一份.*b\.pdf · 無法辨識：第二份.*c\.pdf · 無法辨識：第三份.*d\.pdf · 無法辨識：第四份/)
+ } finally {Object.defineProperty(globalThis,'navigator',cores)}
+})
 test('a fully recognized batch goes straight to the import; an unrecognized file runs only with the kind the user picked; each tab cancels on its own',async()=>{
  drive(appData());const {kind,card}=await openEntry()
  kind.setKinds([{kind:'bank',bank:'HSBC (TW)'}]);card.setResults([]);pdf.reset([parsed()]);await entryFiles(['bank.pdf']);await detect()
