@@ -51,7 +51,7 @@ export const cashPage = () => page(3, [
 
 
 // "Ending Positions" (exact quantities, value in the base currency) and the assets in transit, as the daily statements print them.
-export const endingPage = ({ quantity = '2', transit = '20.00', total = '75.00', transitTotal = transit } = {}) => page(4, [
+export const endingPage = ({ quantity = '2', transit = '20.00', total = '75.00', transitTotal = transit, transitBase = transit } = {}) => page(4, [
   ...row(500, ['Ending Positions', 44, 56]),
   ...row(480, ['Securities', 50, 30]),
   ...row(466, ['Convert to Base', 758, 34]),
@@ -65,7 +65,7 @@ export const endingPage = ({ quantity = '2', transit = '20.00', total = '75.00',
     ...row(356, ['Convert to Base', 557, 34]),
     ...row(350, ['Type', 50, 10], ['Name/Symbol', 118, 30], ['Currency', 186, 19], ['Quantity', 299, 18], ['Price', 376, 10], ['Amount', 438, 16], ['Exchange Rate', 491, 31]),
     ...row(335, ['Example Fund', 118, 46], ['SGD', 187, 13]),
-    ...row(331, ['Subscription', 50, 35], ['--', 313, 5], ['--', 381, 5], [transit, 425, 29], ['1.000000', 496, 27], [transit, 562, 29]),
+    ...row(331, ['Subscription', 50, 35], ['--', 313, 5], ['--', 381, 5], [transit, 425, 29], ['1.000000', 496, 27], [transitBase, 562, 29]),
     ...row(318, ['SGXZ00000001', 118, 44]),
     ...row(300, ['Total', 50, 17], ['Number: 1', 674, 37], [transitTotal, 757, 34]),
   ]),

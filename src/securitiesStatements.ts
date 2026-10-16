@@ -12,7 +12,7 @@ export interface SecuritiesTrade {
   fee?: number; tax?: number; net?: number; page: number
 }
 /** A subscription or redemption still in transit at the statement date: neither in positions nor in cash yet. */
-export interface SecuritiesInTransit { type: string; symbol: string; name: string; currency: string; amount: number; baseAmount?: number; page: number }
+export interface SecuritiesInTransit { type: string; symbol: string; name: string; currency: string; amount: number; rate?: number; baseAmount?: number; page: number }
 export interface SecuritiesCashflow { date: string; type: string; currency: string; amount: number; comment: string; page: number }
 export interface SecuritiesWarning { code: string; page: number; detail?: string }
 export interface SecuritiesStatementResult {
@@ -30,6 +30,9 @@ export interface SecuritiesStatementResult {
   trades: SecuritiesTrade[]
   cashflows: SecuritiesCashflow[]
   inTransit: SecuritiesInTransit[]
+  /** Page-1 figures: the net asset value in the base currency and the exchange rates to it. */
+  statedNav?: number
+  rates?: Record<string, number>
   /** The statement's own figures this result was checked against (the CLI lists them, so a skipped check is visible). */
   checked: string[]
   /** Net assets the statement states, when it lists no holdings of its own. */
@@ -288,9 +291,12 @@ function parseMoomoo(pages: readonly BankPage[]): SecuritiesStatementResult | un
         const symbolRow = after[after.length - 1]
         const symbol = symbolRow && SYMBOL.test(symbolRow.text) ? symbolRow.text : ''
         const nameParts = [...before, ...after.filter(x => x !== symbolRow)].flatMap(x => x.items.filter(i => i.x >= 100 && i.x < 180).map(i => i.text.trim()))
-        const amount = num(numbers[numbers.length - 3].text)!, baseAmount = num(numbers[numbers.length - 1].text)
+        const amount = num(numbers[numbers.length - 3].text)!, baseAmount = num(numbers[numbers.length - 1].text), rate = num(numbers[numbers.length - 2].text)
         if (!symbol) { warn(page, 'transit-row-unrecognized', r.text.slice(0, 80)); continue }
-        result.inTransit.push({ type: type.text.trim(), symbol, name: nameParts.join(' '), currency, amount, ...(baseAmount !== undefined && { baseAmount }), page })
+        // The amount, its exchange rate and the amount in the base currency are printed side by side: they must agree.
+        if (rate === undefined || baseAmount === undefined) warn(page, 'transit-row-unrecognized', r.text.slice(0, 80))
+        else if (Math.abs(amount * rate - baseAmount) > Math.max(0.02, Math.abs(baseAmount) * 5e-4)) warn(page, 'transit-amount-mismatch', `${symbol} ${amount}×${rate} ≠ ${baseAmount}`)
+        result.inTransit.push({ type: type.text.trim(), symbol, name: nameParts.join(' '), currency, amount, ...(rate !== undefined && { rate }), ...(baseAmount !== undefined && { baseAmount }), page })
         transitStated.listed += baseAmount ?? 0
       }
     }
@@ -445,6 +451,8 @@ function parseMoomoo(pages: readonly BankPage[]): SecuritiesStatementResult | un
     })
   }
 
+  result.statedNav = totals.nav
+  result.rates = Object.fromEntries(rates)
   // --- Cross-check against the page-1 summary ---------------------------------------------------------------
   // Nothing is imported on trust: a figure the statement should print and this reader cannot find is a warning too.
   {

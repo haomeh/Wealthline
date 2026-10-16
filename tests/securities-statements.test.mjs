@@ -156,13 +156,15 @@ test('listed tickers are left to the quote update under the symbol the lookup un
   assert.equal(csv({ exchange: 'FD', symbol: 'SGXZ40088619', currency: 'SGD' }), 'position,x,investment,SG,SGD,SGXZ40088619,2,30')
 })
 
-test('every figure the statement states about itself is checked: trades, cash, ending positions and money in transit', () => {
+test('every figure the statement states about itself is checked: trades, cash, ending positions and money in transit (amount x rate = base amount)', () => {
   const expect = (pages, code) => { const r = parse(pages); assert.ok(codes(r).includes(code), `${code} ${JSON.stringify(r.warnings)}`); assert.equal(r.status, 'partial') }
   expect([summary('75.00', { transit: '20.00' }), positionPage('60.00', '60.00', { count: '2' }), endingPage(), cashPage()], 'trade-count-mismatch')
   expect([summary('75.00', { transit: '20.00' }), positionPage('60.00', '60.00', { grand: '11.00' }), endingPage(), cashPage()], 'trade-total-mismatch')
   expect([summary('75.00', { transit: '20.00', cash: '111.00' }), positionPage(), endingPage(), cashPage()], 'cash-balance-mismatch')
   expect([summary('75.00', { transit: '20.00' }), positionPage(), endingPage({ total: '76.00' }), cashPage()], 'ending-positions-total-mismatch')
   expect([summary('75.00', { transit: '20.00' }), positionPage(), endingPage({ transitTotal: '21.00' }), cashPage()], 'transit-total-mismatch')
+  // The amount times its rate has to be the amount in the base currency printed beside it.
+  expect([summary('75.00', { transit: '20.00' }), positionPage(), endingPage({ transitBase: '25.00', transitTotal: '25.00' }), cashPage()], 'transit-amount-mismatch')
   // A statement that checks out raises none of them.
   assert.deepEqual(parse(withTransit()).warnings, [])
 })
