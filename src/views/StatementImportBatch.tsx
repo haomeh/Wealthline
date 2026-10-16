@@ -4,14 +4,14 @@ import type { ImportPlan } from './StatementImportEntry'
 
 /** Per kind: the import's closing message, once confirmed or cancelled. */
 export type BatchResults = Partial<Record<StatementKind, string>>
-const TAB_NAMES: Record<StatementKind, string> = { card: '信用卡帳單', bank: '銀行對帳單' }
+const TAB_NAMES: Record<StatementKind, string> = { card: '信用卡帳單', bank: '銀行對帳單', securities: '證券帳戶' }
 
-// A detected batch: the card and bank statement imports side by side, one tab each. Both stay mounted,
+// A detected batch: the card, bank and securities statement imports side by side, one tab each. Both stay mounted,
 // so a parsed preview survives switching tabs; each tab confirms or cancels its own kind.
 // `dirty`: there are unsaved edits, so the closing summary asks for a save only then.
-export function StatementImportBatch({ plan, card, bank, onClose, dirty = true }: { plan: ImportPlan & { results: BatchResults }; card: ReactNode; bank: ReactNode; onClose: () => void; dirty?: boolean }) {
+export function StatementImportBatch({ plan, card, bank, securities, onClose, dirty = true }: { plan: ImportPlan & { results: BatchResults }; card: ReactNode; bank: ReactNode; securities: ReactNode; onClose: () => void; dirty?: boolean }) {
   const done = plan.results
-  const kinds = (['card', 'bank'] as const).filter((k) => plan[k].length)
+  const kinds = (['card', 'bank', 'securities'] as const).filter((k) => plan[k].length)
   const [chosen, setChosen] = useState<StatementKind>(kinds[0] ?? 'card')
   // A finished tab gives way to one still open.
   const active = done[chosen] ? kinds.find((k) => !done[k]) ?? chosen : chosen
@@ -29,7 +29,7 @@ export function StatementImportBatch({ plan, card, bank, onClose, dirty = true }
         </button>)}</div>}
     </section>
     {!finished && kinds.map((k) => <div key={k} role={kinds.length > 1 ? 'tabpanel' : undefined} id={`batch-panel-${k}`} aria-labelledby={kinds.length > 1 ? `batch-tab-${k}` : undefined} hidden={k !== active}>
-      {done[k] ? <p role="status" className="notice">{TAB_NAMES[k]}：{done[k]}</p> : k === 'card' ? card : bank}
+      {done[k] ? <p role="status" className="notice">{TAB_NAMES[k]}：{done[k]}</p> : k === 'card' ? card : k === 'bank' ? bank : securities}
     </div>)}
   </div>
 }

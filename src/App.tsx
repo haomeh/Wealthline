@@ -30,6 +30,7 @@ import { Liabilities } from './views/Liabilities'
 import { Expenses } from './views/Expenses'
 import { BankTransactions } from './views/BankTransactions'
 import { StatementImportEntry, type ImportPlan } from './views/StatementImportEntry'
+import { SecuritiesImport } from './views/SecuritiesImport'
 import { StatementImportBatch, type BatchResults } from './views/StatementImportBatch'
 import { Overview } from './views/Overview'
 import { Cashflow } from './views/Cashflow'
@@ -689,7 +690,7 @@ export default function App() {
   const openImportFrom = (from: Tab) => { importFrom.current = from; go({ tab: 'cashflow', importing: true }) }
   // A detected batch stays on the entry's URL: its card and bank statements import side by side, one tab each.
   const startPlan = (plan: ImportPlan) => setImportPlan({ ...plan, results: {} })
-  const finishPlan = (kind: 'card' | 'bank', result: string) => setImportPlan((p) => p && { ...p, results: { ...p.results, [kind]: result } })
+  const finishPlan = (kind: 'card' | 'bank' | 'securities', result: string) => setImportPlan((p) => p && { ...p, results: { ...p.results, [kind]: result } })
   const importingStatements = (route.tab === 'expenses' || route.tab === 'bank-transactions') && !!route.importing
   // Files and the typed password of a detected batch stay in memory only while one of its import screens is open.
   const inImport = importingStatements || (route.tab === 'cashflow' && !!route.importing)
@@ -920,7 +921,9 @@ export default function App() {
             onImporting={(open) => { if (!open) finishPlan('card', '已取消，未匯入信用卡帳單。') }} onImported={(done) => { finishPlan('card', done); return true }} />}
           bank={<BankTransactions key="batch-bank" passwordScope={passwordScope} data={data} onChange={update} busy={busy} importing queued={{ files: importPlan.bank, password: importPlan.password, prepared: importPlan.prepared }}
             historyReady={!missing('history')} historyStatus={groupLoad.history} onLoadHistory={() => void loadGroup('history')}
-            onImporting={(open) => { if (!open) finishPlan('bank', '已取消，未匯入銀行對帳單。') }} onImported={(done) => { finishPlan('bank', done); return true }} />} />)}
+            onImporting={(open) => { if (!open) finishPlan('bank', '已取消，未匯入銀行對帳單。') }} onImported={(done) => { finishPlan('bank', done); return true }} />}
+          securities={<SecuritiesImport key="batch-securities" files={importPlan.securities} prepared={importPlan.prepared} data={data} busy={busy} onChange={update}
+            onImported={(done) => finishPlan('securities', done)} onCancel={() => finishPlan('securities', '已取消，未匯入證券帳戶。')} />} />)}
         {data && route.tab === 'cashflow' && !route.importing && (
           <Cashflow
             data={data}
