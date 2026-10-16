@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { isUnrecognizedMerchant, parseExpense, expenseCategory, EXPENSE_CATEGORIES, type ExpenseCategoryRule, type ExpenseCategory, type Expense } from '../expenses'
+import { isUnrecognizedMerchant, parseExpense, expenseCategory, CARD_CATEGORIES, cardCategoryOption, type ExpenseCategoryRule, type CardCategory, type Expense } from '../expenses'
 
 export function ExpenseEditor({expense,busy,onSave,onCancel,onRemove,rules}: {rules:ExpenseCategoryRule[];expense:Expense;busy:boolean;onSave:(e:Expense)=>void;onCancel:()=>void;onRemove:()=>void}) {
   const [draft,setDraft] = useState(expense)
@@ -12,7 +12,7 @@ export function ExpenseEditor({expense,busy,onSave,onCancel,onRemove,rules}: {ru
       <label className="field"><span>銀行／卡片名稱</span><input required maxLength={100} value={draft.card} onChange={e=>setDraft({...draft,card:e.target.value})}/></label>
       <label className="field"><span>商家／說明</span><input required maxLength={500} value={draft.description} onChange={e=>setDraft({...draft,description:e.target.value})}/></label>
       <label className="field"><span>金額（退款填負數）</span><input required type="number" step="0.01" value={amount} onChange={e=>setAmount(e.target.value)}/></label>
-      <label className="field"><span>消費類別</span><select value={draft.category ?? ''} onChange={e=>setDraft({...draft,category:e.target.value ? e.target.value as ExpenseCategory : undefined})}><option value="">自動判斷（{expenseCategory({description:draft.description},rules)}）</option>{EXPENSE_CATEGORIES.map(c=><option key={c} value={c}>{c}</option>)}</select></label>
+      <label className="field"><span>消費類別</span><select value={draft.category ?? ''} onChange={e=>setDraft({...draft,category:e.target.value ? e.target.value as CardCategory : undefined})}><option value="">自動判斷（{expenseCategory({description:draft.description},rules)}）</option>{CARD_CATEGORIES.map(c=><option key={c} value={c}>{cardCategoryOption(c)}</option>)}</select></label>
       <label className="field"><span>幣別</span><input required pattern="[A-Z]{3}" value={draft.currency} onChange={e=>setDraft({...draft,currency:e.target.value.toUpperCase()})}/></label>
     </fieldset>
     {error && <p role="alert" className="banner error">{error}</p>}

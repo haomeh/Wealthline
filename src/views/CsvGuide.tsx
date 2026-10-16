@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { EXPENSE_CATEGORIES } from '../expenses'
+import { CARD_CATEGORIES } from '../expenses'
 import { REPO_URL } from '../site'
 import type { CsvImportType } from '../csvImport'
 
@@ -25,7 +25,7 @@ const SPECS: Record<CsvImportType, Spec> = {
       ['amount', true, '消費為正數，退款為負數'],
       ['currency', true, '入帳幣別，如 TWD'],
       ['card', true, '自訂卡片名稱，如「國泰 CUBE」；同一張卡沿用同名，不填卡號'],
-      ['category', false, `${EXPENSE_CATEGORIES.join('、')}；留空自動判斷`],
+      ['category', false, `${CARD_CATEGORIES.join('、')}；留空自動判斷`],
       ['statement_month', false, '帳單月份 YYYY-MM'],
       ['statement_total', false, '本期新增消費減退款的合計，用來核對明細有沒有漏'],
     ],
@@ -42,7 +42,7 @@ ${RULES}
 type,date,description,amount,currency,card,category,statement_month,statement_total
 - type 固定 card；amount 消費為正、退款為負；card 用「銀行 卡名」，例如「國泰 CUBE」。
 - 只列交易本身，不要列繳款、上期餘額、應繳總額、最低應繳、小計或總計。
-- category 只能是 ${EXPENSE_CATEGORIES.join('、')}，不確定就留空。
+- category 只能是 ${CARD_CATEGORIES.join('、')}，不確定就留空。
 - statement_month 是帳單月份 YYYY-MM；statement_total 是本期新增消費減退款的合計，每一列填同一個值。`,
   },
   bank: {

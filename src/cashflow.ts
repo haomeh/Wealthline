@@ -1,10 +1,12 @@
 import { cashflowEntries, type CashflowEntry } from './cashflowEntries'
-import { EXPENSE_CATEGORIES, type Expense, type ExpenseCategory, type ExpenseCategoryRule } from './expenses'
+import { CARD_TRANSFER, EXPENSE_CATEGORIES, type Expense, type ExpenseCategory, type ExpenseCategoryRule } from './expenses'
 import { BANK_EXCLUSION_REASONS, INCOME_CATEGORIES, type BankCategoryRule, type BankTransaction, type Classification } from './bankTransactions'
 
 export type CashflowPeriod = 1 | 3 | 6 | 12 | 'all'
 export type IncomeCategory = Extract<Classification, {kind:'income'}>['category']
-export type ExclusionReason = Extract<Classification, {kind:'excluded'}>['reason']
+export type ExclusionReason = Extract<Classification, {kind:'excluded'}>['reason'] | typeof CARD_TRANSFER
+// Bank reasons, then card rows marked 帳戶移轉.
+export const EXCLUSION_REASONS: readonly ExclusionReason[] = [...BANK_EXCLUSION_REASONS,CARD_TRANSFER]
 export interface CashflowInput {
   expenses?: readonly Expense[]
   expenseRules?: readonly ExpenseCategoryRule[]
@@ -91,8 +93,10 @@ function addCategory<C extends string>(categories: CashflowCategoryTotal<C>[], c
 }
 function addReview(total: CashflowReviewTotals, row: Pick<CashflowEntry, 'direction' | 'amount'>): void {
   total.count++
-  if (row.direction === 'debit') { total.debitCount++; total.debitAmount += row.amount }
-  else { total.creditCount++; total.creditAmount += row.amount }
+  // Card rows have no direction: a positive amount is charged (debit), a negative one credited.
+  const direction = row.direction ?? (row.amount < 0 ? 'credit' : 'debit')
+  if (direction === 'debit') { total.debitCount++; total.debitAmount += Math.abs(row.amount) }
+  else { total.creditCount++; total.creditAmount += Math.abs(row.amount) }
 }
 function addEntry(total: CashflowTotals, row: CashflowEntry): void {
   total.income += row.income
@@ -115,7 +119,7 @@ function finish(total: CashflowTotals): void {
   // Stable canonical order; retain zero/negative nets for the complete signed table.
   total.incomeCategories.sort((a,b)=>INCOME_CATEGORIES.indexOf(a.category)-INCOME_CATEGORIES.indexOf(b.category))
   total.consumptionCategories.sort((a,b)=>EXPENSE_CATEGORIES.indexOf(a.category)-EXPENSE_CATEGORIES.indexOf(b.category))
-  total.exclusions.sort((a,b)=>BANK_EXCLUSION_REASONS.indexOf(a.reason)-BANK_EXCLUSION_REASONS.indexOf(b.reason))
+  total.exclusions.sort((a,b)=>EXCLUSION_REASONS.indexOf(a.reason)-EXCLUSION_REASONS.indexOf(b.reason))
 }
 
 /** One currency's records in one month, before the period is chosen. Stored as the Drive summary. */

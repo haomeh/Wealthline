@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
-import { EXPENSE_CATEGORIES, expenseCategory, expenseCategoryRuleIndex, parseExpenseCategoryRules, type Expense, type ExpenseCategory, type ExpenseCategoryRule } from '../expenses'
+import { CARD_CATEGORIES, cardCategoryOption, expenseCategory, expenseCategoryRuleIndex, parseExpenseCategoryRules, type CardCategory, type Expense, type ExpenseCategoryRule } from '../expenses'
 import { ActionIcon } from './ActionIcon'
 
-function RuleForm({initialKeyword = '',initialCategory = '交通',busy,onSave,onCancel,editing = false}: {initialKeyword?:string;initialCategory?:ExpenseCategory|'';busy:boolean;onSave:(rule:ExpenseCategoryRule)=>void;onCancel?:()=>void;editing?:boolean}) {
+function RuleForm({initialKeyword = '',initialCategory = '交通',busy,onSave,onCancel,editing = false}: {initialKeyword?:string;initialCategory?:CardCategory|'';busy:boolean;onSave:(rule:ExpenseCategoryRule)=>void;onCancel?:()=>void;editing?:boolean}) {
   const [keyword,setKeyword] = useState(initialKeyword.slice(0,100))
-  const [category,setCategory] = useState<ExpenseCategory|''>(initialCategory)
+  const [category,setCategory] = useState<CardCategory|''>(initialCategory)
   const [error,setError] = useState('')
   return <form onSubmit={e=>{e.preventDefault();try {
     onSave(parseExpenseCategoryRules([{keyword,category}])[0])
@@ -12,7 +12,7 @@ function RuleForm({initialKeyword = '',initialCategory = '交通',busy,onSave,on
   } catch(e) {setError(e instanceof Error?e.message:'分類規則無效')}}}>
     <fieldset className="expense-rule-fields" disabled={busy}>
       <label className="field"><span>分類關鍵字</span><input required autoFocus={!!initialKeyword} maxLength={100} placeholder="例如 BUS/MRT" value={keyword} onChange={e=>setKeyword(e.target.value)}/></label>
-      <label className="field"><span>規則類別</span><select required value={category} onChange={e=>setCategory(e.target.value as ExpenseCategory|'')}>{initialCategory==='' && <option value="" disabled>選擇類別</option>}{EXPENSE_CATEGORIES.map(c=><option key={c} value={c}>{c}</option>)}</select></label>
+      <label className="field"><span>規則類別</span><select required value={category} onChange={e=>setCategory(e.target.value as CardCategory|'')}>{initialCategory==='' && <option value="" disabled>選擇類別</option>}{CARD_CATEGORIES.map(c=><option key={c} value={c}>{cardCategoryOption(c)}</option>)}</select></label>
       <button className="primary">{editing?'套用規則修改':'新增規則'}</button>
       {onCancel && <button type="button" disabled={busy} onClick={onCancel}>取消</button>}
     </fieldset>
