@@ -11,16 +11,16 @@ import { CsvGuide } from './CsvGuide'
  * Files sorted by kind, handed to the card and bank import screens in turn. `notes` is the detection report.
  * `prepared`: what detection already read from each recognized file, so the import screens do not read it again.
  */
-export type ImportPlan = { card: File[]; bank: File[]; password: string; notes: string[]; prepared: Map<File, PreparedStatement> }
+export type ImportPlan = { card: File[]; bank: File[]; securities: File[]; password: string; notes: string[]; prepared: Map<File, PreparedStatement> }
 type Detected = { file: File; name: string; kind: StatementKind | 'unknown' | 'error'; bank?: string; reason?: string; choice: StatementKind | 'skip'; prepared?: PreparedStatement }
 
-const KIND_NAMES: Record<StatementKind, string> = { card: '信用卡帳單', bank: '銀行帳單' }
+const KIND_NAMES: Record<StatementKind, string> = { card: '信用卡帳單', bank: '銀行帳單', securities: '證券帳戶對帳單' }
 // Messages the reader and the format check own; anything else is not shown, as it may hold document text.
 const KNOWN_ERRORS = new Set<string>(Object.values(BANK_PDF_ERRORS))
 function plan(list: Detected[], password: string, note: string): ImportPlan {
   const pick = (kind: StatementKind) => list.filter(d => d.choice === kind).map(d => d.file)
   const prepared = new Map(list.flatMap(d => d.prepared && d.choice === d.prepared.kind ? [[d.file, d.prepared] as const] : []))
-  return { card: pick('card'), bank: pick('bank'), password, notes: [...(note ? [note] : []), ...list.map(planNote)], prepared }
+  return { card: pick('card'), bank: pick('bank'), securities: pick('securities'), password, notes: [...(note ? [note] : []), ...list.map(planNote)], prepared }
 }
 const errorText = (e: unknown) => e instanceof Error && KNOWN_ERRORS.has(e.message) ? e.message.replace('原始銀行對帳單', '原始帳單') : BANK_PDF_ERRORS.unreadable
 
@@ -95,7 +95,7 @@ export function StatementImportEntry({ passwords, passwordScope, busy, onCancel,
       if (controller.current === abort) controller.current = null
       setFiles([]); setNotice(note)
       // Every file recognized: go straight on. Otherwise the report stays for the user to read and decide.
-      if (found.every(d => d.kind === 'card' || d.kind === 'bank')) onContinue(plan(found, typed, note))
+      if (found.every(d => d.kind === 'card' || d.kind === 'bank' || d.kind === 'securities')) onContinue(plan(found, typed, note))
       else { setResults(found); setSecret(typed) }
     } finally { if (!abort.signal.aborted) setDetecting(false) }
   }
@@ -103,7 +103,7 @@ export function StatementImportEntry({ passwords, passwordScope, busy, onCancel,
   const next = results && plan(results, secret, notice)
   return <section className="panel statement-import statement-entry">
     <div className="panel-head"><h2>匯入帳單</h2><ImportSteps step={1} /><button onClick={() => { controller.current?.abort(); onCancel() }}>取消匯入</button></div>
-    <p className="statement-privacy">信用卡帳單和銀行帳單可以一起選，會自動分辨；分不出來的檔案會先列出，不會自動匯入。檔案只在這個瀏覽器讀取，原始帳單不保存、不上傳。</p>
+    <p className="statement-privacy">信用卡帳單、銀行帳單和券商（moomoo、台新證券）對帳單可以一起選，會自動分辨；分不出來的檔案會先列出，不會自動匯入。檔案只在這個瀏覽器讀取，原始帳單不保存、不上傳。</p>
     {!results ? <form onSubmit={detect}>
       <fieldset className="statement-upload-fields" disabled={locked}>
         <label className="field statement-upload"><span>帳單 PDF 或 CSV（可選多份）</span><small className="muted">PDF 每份最多 20 MB</small><input aria-label="帳單 PDF" type="file" multiple accept=".pdf,application/pdf,.csv,text/csv" onChange={e => { const chosen = Array.from(e.target.files ?? []); setFiles(chosen); setPassword(''); setProgress(null); if (chosen.some(f => !isCsvFile(f))) void import('../statementKind').then(m => m.warmStatementReader()).catch(() => {}) }} /></label>
@@ -120,11 +120,11 @@ export function StatementImportEntry({ passwords, passwordScope, busy, onCancel,
       </li>)}</ul>
       <div className="row">
         <button type="button" disabled={busy} onClick={() => { setResults(null); setSecret(''); setProgress(null) }}>重新選擇帳單</button>
-        <button type="button" className="primary" disabled={busy || !next || !(next.card.length + next.bank.length)} onClick={() => { if (next) { setSecret(''); onContinue(next) } }}>{next && next.card.length + next.bank.length ? `繼續匯入${next.card.length ? ` · 信用卡 ${next.card.length} 份` : ''}${next.bank.length ? ` · 銀行 ${next.bank.length} 份` : ''}` : '沒有可匯入的檔案'}</button>
+        <button type="button" className="primary" disabled={busy || !next || !(next.card.length + next.bank.length + next.securities.length)} onClick={() => { if (next) { setSecret(''); onContinue(next) } }}>{next && next.card.length + next.bank.length + next.securities.length ? `繼續匯入${next.card.length ? ` · 信用卡 ${next.card.length} 份` : ''}${next.bank.length ? ` · 銀行 ${next.bank.length} 份` : ''}${next.securities.length ? ` · 證券 ${next.securities.length} 份` : ''}` : '沒有可匯入的檔案'}</button>
       </div>
     </section>}
     {!results && !detecting && <CsvGuide kinds={['card', 'bank']} where="在上方「帳單 PDF 或 CSV」選擇檔案（可和 PDF 一起選）" />}
     {detecting && progress && <p role="status" aria-label="帳單類型判斷進度">{progress.processed < progress.total ? `正在本機讀取並判斷類型 · 第 ${progress.processed + 1}／${progress.total} 份 · ${progress.current}${progress.step ? ` · ${progress.step}` : ''}` : `已讀取 ${progress.total}／${progress.total} 份`}</p>}
-    <details className="statement-help"><summary>怎麼判斷類型</summary><p className="muted small">讀得到已支援的銀行交易表（日期、摘要、支出／存入、餘額）就是銀行帳單；否則帳單上有信用卡帳單字樣（如「本期應繳總額」「最低應繳」「消費日／入帳日」）就是信用卡帳單。兩者都不是的檔案列為無法辨識，不會自動匯入。銀行與版型的支援範圍與各自的匯入畫面相同。CSV 依 type 欄：card 是信用卡消費，bank 是銀行流水，格式見 <a href={`${REPO_URL}/blob/main/docs/csv-import.md`} target="_blank" rel="noreferrer">CSV 匯入格式</a>。</p></details>
+    <details className="statement-help"><summary>怎麼判斷類型</summary><p className="muted small">讀得到已支援的銀行交易表（日期、摘要、支出／存入、餘額）就是銀行帳單；認得券商對帳單版面（moomoo、台新證券）就是證券帳戶對帳單，其現金與持倉會匯入「帳戶」頁；否則帳單上有信用卡帳單字樣（如「本期應繳總額」「最低應繳」「消費日／入帳日」）就是信用卡帳單。兩者都不是的檔案列為無法辨識，不會自動匯入。銀行與版型的支援範圍與各自的匯入畫面相同。CSV 依 type 欄：card 是信用卡消費，bank 是銀行流水，格式見 <a href={`${REPO_URL}/blob/main/docs/csv-import.md`} target="_blank" rel="noreferrer">CSV 匯入格式</a>。</p></details>
   </section>
 }
