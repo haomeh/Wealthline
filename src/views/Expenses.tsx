@@ -5,10 +5,11 @@ import { ExpenseEditor } from './ExpenseEditor'
 import { ImportSteps, type QueuedImport } from './ImportSteps'
 import { DetailRecord } from './DetailRecord'
 import { RecordMoney } from './RecordMoney'
+import { QuickClassify, QuickClassifyCallout } from './QuickClassify'
 import { CsvGuide } from './CsvGuide'
 import { fmt } from '../format'
 import { dataVersion } from '../dataVersion'
-import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { mergeExpenses, prepareExpenses, sha256, expenseCategory, CARD_CATEGORIES, cardCategoryOption, type ExpenseCategoryRule, type CardCategory, type Expense } from '../expenses'
 import { pdfFormatError } from '../bankStatementErrors'
 import { CSV_MAX_BYTES, CsvError, csvErrorText, decodeCsv, isCsvFile, readCardCsv } from '../csvImport'
@@ -30,9 +31,11 @@ export function Expenses({data,onChange,busy,passwordScope,recordId,returnTo,imp
   const [message,setMessage] = useState('')
   const [managingPasswords,setManagingPasswords] = useState(false)
   const [ruleExpense,setRuleExpense] = useState<{expense:Expense;index?:number}|null>(null)
+  const [quick,setQuick] = useState(false)
   const expenses = data.expenses ?? []
   const rules = data.expenseCategoryRules ?? []
   const passwords = data.statementPasswords ?? []
+  const unclassified = useMemo(()=>(data.expenses ?? []).filter(e=>expenseCategory(e,data.expenseCategoryRules ?? [])==='未分類').length,[data.expenses,data.expenseCategoryRules])
   const passwordDialog = managingPasswords && passwordScope && <StatementPasswordSettings scope={passwordScope} passwords={passwords} busy={busy} onClose={()=>setManagingPasswords(false)} onSave={rows=>onChange({...data,version:dataVersion(data, {minimumVersion:12}),statementPasswords:parseStatementPasswords(mergeStatementPasswords(passwords,rows))})} onRemove={id=>onChange({...data,version:dataVersion(data, {minimumVersion:12}),statementPasswords:passwords.filter(p=>p.id!==id)})} onRemoveAll={()=>{if(!busy)onChange({...data,version:dataVersion(data, {minimumVersion:12}),statementPasswords:[]})}}/>
 
   const ruleDialog = ruleExpense && <CategoryRuleDialog expense={ruleExpense.expense} rule={ruleExpense.index===undefined?undefined:rules[ruleExpense.index]} busy={busy} onCancel={()=>setRuleExpense(null)} onSave={rule=>{
@@ -63,6 +66,8 @@ export function Expenses({data,onChange,busy,passwordScope,recordId,returnTo,imp
     {message && <p role="status" className="notice">{message}</p>}
     {!expenses.length ? <section className="panel empty"><p>還沒有消費紀錄。按「匯入信用卡帳單」選擇 PDF 或 CSV 帳單，確認後就會列在這裡。</p></section> : <section className="panel">
       <h3>{expenses.length} 筆交易</h3>
+      {unclassified>0 && <QuickClassifyCallout count={unclassified} what="筆消費未分類" busy={busy} onStart={()=>setQuick(true)}/>}
+      {quick && <QuickClassify data={data} onChange={onChange} busy={busy} sources={['card']} onClose={()=>setQuick(false)}/>}
       <ExpenseRecords expenses={expenses} rules={rules} busy={busy} showCategory onEdit={setEditing} onRule={(expense,index)=>setRuleExpense({expense,index})} />
     </section>}
   </div>

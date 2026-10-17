@@ -75,7 +75,7 @@ const sourceCoverage = (): CashflowSourceCoverage => ({cardCount:0,bankCount:0,r
 function emptyTotals(): CashflowTotals {
   return {income:0,consumption:0,difference:0,incomeCategories:[],consumptionCategories:[],excluded:reviewTotals(),exclusions:[],pending:reviewTotals(),investmentRecovery:{count:0,net:0,hasRecords:false}}
 }
-function monthsInPeriod(endMonth: string, period: Exclude<CashflowPeriod, 'all'>): string[] {
+export function monthsInPeriod(endMonth: string, period: Exclude<CashflowPeriod, 'all'>): string[] {
   if (typeof endMonth !== 'string' || !/^(?!0000)\d{4}-(0[1-9]|1[0-2])$/.test(endMonth) || ![1,3,6,12].includes(period)) throw new Error('收支分析期間無效')
   const [year,month] = endMonth.split('-').map(Number)
   const end = year * 12 + month - 1

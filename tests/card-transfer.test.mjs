@@ -87,5 +87,5 @@ test('green marks only money counted as coming in: not 不計收支 bank credits
   assert.equal(bank(row('pending')),true)
   assert.equal(bank(row('own',{kind:'excluded',reason:'自有帳戶轉帳'})),false)
   const html = renderToStaticMarkup(h(BankRecord,{row:{...row('cents'),amount:3.2},account:'Bank',rules:[]}))
-  assert.match(html,/<span>\+3<\/span><span class="record-money-fraction">\.20<\/span>/)
+  assert.match(html,/<strong>\+3\.20<\/strong>/)
 })
