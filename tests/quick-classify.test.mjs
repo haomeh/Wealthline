@@ -99,7 +99,7 @@ test('options follow the direction, and rule keywords stop before references, da
   assert.equal(quick.suggestKeyword('Advice Funds Transfer TOP-UP TO PAYLAH! : ZHAO HUI CHEN'), 'Advice Funds Transfer TOP-UP TO PAYLAH!')
   assert.equal(quick.suggestKeyword('存入利息 REF ZDD4-00088'), '存入利息')
   assert.equal(quick.suggestKeyword('/CCP/450307XXXXXX3278 REF B502-04559'), '')
-  assert.equal(quick.suggestKeyword('Debit Card Transaction SINGTEL PREPAID HI!ACC SI SGP 21SEP'), 'Debit Card Transaction SINGTEL PREPAID HI!ACC')
+  assert.equal(quick.suggestKeyword('Debit Card Transaction SINGTEL PREPAID HI!ACC SI SGP 21SEP'), 'Debit Card Transaction SINGTEL PREPAID')
 })
 
 const wait = (ms) => act(() => new Promise((r) => setTimeout(r, ms)))
@@ -126,7 +126,7 @@ test('the dialog shows one card at a time: a category classifies it and its twin
   await click(button('利息'))
   assert.deepEqual(changes.at(-1).bankTransactions.find((r) => r.id === 'interest').classification, { kind: 'income', category: '利息' })
   assert.equal(cardTitle(), 'Advice Funds Transfer TOP-UP TO PAYLAH! : ZHAO HUI CHEN')
-  assert.match(document.querySelector('.quick-extras').textContent, /摘要相同的另外 1 筆一起套用/)
+  assert.match(document.querySelector('.quick-extras').textContent, /摘要相似的另外 1 筆一起套用/)
   await click(button('自有帳戶轉帳'))
   // The twin was classified with it, so the next card is August's deposit.
   assert.equal(changes.at(-1).bankTransactions.find((r) => r.id === 'paylah2').classification.reason, '自有帳戶轉帳')
@@ -177,4 +177,50 @@ test('the bank ledger and the cashflow 未分類 tile open the cards', async () 
   await click([...tile.querySelectorAll('button')].find((b) => b.textContent === '快速分類'))
   // The shown month only: this month's bank row and card row, not 2020's.
   assert.match(document.querySelector('.quick-classify-head').textContent, /還有 2 筆未分類/)
+})
+
+// HSBC (SG) lines carry their own reference and account codes, so no two descriptions are equal.
+const hsbc = (id, ref, extra = {}) => bank(id, '2026-03-02', `SGV0${ref}JG5L33CW HIB- 26955X791141 zngkn 200319885 26955X791141 OTHR REF IB12-${ref}`, 'debit', extra)
+
+test('lines that differ only in references and account codes count as similar; the suggested keyword skips those codes', () => {
+  const d = data({ bankTransactions: [hsbc('h1', '45551'), hsbc('h2', '46210'), hsbc('h3', '47002'), bank('other', '2026-03-03', 'Interest Earned', 'debit')] })
+  assert.deepEqual(quick.similarPending(d, quick.quickItem(d, { source: 'bank', id: 'h1' })).map((r) => r.id), ['h2', 'h3'])
+  assert.equal(quick.descriptionShape('SGV02036JG5L33CW HIB- 26955X791141 zngkn 200319885 OTHR REF IB12-45551'), 'HIB- ZNGKN OTHR REF')
+  // Too little is left without the codes: only equal descriptions are similar.
+  assert.equal(quick.descriptionShape('/CCP/450307XXXXXX3278 REF B502-04559'), '/CCP/450307XXXXXX3278 REF B502-04559')
+  const keyword = quick.suggestKeyword(hsbc('x', '45551').description)
+  assert.ok(keyword && !/\d/.test(keyword), keyword)
+  assert.ok(hsbc('y', '99999').description.includes(keyword))
+})
+
+test('a rule from a card classifies every record it matches, even ones an earlier 未分類 rule or a hand-set 未分類 held back', () => {
+  const d = data({
+    bankTransactions: [hsbc('h1', '45551'), hsbc('h2', '46210'), hsbc('h3', '47002', { classification: { kind: 'pending' } }), bank('in', '2026-03-04', 'OTHR REF refund', 'credit')],
+    bankCategoryRules: [{ keyword: 'HIB-', target: { kind: 'pending' } }],
+  })
+  const item = quick.quickItem(d, { source: 'bank', id: 'h1' })
+  assert.equal(quick.keywordPending(d, item, 'OTHR REF'), 2)
+  const target = { kind: 'excluded', reason: '自有帳戶轉帳' }
+  const next = quick.applyQuickChoice(d, item, { source: 'bank', classification: target }, { ruleKeyword: 'OTHR REF' })
+  assert.deepEqual(next.bankCategoryRules.map((r) => r.keyword), ['OTHR REF', 'HIB-'])
+  assert.deepEqual(quick.quickQueue(next, ['bank']).map((r) => r.id), ['in'])
+  assert.deepEqual(next.bankTransactions.find((r) => r.id === 'h3').classification, target)
+  // Rows the rule itself now classifies keep following the rule.
+  assert.equal(next.bankTransactions.find((r) => r.id === 'h2').classification, undefined)
+})
+
+test('after a rule on a card, the cards it matched are passed over and the dialog says so', async () => {
+  const d = data({ bankTransactions: [hsbc('h1', '45551'), hsbc('h2', '46210'), bank('later', '2026-03-01', 'Quick Cheque Deposit', 'credit')] })
+  await host(QuickClassify, d, { sources: ['bank'], onClose() {} })
+  assert.match(cardTitle(), /IB12-45551/)
+  // Similar lines are on by default; turn that off to see the rule alone do the work.
+  const [similarBox, ruleBox] = document.querySelectorAll('.quick-check input')
+  await click(similarBox)
+  await click(ruleBox)
+  const input = document.querySelector('input[aria-label="快速分類規則關鍵字"]')
+  await act(() => { Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, 'value').set.call(input, 'OTHR REF'); input.dispatchEvent(new dom.window.Event('input', { bubbles: true })) })
+  assert.match(document.querySelector('.quick-keyword').textContent, /目前還有 1 筆未分類的摘要含這個關鍵字/)
+  await click(button('自有帳戶轉帳'))
+  assert.equal(cardTitle(), 'Quick Cheque Deposit')
+  assert.match(document.querySelector('.quick-notice').textContent, /另外 1 筆也一起分類了/)
 })

@@ -1,5 +1,5 @@
-import { BANK_EXCLUSION_REASONS, INCOME_CATEGORIES, classifyBankTransaction, normalizeBankKeyword, type BankCategoryRule, type BankTransaction, type Classification } from './bankTransactions'
-import { CARD_CATEGORIES, EXPENSE_CATEGORIES, cardCategoryOption, expenseCategory, parseExpenseCategoryRules, type CardCategory, type Expense } from './expenses'
+import { BANK_EXCLUSION_REASONS, INCOME_CATEGORIES, bankCategoryRuleIndex, classifyBankTransaction, normalizeBankKeyword, type BankCategoryRule, type BankTransaction, type Classification } from './bankTransactions'
+import { CARD_CATEGORIES, EXPENSE_CATEGORIES, cardCategoryOption, expenseCategory, expenseCategoryRuleIndex, parseExpenseCategoryRules, type CardCategory, type Expense } from './expenses'
 import { applyBankLedger } from './ledgerEdits'
 import { dataVersion } from './dataVersion'
 import type { WealthData } from './model'
@@ -37,22 +37,39 @@ export function quickQueue(data: WealthData, sources: readonly QuickSource[], in
 
 // The record a queue entry names, as it is now; undefined once removed.
 export function quickItem(data: WealthData, ref: QuickRef): QuickItem | undefined {
-  if (ref.source === 'bank') { const row = data.bankTransactions?.find((r) => r.id === ref.id); return row && { source: 'bank', row } }
-  const expense = data.expenses?.find((e) => e.id === ref.id)
-  return expense && { source: 'card', expense }
+  return quickLookup(data)(ref)
+}
+// quickItem for many entries of one data: records indexed once (a queue can hold thousands).
+export function quickLookup(data: WealthData): (ref: QuickRef) => QuickItem | undefined {
+  const bank = new Map((data.bankTransactions ?? []).map((r) => [r.id, r])), card = new Map((data.expenses ?? []).map((e) => [e.id, e]))
+  return (ref) => {
+    if (ref.source === 'bank') { const row = bank.get(ref.id); return row && { source: 'bank', row } }
+    const expense = card.get(ref.id)
+    return expense && { source: 'card', expense }
+  }
 }
 
-const sameText = (a: string, b: string) => normalizeBankKeyword(a).replace(/\s+/g, ' ').trim() === normalizeBankKeyword(b).replace(/\s+/g, ' ').trim()
+// Words that change from one line of a kind to the next: references, account numbers, dates, times, amounts.
+const VARYING = /\d{3,}|^\d{1,2}[A-Z]{3}\d{0,2}$|^[\d.,:/-]+$/i
+// A description without those words. Lines of one kind (the same transfer, the same merchant)
+// share it even when each carries its own reference, as HSBC and DBS lines do. When too little is
+// left to tell kinds apart, the whole description is used.
+export function descriptionShape(description: string): string {
+  const whole = normalizeBankKeyword(description).replace(/\s+/g, ' ').trim()
+  const shape = whole.split(' ').filter((w) => !VARYING.test(w)).join(' ')
+  return shape.replace(/[^\p{L}]/gu, '').length >= 4 ? shape : whole
+}
 
-// Other records still to classify with the same description, in the same direction (bank) or of
-// the same sign (card: spending or refund), which one choice can classify together.
+// Other records still to classify whose description has the same shape, in the same direction
+// (bank) or of the same sign (card: spending or refund), which one choice can classify together.
 export function similarPending(data: WealthData, item: QuickItem): QuickRef[] {
+  const shape = descriptionShape(quickDescription(item))
   if (item.source === 'bank') {
     const rules = data.bankCategoryRules ?? []
-    return (data.bankTransactions ?? []).filter((r) => r.id !== item.row.id && r.direction === item.row.direction && sameText(r.description, item.row.description) && classifyBankTransaction(r, rules).kind === 'pending').map((r) => ({ source: 'bank', id: r.id }))
+    return (data.bankTransactions ?? []).filter((r) => r.id !== item.row.id && r.direction === item.row.direction && descriptionShape(r.description) === shape && classifyBankTransaction(r, rules).kind === 'pending').map((r) => ({ source: 'bank', id: r.id }))
   }
   const rules = data.expenseCategoryRules ?? []
-  return (data.expenses ?? []).filter((e) => e.id !== item.expense.id && (e.amount < 0) === (item.expense.amount < 0) && sameText(e.description, item.expense.description) && expenseCategory(e, rules) === '未分類').map((e) => ({ source: 'card', id: e.id }))
+  return (data.expenses ?? []).filter((e) => e.id !== item.expense.id && (e.amount < 0) === (item.expense.amount < 0) && descriptionShape(e.description) === shape && expenseCategory(e, rules) === '未分類').map((e) => ({ source: 'card', id: e.id }))
 }
 
 const bankOption = (classification: Classification, label: string): QuickOption => ({
@@ -83,37 +100,72 @@ export function quickChosenKey(item: QuickItem): string | undefined {
   return !c || c.kind === 'pending' ? undefined : bankOption(c, '').key
 }
 
-// A rule keyword from a description: its leading words, up to the first that looks like a
-// reference, date, amount or name separator, so a rule matches the next statement's lines too
-// and does not keep account numbers or names.
+// A rule keyword from a description: the longest run of words with no reference, account number,
+// date or amount in it, before any name separator (:), so a rule matches the next statement's
+// lines too and keeps no account numbers or names. A rule matches text the description contains,
+// so the keyword is always one unbroken part of it. Empty when nothing useful is left.
 export function suggestKeyword(description: string): string {
-  const words: string[] = []
+  const runs: string[][] = [[]]
   for (const word of description.trim().split(/\s+/)) {
-    if (/\d{3,}|^:|^REF\b|^VALUE\b|\d{1,2}[A-Z]{3}\d{0,2}$/i.test(word) || (words.length && /[:：]$/.test(words.at(-1)!))) break
-    words.push(word)
-    if (words.join(' ').length >= 40 || words.length >= 6) break
+    if (/^[:：]/.test(word)) break
+    const separator = /[:：]$/.test(word)
+    if (VARYING.test(word)) runs.push([])
+    else {
+      // A run stops at six words or 40 characters; the next word starts another, so each stays one unbroken part.
+      const text = separator ? word.slice(0, -1) : word, run = runs.at(-1)!
+      if (run.length < 6 && [...run, text].join(' ').length <= 40) run.push(text)
+      else runs.push([text])
+    }
+    if (separator) break
   }
-  return words.join(' ').replace(/[:：]$/, '').slice(0, 100)
+  const texts = runs.map((run) => {
+    while (run.length && /^(REF|VALUE|DATE)$/i.test(run.at(-1)!)) run.pop()
+    return run.join(' ')
+  })
+  const best = texts.reduce((a, b) => b.length > a.length ? b : a, '')
+  return best.replace(/[^\p{L}]/gu, '').length >= 3 ? best : ''
+}
+
+// How many other records still to classify a rule with `keyword` would match (same direction for bank rows).
+export function keywordPending(data: WealthData, item: QuickItem, keyword: string): number {
+  const word = keyword.trim()
+  if (!word) return 0
+  if (item.source === 'bank') {
+    const rules = data.bankCategoryRules ?? [], rule = { keyword: word, direction: item.row.direction, target: { kind: 'pending' } as Classification }
+    return (data.bankTransactions ?? []).filter((r) => r.id !== item.row.id && bankCategoryRuleIndex(r, [rule]) === 0 && classifyBankTransaction(r, rules).kind === 'pending').length
+  }
+  const rules = data.expenseCategoryRules ?? []
+  return (data.expenses ?? []).filter((e) => e.id !== item.expense.id && expenseCategoryRuleIndex(e.description, [{ keyword: word, category: '未分類' }]) === 0 && expenseCategory(e, rules) === '未分類').length
 }
 
 // Classifies the record (and `alsoIds`, records of the same source) by hand. With `ruleKeyword`,
-// also adds a rule so later records whose description contains it get the same classification.
-// Throws when the result is not valid (for example a keyword with a personal identifier).
+// also adds a rule so records whose description contains it get the same classification, now and
+// in later imports. Records the keyword matches that the rule still leaves unclassified (another
+// rule matched first, or 未分類 was picked by hand) are classified by hand too, so none is left
+// for another card. Throws when the result is not valid (for example a keyword with a personal identifier).
 export function applyQuickChoice(data: WealthData, item: QuickItem, choice: QuickChoice, options: { alsoIds?: readonly string[]; ruleKeyword?: string } = {}): WealthData {
   const ids = new Set([quickId(item), ...(options.alsoIds ?? [])])
   const keyword = options.ruleKeyword?.trim()
   if (item.source === 'bank' && choice.source === 'bank') {
-    const rule: BankCategoryRule | undefined = keyword ? { keyword, direction: item.row.direction, target: choice.classification } : undefined
+    const current = data.bankCategoryRules ?? []
+    if (!keyword) return applyBankLedger(data, { transactions: (data.bankTransactions ?? []).map((r) => ids.has(r.id) ? { ...r, classification: choice.classification } : r) })
+    const rule: BankCategoryRule = { keyword, direction: item.row.direction, target: choice.classification }
+    // The first matching rule wins: the new rule goes before any rule that only leaves rows 未分類.
+    const at = current.findIndex((r) => r.target.kind === 'pending')
+    const rules = at < 0 ? [...current, rule] : [...current.slice(0, at), rule, ...current.slice(at)]
+    const matches = (r: BankTransaction) => bankCategoryRuleIndex(r, [rule]) === 0
     return applyBankLedger(data, {
-      transactions: (data.bankTransactions ?? []).map((r) => ids.has(r.id) ? { ...r, classification: choice.classification } : r),
-      ...(rule && { rules: [...(data.bankCategoryRules ?? []), rule] }),
+      rules,
+      transactions: (data.bankTransactions ?? []).map((r) => ids.has(r.id) || (matches(r) && classifyBankTransaction(r, rules).kind === 'pending') ? { ...r, classification: choice.classification } : r),
     })
   }
   if (item.source === 'card' && choice.source === 'card') {
+    const rules = keyword ? parseExpenseCategoryRules([...(data.expenseCategoryRules ?? []), { keyword, category: choice.category }]) : data.expenseCategoryRules ?? []
+    const matches = (e: Expense) => !!keyword && expenseCategoryRuleIndex(e.description, [{ keyword, category: choice.category }]) === 0 && expenseCategory(e, rules) === '未分類'
     const next: WealthData = {
       ...data,
-      expenses: (data.expenses ?? []).map((e) => ids.has(e.id) ? { ...e, category: choice.category } : e),
-      ...(keyword && { expenseCategoryRules: parseExpenseCategoryRules([...(data.expenseCategoryRules ?? []), { keyword, category: choice.category }]) }),
+      expenses: (data.expenses ?? []).map((e) => ids.has(e.id) || matches(e) ? { ...e, category: choice.category } : e),
+      ...(keyword && { expenseCategoryRules: rules }),
     }
     return { ...next, version: dataVersion(next, { minimumVersion: keyword ? 11 : 10 }) }
   }
