@@ -18,8 +18,9 @@ export interface QuantityEditRequest { focusKey?:string; mode?:'baseline'; date:
 const nameOf = (e: QuantityEntry) => `${e.account} · ${e.symbol || e.currency} · ${e.currency}`
 const stamp = () => new Date().toISOString()
 
-export function QuantityHistory({ data, busy = false, onChange, request: editing, onRequest: setEditing, displayDays }: {
+export function QuantityHistory({ data, busy = false, onChange, request: editing, onRequest: setEditing, displayDays, carried }: {
   data: WealthData; busy?: boolean; onChange: (d: WealthData) => void; displayDays?: QuantityDay[];
+  carried?: (date: string, entry: QuantityEntry) => { value: number; note: string } | undefined;
   request?: QuantityEditRequest; onRequest: (request: QuantityEditRequest | undefined) => void;
 }) {
   const [undo, setUndo] = useState<{ before: {days?:QuantityDay[];periods?:HoldingPeriod[]}; after: {days?:QuantityDay[];periods?:HoldingPeriod[]} } | null>(null)
@@ -59,7 +60,7 @@ export function QuantityHistory({ data, busy = false, onChange, request: editing
       {!days.length ? <p className="muted">尚未單日補登。舊每日快照只有總額，無法還原各持倉數量。</p> : <label className="field"><span>篩選已補登帳戶</span><select value={activeFilter} onChange={e => setFilter(e.target.value)}><option value="">全部帳戶</option>{accounts.map(([id,name]) => <option key={id} value={id}>{name}</option>)}</select></label>}
       {[...days].reverse().filter(day => !activeFilter || day.entries.some(e => e.accountId === activeFilter)).map(day => <details className="quantity-day" key={day.date}>
         <summary>{day.date}{day.inventory ? ' · 完整回補' : day.completion ? ' · 當日補齊' : ''} · {day.entries.filter(e => (!activeFilter || e.accountId === activeFilter) && e.quantity !== null).length} 項已填數量</summary>
-        <div className="quantity-rows">{(displayDays?.find(d => d.date === day.date)?.entries ?? day.entries).filter(e => !activeFilter || e.accountId === activeFilter).map(entry => <QuantityRecord key={instrumentKey(entry)} entry={entry} actions={
+        <div className="quantity-rows">{(displayDays?.find(d => d.date === day.date)?.entries ?? day.entries).filter(e => !activeFilter || e.accountId === activeFilter).map(entry => <QuantityRecord key={instrumentKey(entry)} entry={entry} carried={carried?.(day.date, entry)} actions={
           <button disabled={busy} title="編輯這項數量" data-history-entry={`item:${day.date}:${instrumentKey(entry)}`} aria-label={`編輯 ${day.date} ${nameOf(entry)}`} onClick={() => setEditing({ date: day.date, expected: day, entryKey: instrumentKey(entry),focusKey:`item:${day.date}:${instrumentKey(entry)}` })}><ActionIcon name="edit" /></button>
         } />)}</div>
         <div className="row"><button disabled={busy} data-history-entry={`list:${day.date}`} onClick={() => setEditing({ date: day.date, mode:'baseline', expected: day,focusKey:`list:${day.date}` })}>編輯 {day.date}</button><button disabled={busy} className="danger" onClick={() => {
@@ -265,12 +266,14 @@ export function Valuation({ entry: e, showValue = true }: { entry: QuantityEntry
   )
 }
 
-export function QuantityRecord({ entry, actions }: { entry: QuantityEntry; actions: ReactNode }) {
-  const value = entryValue(entry)
+// `carried`: the earlier value the day's total uses when this entry is unknown (carriedEntry).
+export function QuantityRecord({ entry, actions, carried }: { entry: QuantityEntry; actions: ReactNode; carried?: { value: number; note: string } }) {
+  const value = entryValue(entry) ?? carried?.value ?? null
   const title = `${accountLabel({name:entry.account,country:entry.country})} · ${entry.symbol || entry.currency}${entry.symbol ? ` · ${entry.currency}` : ''}`
-  return <DetailRecord className="quantity-record" title={title} label={`查看來源 ${title}`} actions={actions}
+  return <DetailRecord className="quantity-record" title={title} label={`查看來源 ${title}`} actions={actions} meta={carried?.note}
     value={value === null ? <strong className="record-unknown">估值未知</strong> : <RecordMoney currency="NT$" amount={value} sign={value < 0 ? '−' : ''} />}>
     <p>{title}</p>
+    {carried && <p className="muted small">這天沒有這項的數量或行情，總資產{carried.note}的金額。可按編輯補登這天的實際數量。</p>}
     <p>數量 {entry.quantity === null ? '未知' : fmt(entry.quantity, 8)}{entry.quantityAsOf && ` · 數量基準 ${entry.quantityAsOf}`}</p>
     <Valuation entry={entry} showValue={false} />
   </DetailRecord>
