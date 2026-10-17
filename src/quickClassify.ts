@@ -52,12 +52,19 @@ export function quickLookup(data: WealthData): (ref: QuickRef) => QuickItem | un
 // Words that change from one line of a kind to the next: references, account numbers, dates, times, amounts.
 const VARYING = /\d{3,}|^\d{1,2}[A-Z]{3}\d{0,2}$|^[\d.,:/-]+$/i
 // A description without those words. Lines of one kind (the same transfer, the same merchant)
-// share it even when each carries its own reference, as HSBC and DBS lines do. When too little is
-// left to tell kinds apart, the whole description is used.
+// share it even when each carries its own reference, as HSBC and DBS lines do. A word that only
+// ends in a number (SHOP1234, SHOPEE*12345678, IB12-45551) keeps the letters before it, so two
+// merchants stay apart. When the whole words left are too few to tell kinds apart, the whole
+// description is used.
 export function descriptionShape(description: string): string {
   const whole = normalizeBankKeyword(description).replace(/\s+/g, ' ').trim()
-  const shape = whole.split(' ').filter((w) => !VARYING.test(w)).join(' ')
-  return shape.replace(/[^\p{L}]/gu, '').length >= 4 ? shape : whole
+  const kept: string[] = [], letters: string[] = []
+  for (const w of whole.split(' ')) {
+    if (!VARYING.test(w)) { kept.push(w); letters.push(w); continue }
+    const head = /\d{3,}/.test(w) ? w.slice(0, w.search(/\d/)) : ''
+    if (/\p{L}/u.test(head)) kept.push(head)
+  }
+  return letters.join('').replace(/[^\p{L}]/gu, '').length >= 4 ? kept.join(' ') : whole
 }
 
 // Other records still to classify whose description has the same shape, in the same direction

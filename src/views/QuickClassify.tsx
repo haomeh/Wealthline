@@ -79,8 +79,9 @@ export function QuickClassify({ data, onChange, busy, sources, inRange, onClose 
       <button type="button" className="quick-classify-close" aria-label="關閉快速分類" onClick={onClose}>✕</button>
     </header>
     {queue.length > 0 && <div className="quick-classify-progress" role="progressbar" aria-label="分類進度" aria-valuemin={0} aria-valuemax={queue.length} aria-valuenow={queue.length - remaining}><i style={{ width: `${(queue.length - remaining) / queue.length * 100}%` }} /></div>}
+    {/* Also on the done screen: a rule can classify every card left at once. */}
+    {notice && <p role="status" className="quick-notice">{notice}</p>}
     {item ? <>
-      {notice && <p role="status" className="quick-notice">{notice}</p>}
       <QuickCard key={id} item={item} account={item.source === 'bank' ? accounts.get(item.row.accountId) ?? '未辨識帳戶' : item.expense.card || '未命名卡片'} />
       {groups.map((group, g) => {
         const options = <div className="quick-options">{group.options.map((o, i) => <button key={o.key} type="button" className={`chip${chosen === o.key ? ' on' : ''}`} aria-pressed={chosen === o.key} disabled={busy} onClick={() => choose(o.choice)}>
