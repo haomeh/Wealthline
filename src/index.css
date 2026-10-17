@@ -3212,8 +3212,12 @@ dialog.expense-rule-dialog { max-width: 440px; }
 .detail-record-value { flex-shrink: 0; text-align: right; font-size: 14px; line-height: 20px; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .record-money { display: inline-flex; align-items: baseline; gap: 4px; }
 .record-money small { color: var(--ink-2); font-size: 11px; }
-.record-money strong { font-weight: 600; }
-.record-money[data-refund="true"], .record-money[data-direction="credit"] { color: var(--good); }
+/* Right-aligned figure with a fixed slot after the decimal point: whole amounts leave it empty,
+   so the digits and decimal points of every row share columns, and so do the currency codes
+   (min-width) unless an amount is unusually long. */
+.record-money strong { display: inline-flex; justify-content: flex-end; min-width: 8ch; font-weight: 600; font-variant-numeric: lining-nums tabular-nums; }
+.record-money-fraction { display: inline-block; min-width: 3ch; text-align: left; }
+.record-money[data-tone="credit"] { color: var(--good); }
 .record-unknown { color: var(--critical); font-size: 13px; }
 .detail-record-actions { position: absolute; top: 4px; right: 0; display: flex; justify-content: end; min-width: 0; }
 .detail-record-actions:empty { display: none; }
@@ -3266,6 +3270,16 @@ dialog.expense-rule-dialog { max-width: 440px; }
   .detail-record-value { text-align: left; }
   .detail-record-actions { top: 24px; }
   .statement-preview-select { padding-top: 32px; }
+  /* A row with a second line (category): the description takes the whole first line, the
+     category and the amount share the second, the amount at the right so the figures of all
+     rows stay in one column. */
+  .detail-record:not([data-swipe]):has(.detail-record-subtitle) .detail-record-details > summary { grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: auto auto; gap: 2px 8px; min-height: 52px; padding: 4px 0; }
+  .detail-record:not([data-swipe]):has(> .detail-record-actions > button):has(.detail-record-subtitle) .detail-record-details > summary { padding-right: calc(var(--record-action-space) + 4px); }
+  .detail-record:not([data-swipe]) .detail-record-main:has(> .detail-record-subtitle) { display: contents; }
+  .detail-record:not([data-swipe]):has(.detail-record-subtitle) .detail-record-heading { grid-column: 1 / -1; }
+  .detail-record:not([data-swipe]):has(.detail-record-subtitle) .detail-record-secondary { min-height: 0; padding-right: 0; }
+  .detail-record:not([data-swipe]):has(.detail-record-subtitle) .detail-record-value { text-align: right; }
+  .detail-record:not([data-swipe]):has(.detail-record-subtitle) > .detail-record-actions { top: 8px; }
   .statement-preview-row .detail-record-actions { top: 20px; }
   .statement-preview-row .detail-record .detail-record-details > summary { padding-right: 0; }
   .liability-record .liability-details { grid-template-columns: auto minmax(0, 1fr); gap: 8px 16px; }
@@ -3341,11 +3355,6 @@ dialog.expense-rule-dialog { max-width: 440px; }
 .cashflow-records[open] > summary::before { content: '▾' / ''; }
 .cashflow-records > summary + * { margin-top: 12px; }
 .cashflow-records > button.link { margin-top: 10px; font-size: 14px; }
-/* Amounts of the records read from a common left edge (phones already stack them left); only inside this page, the record rows are shared. */
-@media (min-width: 641px) {
-  .cashflow-records-tile .detail-record-details > summary { grid-template-columns: minmax(0, 1fr) 152px; }
-  .cashflow-records-tile .detail-record-value { text-align: left; }
-}
 .cashflow-category-rows { list-style: none; margin: 0; padding: 0; font-size: 14px; }
 .cashflow-category-rows li { display: grid; grid-template-columns: 10px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 8px 0; border-top: 1px solid var(--hairline); }
 .cashflow-category-rows i { width: 10px; height: 10px; border-radius: 4px; }

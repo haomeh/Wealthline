@@ -3,11 +3,18 @@ import { validDate } from './quantityHistory'
 
 export const EXPENSE_CATEGORIES = ['餐飲','交通','購物','旅遊住宿','娛樂','數位服務','生活繳費','醫療','政府規費','未分類'] as const
 export type ExpenseCategory = typeof EXPENSE_CATEGORIES[number]
-export interface ExpenseCategoryRule { keyword: string; category: ExpenseCategory }
+// 帳戶移轉: a card line that moves money between the user's own accounts (a payment, a balance
+// transfer). Only card rows take it; it counts as neither consumption nor income (不計收支).
+export const CARD_TRANSFER = '帳戶移轉'
+export const CARD_CATEGORIES = ['餐飲','交通','購物','旅遊住宿','娛樂','數位服務','生活繳費','醫療','政府規費',CARD_TRANSFER,'未分類'] as const
+export type CardCategory = typeof CARD_CATEGORIES[number]
+/** Option text in category pickers. */
+export const cardCategoryOption = (category: CardCategory) => category === CARD_TRANSFER ? `${CARD_TRANSFER}（不計收支）` : category
+export interface ExpenseCategoryRule { keyword: string; category: CardCategory }
 export function parseExpenseCategoryRules(raw: unknown): ExpenseCategoryRule[] {
   if(!Array.isArray(raw) || raw.length > 100) throw new Error('分類規則必須是陣列，最多 100 筆')
   return raw.map(rule=>{
-    if(!rule || typeof rule.keyword !== 'string' || !categoryText(rule.keyword) || rule.keyword.length > 100 || !EXPENSE_CATEGORIES.includes(rule.category)) throw new Error('分類規則需填寫關鍵字（最多 100 字）與有效類別')
+    if(!rule || typeof rule.keyword !== 'string' || !categoryText(rule.keyword) || rule.keyword.length > 100 || !CARD_CATEGORIES.includes(rule.category)) throw new Error('分類規則需填寫關鍵字（最多 100 字）與有效類別')
     return {keyword:rule.keyword.trim(),category:rule.category}
   })
 }
@@ -29,7 +36,7 @@ export function expenseCategoryRuleIndex(description:string,rules:readonly Expen
   return rules.findIndex(rule=>merchant.includes(categoryText(rule.keyword)))
 }
 
-export function expenseCategoryEvidence(e: Pick<Expense,'description'|'category'>, rules: readonly ExpenseCategoryRule[] = []): {category: ExpenseCategory; evidence: ClassificationEvidence} {
+export function expenseCategoryEvidence(e: Pick<Expense,'description'|'category'>, rules: readonly ExpenseCategoryRule[] = []): {category: CardCategory; evidence: ClassificationEvidence} {
   if(e.category) return {category:e.category,evidence:{basis:'manual'}}
   const merchant = categoryText(e.description)
   const custom = rules[expenseCategoryRuleIndex(e.description,rules)]
@@ -40,7 +47,7 @@ export function expenseCategoryEvidence(e: Pick<Expense,'description'|'category'
   }
   return {category:'未分類',evidence:{basis:'unclassified'}}
 }
-export function expenseCategory(e: Pick<Expense,'description'|'category'>, rules: readonly ExpenseCategoryRule[] = []): ExpenseCategory {
+export function expenseCategory(e: Pick<Expense,'description'|'category'>, rules: readonly ExpenseCategoryRule[] = []): CardCategory {
   return expenseCategoryEvidence(e,rules).category
 }
 
@@ -51,7 +58,7 @@ export interface Expense {
   amount: number // positive spending, negative refund; never modifies balances
   currency: string
   card: string // user-defined bank/card label, no full card number required
-  category?: ExpenseCategory // only manual overrides are stored; absent means infer from merchant
+  category?: CardCategory // only manual overrides are stored; absent means infer from merchant
   sourceKey?: string
   importKey?: string
 }
@@ -61,6 +68,8 @@ export function expenseMonthSummary(expenses: Expense[], month: string, rules: E
   const currencies = new Map<string, {currency:string;count:number;spending:number;refunds:number;net:number;cards:Map<string,{card:string;count:number;net:number}>;categories:Map<ExpenseCategory,{category:ExpenseCategory;spending:number;refunds:number;net:number}>}>()
   for(const e of expenses) {
     if(e.date.slice(0,7)!==month) continue
+    const category = expenseCategory(e,rules)
+    if(category===CARD_TRANSFER) continue
     const group = currencies.get(e.currency) ?? {currency:e.currency,count:0,spending:0,refunds:0,net:0,cards:new Map(),categories:new Map()}
     group.count++
     group.spending += Math.max(0,e.amount)
@@ -69,7 +78,6 @@ export function expenseMonthSummary(expenses: Expense[], month: string, rules: E
     const card = group.cards.get(e.card) ?? {card:e.card,count:0,net:0}
     card.count++;card.net += e.amount
     group.cards.set(e.card,card)
-    const category = expenseCategory(e,rules)
     const totals = group.categories.get(category) ?? {category,spending:0,refunds:0,net:0}
     totals.spending += Math.max(0,e.amount);totals.refunds += Math.max(0,-e.amount);totals.net += e.amount
     group.categories.set(category,totals)
@@ -78,14 +86,14 @@ export function expenseMonthSummary(expenses: Expense[], month: string, rules: E
   return [...currencies.values()].sort((a,b)=>a.currency.localeCompare(b.currency)).map(g=>({...g,cards:[...g.cards.values()].sort((a,b)=>b.net-a.net),categories:[...g.categories.values()].sort((a,b)=>b.spending-a.spending)}))
 }
 
-export function expenseTrend(expenses: Expense[], endMonth: string, count: number) {
+export function expenseTrend(expenses: Expense[], endMonth: string, count: number, rules: ExpenseCategoryRule[] = []) {
   if(!/^\d{4}-(0[1-9]|1[0-2])$/.test(endMonth) || ![1,3,6,12].includes(count)) throw new Error('支出分析期間無效')
   const [year,month] = endMonth.split('-').map(Number)
   const months = Array.from({length:count},(_,i)=>{
     const date = new Date(Date.UTC(year,month-count+i,1))
     return date.toISOString().slice(0,7)
   })
-  const summaries = months.map(m=>expenseMonthSummary(expenses,m))
+  const summaries = months.map(m=>expenseMonthSummary(expenses,m,rules))
   const currencies = [...new Set(summaries.flatMap(groups=>groups.map(g=>g.currency)))].sort()
   return currencies.map(currency=>{
     const points = months.map((month,i)=>({month,net:summaries[i].find(g=>g.currency===currency)?.net ?? null}))
@@ -103,7 +111,7 @@ export function parseExpense(raw: unknown): Expense {
   if (typeof e.card !== 'string' || !e.card.trim() || e.card.length > 100) throw new Error('請填寫銀行／卡片名稱（最多 100 字）')
   if (typeof e.amount !== 'number' || !Number.isFinite(e.amount) || Math.abs(e.amount) > 1e12) throw new Error('消費金額無效')
   if (typeof e.currency !== 'string' || !/^[A-Z]{3}$/.test(e.currency)) throw new Error('消費幣別必須是三碼，如 TWD')
-  if(e.category!==undefined && !EXPENSE_CATEGORIES.includes(e.category)) throw new Error('消費類別無效')
+  if(e.category!==undefined && !CARD_CATEGORIES.includes(e.category)) throw new Error('消費類別無效')
   for (const key of ['sourceKey','importKey'] as const) if (e[key] !== undefined && (typeof e[key] !== 'string' || !/^[a-f0-9]{64}$/.test(e[key]))) throw new Error('消費匯入識別碼無效')
   return {id:e.id, date:e.date, description:e.description.trim(), amount:e.amount, currency:e.currency, card:e.card.trim(), ...(e.category!==undefined && {category:e.category}), ...(e.sourceKey && {sourceKey:e.sourceKey}), ...(e.importKey && {importKey:e.importKey})}
 }

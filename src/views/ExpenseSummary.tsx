@@ -13,7 +13,7 @@ export function ExpenseSummary({expenses,now,onGoExpenses,rules = []}: {expenses
   const month = selectedMonth || currentMonth
   const months = [...new Set([currentMonth,month,...expenses.map(e=>e.date.slice(0,7))])].sort().reverse()
   const groups = expenseMonthSummary(expenses,month,rules)
-  const trend = expenseTrend(expenses,month,period)
+  const trend = expenseTrend(expenses,month,period,rules)
   const rows = expenses.filter(e=>e.date.slice(0,7)===month).sort((a,b)=>b.date.localeCompare(a.date))
   const timeline = [...months].reverse()
   const index = timeline.indexOf(month)

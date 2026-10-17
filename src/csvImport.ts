@@ -3,7 +3,7 @@
 // Files are read in the browser only. A file with any invalid row is rejected as a whole.
 
 import { BANK_EXCLUSION_REASONS, INCOME_CATEGORIES, type Classification } from './bankTransactions'
-import { EXPENSE_CATEGORIES, isUnrecognizedMerchant, type ExpenseCategory } from './expenses'
+import { CARD_CATEGORIES, EXPENSE_CATEGORIES, isUnrecognizedMerchant, type CardCategory, type ExpenseCategory } from './expenses'
 import { isSupportedCurrency } from './currencies'
 import { validDate } from './quantityHistory'
 
@@ -147,7 +147,7 @@ export interface CardCsvRow {
   amount: number
   currency: string
   card: string
-  category?: ExpenseCategory
+  category?: CardCategory
   statementMonth?: string
   statementTotal?: number
 }
@@ -169,8 +169,8 @@ export function readCardCsv(textContent: string): { rows: CardCsvRow[]; checks: 
     if (/^\d{12,19}$/.test(row.card.replace(/[\s-]/g, ''))) problems.push('卡片名稱不要填完整卡號')
     if (row.description && isUnrecognizedMerchant(row.description)) problems.push('商家／說明無法辨識')
     if (cells.category) {
-      if ((EXPENSE_CATEGORIES as readonly string[]).includes(cells.category)) row.category = cells.category as ExpenseCategory
-      else problems.push(`分類必須是 ${EXPENSE_CATEGORIES.join('、')} 之一`)
+      if ((CARD_CATEGORIES as readonly string[]).includes(cells.category)) row.category = cells.category as CardCategory
+      else problems.push(`分類必須是 ${CARD_CATEGORIES.join('、')} 之一`)
     }
     if (cells.statement_month) {
       if (/^\d{4}-(0[1-9]|1[0-2])$/.test(cells.statement_month)) row.statementMonth = cells.statement_month

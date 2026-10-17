@@ -16,6 +16,7 @@ import { type QueuedImport } from './ImportSteps'
 import { BankTransactionEditor } from './BankTransactionEditor'
 import { BANK_TEXT_NOTICE, classificationLabel, classificationTag } from './bankUiHelpers'
 import { fmt } from '../format'
+import { RecordMoney } from './RecordMoney'
 import { ActionIcon } from './ActionIcon'
 import { DetailRecord, type RecordProps } from './DetailRecord'
 
@@ -215,7 +216,8 @@ export function BankRecord({row,account,rules,busy=false,date,showTag=false,reve
  }
  return <DetailRecord className="bank-record" title={row.description} label={`查看流水 ${row.date} ${row.description}`} articleProps={swipe}
   subtitle={tag&&<>{date&&<><time dateTime={date}>{Number(date.slice(8))} 日</time><span className="bank-record-account">{account}</span></>}<span className={`tag${tag.tone?` ${tag.tone}`:''}`}>{tag.text}</span></>}
-  value={<span className="record-money" data-direction={row.direction} aria-label={`${direction} ${row.currency} ${fmt(row.amount)}`}><small>{row.currency}</small><strong>{row.direction==='credit'?'+':'−'}{fmt(row.amount)}</strong></span>}
+  // 不計收支 rows are not income, so a credited one is not green.
+  value={<RecordMoney currency={row.currency} amount={row.amount} sign={row.direction==='credit'?'+':'−'} tone={row.direction==='credit'&&classifyBankTransaction(row,rules).kind!=='excluded'?'credit':undefined} label={`${direction} ${row.currency} ${fmt(row.amount)}`} />}
   actions={onEdit && <>
    {onRule && <button type="button" className="bank-record-rule" data-pending={classifyBankTransaction(row,rules).kind==='pending'||undefined} disabled={busy} aria-label={`分類規則：${category}`} title="編輯匹配規則／新增規則" onClick={onRule}><span className="swipe-icon"><ActionIcon name="tag"/></span></button>}
    <button type="button" disabled={busy} aria-label={`編輯流水 ${row.id}`} title="編輯流水" onClick={onEdit}><span className="swipe-icon"><ActionIcon name="edit"/></span></button>
