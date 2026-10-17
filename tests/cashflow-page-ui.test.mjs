@@ -61,6 +61,26 @@ test('picking a bar swaps the numbers at once, without the page emptying while r
   } finally { Date.now = realNow }
 })
 
+test('picking a bar opens that month\'s records with their totals, like picking a tile', async () => {
+  const realNow = Date.now; Date.now = () => new Date('2026-05-20T00:00:00Z').getTime()
+  try {
+    await open()
+    const records = () => document.querySelector('.cashflow-records-tile')
+    const opened = () => [...records().querySelectorAll('details.cashflow-records')].map((d) => d.open)
+    assert.deepEqual(opened(), [false, false], 'the first view keeps the records folded')
+    await act(() => bar(4).click())
+    assert.equal(records().getAttribute('aria-label'), '2026 年 4 月明細')
+    assert.deepEqual(opened(), [true, true], 'the picked month\'s records show without another click')
+    assert.match(records().querySelector('[data-filtered-total]').textContent, /收入 2,000\.00/, 'the totals use the rates the bars already have')
+    assert.doesNotMatch(records().textContent, /等待完整匯率/)
+    assert.notEqual(document.activeElement, records().querySelector('h3'), 'focus stays on the chart')
+    await act(() => bar(5).click())
+    assert.equal(records().getAttribute('aria-label'), '2026 年 5 月明細')
+    assert.deepEqual(opened(), [true, true])
+    assert.match(records().querySelector('[data-filtered-total]').textContent, /收入 6,000\.00/)
+  } finally { Date.now = realNow }
+})
+
 test('a month without records keeps the year chart and says it is empty', async () => {
   const realNow = Date.now; Date.now = () => new Date('2026-05-20T00:00:00Z').getTime()
   try {

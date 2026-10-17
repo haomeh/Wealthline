@@ -71,6 +71,8 @@ function LiveCashflow({ data, onChange, busy = false, dirty, sessionIdentity, ca
   // A year or 全部期間 URL names no month: the last month chosen stays in the local selection.
   const selection = {range:query.range,year:query.year??(query.month?Number(query.month.slice(0,4)):localPeriod.selection.year),month:query.month?Number(query.month.slice(5,7)):localPeriod.selection.month}
   const choose = (next:CashflowQuery)=>{setFocusSelection(n=>n+1);onQuery(next)}
+  // A picked bar opens that month's records below, as a picked tile does, but keeps focus on the chart.
+  const [barPicked, setBarPicked] = useState(false)
   const period:CashflowPeriodState = {...localPeriod,selection,isCurrentMonth:query.range==='month'&&query.month===currentMonth,endMonth:monthKey(selection.year,selection.range==='year'?12:selection.month),period:selection.range==='all'?'all':selection.range==='year'?12:1,label:selection.range==='all'?'全部期間':`${selection.year} 年${selection.range==='month'?` ${selection.month} 月`:''}`,setSelection: action=>{
     const next=typeof action==='function'?action(selection):action
     localPeriod.setSelection(next)
@@ -88,6 +90,8 @@ function LiveCashflow({ data, onChange, busy = false, dirty, sessionIdentity, ca
   const barsNow = bars.groups[0]
   const monthGroup = useMemo(() => period.selection.range === 'month' ? monthOf(barsNow, period.endMonth) : undefined, [barsNow, period.selection.range, period.endMonth])
   const group = monthGroup ?? groups[0]
+  // The records use the same rates, so their totals show with the tiles instead of after the month's own conversion.
+  const recordFx = monthGroup ? bars.fx : fx
   // While a new period converts, the last numbers stay up (dimmed) instead of the page emptying and refilling.
   // Not kept when the period simply has no records: that must show as empty.
   const [kept, setKept] = useState<{ group?: CashflowCurrencySummary; bars?: CashflowCurrencySummary }>({})
@@ -172,7 +176,7 @@ function LiveCashflow({ data, onChange, busy = false, dirty, sessionIdentity, ca
         {/* Stays up when the chosen month has no records, so the other months remain visible. */}
         <section className={`panel ${shown ? 'span-3' : 'span-4'} cashflow-bars-tile`} aria-label={trend.title}>
           <div className="panel-head"><h3>{trend.title}</h3><div className="cashflow-bars-legend"><span><i style={{ background: 'var(--s2)' }} />收入</span><span><i style={{ background: 'var(--s1)' }} />消費</span></div></div>
-          {shownBars ? <MonthBars group={shownBars} selected={period.selection.range === 'month' ? period.endMonth : ''} onSelect={period.showMonth} /> : <p className="muted small">{bars.loading ? '正在換算每月匯率…' : '無法顯示月份對照。'}</p>}
+          {shownBars ? <MonthBars group={shownBars} selected={period.selection.range === 'month' ? period.endMonth : ''} onSelect={month => { setBarPicked(true); period.showMonth(month) }} /> : <p className="muted small">{bars.loading ? '正在換算每月匯率…' : '無法顯示月份對照。'}</p>}
         </section>
         {shown && <>
           <section className="panel cashflow-categories-tile" aria-label="消費分類">
@@ -183,7 +187,7 @@ function LiveCashflow({ data, onChange, busy = false, dirty, sessionIdentity, ca
 
         </>}
       </div>}
-      <CashflowRecords editing={editing} query={query} fx={fx} readiness={readiness} ledgerError={ledgerError} onRetry={onRetryLedger} onQuery={onQuery} focusSelection={focusSelection} period={period} data={data} loading={readiness!=='ready'} onGoExpenses={onGoExpenses} onGoBankTransactions={onGoBankTransactions} />
+      <CashflowRecords editing={editing} query={query} fx={recordFx} readiness={readiness} ledgerError={ledgerError} onRetry={onRetryLedger} onQuery={onQuery} focusSelection={focusSelection} expand={barPicked} period={period} data={data} loading={readiness!=='ready'} onGoExpenses={onGoExpenses} onGoBankTransactions={onGoBankTransactions} />
       {shown?.investmentRecovery.hasRecords && <p className="notice small" role="note">投資回收款：可能包含投入本金，不代表投資收益</p>}
       <details className="cashflow-footnote muted small"><summary>金額怎麼算</summary><p>依已匯入紀錄，不代表完整月份。{period.isCurrentMonth ? '本月尚未結束。' : ''}金額統一換算 TWD，依各月月底已完成匯率；本月採最新已完成匯率（最多回溯 7 日）。</p></details>
     </>}
