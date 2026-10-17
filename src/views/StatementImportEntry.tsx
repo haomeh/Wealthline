@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { BANK_PDF_ERRORS, pdfFormatError } from '../bankStatementErrors'
 import { CSV_MAX_BYTES, CsvError, csvErrorText, csvImportType, decodeCsv, isCsvFile } from '../csvImport'
 import { unlockStatementPasswords, type StatementPassword } from '../statementPasswords'
+import { statementOcrWorkers } from '../statementOcr'
 import type { PreparedStatement, StatementKind } from '../statementKind'
 import { ImportSteps } from './ImportSteps'
 import { REPO_URL } from '../site'
@@ -57,39 +58,54 @@ export function StatementImportEntry({ passwords, passwordScope, busy, onCancel,
       if (abort.signal.aborted) return
       if (stored.unavailable) note = `${stored.unavailable} 組密碼無法在此瀏覽器解鎖，請重新設定或手動輸入。`
       const candidates = [...stored.values, ...typed.split(',').map(x => x.trim()).filter(Boolean)]
-      for (let index = 0; index < files.length; index++) {
-        const file = files[index], name = file.name?.trim() || `檔案 ${index + 1}`
-        setProgress({ processed: index, total: files.length, current: name })
-        // A CSV says its kind in the type column; balances and holdings belong to the accounts page.
-        if (isCsvFile(file)) {
+      // A few files are read at once, each card statement with its own OCR worker; the report keeps the
+      // files' order. Progress shows the first file still being read, with its own step.
+      const names = files.map((file, index) => file.name?.trim() || `檔案 ${index + 1}`), reading = new Map<number, string | undefined>()
+      const show = () => {
+        if (abort.signal.aborted || !reading.size) return
+        const first = Math.min(...reading.keys())
+        setProgress({ processed: first, total: files.length, current: names[first], step: reading.get(first) })
+      }
+      const detectFile = async (index: number) => {
+        const file = files[index], name = names[index]
+        reading.set(index, undefined); show()
+        try {
+          // A CSV says its kind in the type column; balances and holdings belong to the accounts page.
+          if (isCsvFile(file)) {
+            try {
+              if (file.size > CSV_MAX_BYTES) throw new CsvError('CSV 超過 5 MB，請拆分後再匯入。')
+              const type = csvImportType(decodeCsv(new Uint8Array(await file.arrayBuffer())))
+              if (abort.signal.aborted) return
+              found[index] = (type === 'position'
+                ? { file, name, kind: 'error', reason: '這是帳戶餘額與持倉 CSV，請到「帳戶」頁的「從試算表或 CSV 匯入」', choice: 'skip' }
+                : { file, name, kind: type, reason: 'CSV 檔', choice: type })
+            } catch (error) {
+              if (abort.signal.aborted) return
+              found[index] = { file, name, kind: 'error', reason: csvErrorText(error), choice: 'skip' }
+            }
+            return
+          }
           try {
-            if (file.size > CSV_MAX_BYTES) throw new CsvError('CSV 超過 5 MB，請拆分後再匯入。')
-            const type = csvImportType(decodeCsv(new Uint8Array(await file.arrayBuffer())))
+            if (file.size > 20 * 1024 * 1024) throw new Error(BANK_PDF_ERRORS.size)
+            const bytes = new Uint8Array(await file.arrayBuffer())
             if (abort.signal.aborted) return
-            found.push(type === 'position'
-              ? { file, name, kind: 'error', reason: '這是帳戶餘額與持倉 CSV，請到「帳戶」頁的「從試算表或 CSV 匯入」', choice: 'skip' }
-              : { file, name, kind: type, reason: 'CSV 檔', choice: type })
+            const formatError = pdfFormatError(bytes); if (formatError) throw new Error(formatError)
+            let reader: typeof import('../statementKind')
+            try { reader = await import('../statementKind') } catch { throw new Error(BANK_PDF_ERRORS.module) }
+            const kind = await reader.detectStatementKind(bytes, candidates, abort.signal, name, step => { if (reading.has(index)) { reading.set(index, step); show() } })
+            if (abort.signal.aborted) return
+            found[index] = { file, name, ...kind, choice: kind.kind === 'unknown' ? 'skip' : kind.kind }
           } catch (error) {
             if (abort.signal.aborted) return
-            found.push({ file, name, kind: 'error', reason: csvErrorText(error), choice: 'skip' })
+            found[index] = { file, name, kind: 'error', reason: errorText(error), choice: 'skip' }
           }
-          continue
-        }
-        try {
-          if (file.size > 20 * 1024 * 1024) throw new Error(BANK_PDF_ERRORS.size)
-          const bytes = new Uint8Array(await file.arrayBuffer())
-          if (abort.signal.aborted) return
-          const formatError = pdfFormatError(bytes); if (formatError) throw new Error(formatError)
-          let reader: typeof import('../statementKind')
-          try { reader = await import('../statementKind') } catch { throw new Error(BANK_PDF_ERRORS.module) }
-          const kind = await reader.detectStatementKind(bytes, candidates, abort.signal, name, step => { if (!abort.signal.aborted) setProgress(p => p && p.processed === index ? { ...p, step } : p) })
-          if (abort.signal.aborted) return
-          found.push({ file, name, ...kind, choice: kind.kind === 'unknown' ? 'skip' : kind.kind })
-        } catch (error) {
-          if (abort.signal.aborted) return
-          found.push({ file, name, kind: 'error', reason: errorText(error), choice: 'skip' })
-        }
+        } finally { reading.delete(index); show() }
       }
+      let next = 0
+      await Promise.all(Array.from({ length: Math.min(statementOcrWorkers(), files.length) }, async () => {
+        while (next < files.length && !abort.signal.aborted) await detectFile(next++)
+      }))
+      if (abort.signal.aborted) return
       setProgress({ processed: files.length, total: files.length, current: '' })
       // Detection is over: leaving the entry must not count as a cancel, which would close the shared PDF worker.
       if (controller.current === abort) controller.current = null
