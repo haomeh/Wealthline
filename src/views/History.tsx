@@ -9,7 +9,7 @@ import { localDate, snapshotOf, totalPoints, type Change } from '../history'
 import { type WealthData } from '../model'
 import { displaySymbol } from '../quotes'
 import { LiabilityChangeRow } from './LiabilityChange'
-import { filledNote } from './historySeries'
+import { carriedEntry, filledNote } from './historySeries'
 import { QuantityHistory, QuantityRecord, type QuantityEditRequest } from './QuantityHistory'
 import { instrumentKey } from '../quantityHistory'
 
@@ -111,11 +111,11 @@ export function HistoryView({ initialDate, data, dirty, busy, onSave, onChange, 
         <ul className="snapshot-accounts">{sourcePoint.accounts.map(a => <li key={a.id}><span>{accountLabel({ name: a.name, country: sourceDay?.entries.find(e => e.accountId === a.id)?.country ?? data.accounts.find(x => x.id === a.id)?.country })}{filledNote(sourcePoint, a.id) && <small className="muted"> · {filledNote(sourcePoint, a.id)}</small>}</span><strong>{a.value === null ? '資料不完整' : `NT$ ${fmt(a.value, 0)}`}</strong></li>)}</ul>
         {!!sourcePoint.filled?.length && <p className="muted small">{sourcePoint.filled.length} 個帳戶這天沒有完整紀錄或行情，以之前最近一筆金額補上；沒有更早紀錄的未知項目以 0 計。可在下方逐項編輯數量補登這天。</p>}
         <p className="muted small">分類總額：{Object.entries(sourcePoint.categories).map(([name, value]) => `${name} ${value === null ? '未知' : `NT$ ${fmt(value, 0)}`}`).join(' · ') || '未記錄'}</p>
-        {sourceDay ? <div className="quantity-rows">{sourceDay.entries.map(entry => <QuantityRecord key={instrumentKey(entry)} entry={entry} actions={
+        {sourceDay ? <div className="quantity-rows">{sourceDay.entries.map(entry => <QuantityRecord key={instrumentKey(entry)} entry={entry} carried={carriedEntry(sourcePoint, entry)} actions={
           <button title="編輯來源數量" aria-label="編輯來源數量" disabled={busy || !!quantityRequest} data-history-entry={`source:${sourcePoint.date}:${instrumentKey(entry)}`} onClick={() => setQuantityRequest({ date: sourcePoint.date, expected: data.history.quantityDays?.find(d => d.date === sourcePoint.date), entryKey: instrumentKey(entry), focusKey: `source:${sourcePoint.date}:${instrumentKey(entry)}` })}><ActionIcon name="edit" /></button>
         } />)}</div> : <p className="muted small">原始快照只保存帳戶與分類總額，無法還原當時各項數量與行情；可從下方每日紀錄補登數量。目前持倉可在帳戶頁編輯。</p>}
       </section>}
-      <QuantityHistory data={data} busy={busy} onChange={onChange} request={quantityRequest} onRequest={setQuantityRequest} displayDays={historical.data.history.valuedQuantityDays ?? historical.data.history.quantityDays}/>
+      <QuantityHistory data={data} busy={busy} onChange={onChange} request={quantityRequest} onRequest={setQuantityRequest} displayDays={historical.data.history.valuedQuantityDays ?? historical.data.history.quantityDays} carried={(date, entry) => carriedEntry(points.find(p => p.date === date), entry)}/>
       <section className="panel">
         <div className="panel-head">
           <h3>異動紀錄</h3>

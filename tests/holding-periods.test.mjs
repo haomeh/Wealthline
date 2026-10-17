@@ -113,7 +113,7 @@ test('review: period projection preserves known snapshots, while explicit day ov
  const edited=q.applyQuantityDay(d,{...explicit('2026-10-05',0),sparse:true})
  assert.equal(h.totalPoints(edited,now).find(x=>x.date==='2026-10-05').manual,true)
  // The other account keeps its value from that day's original snapshot.
- const filled=h.totalPoints(edited,now).find(x=>x.date==='2026-10-05');assert.equal(filled.total,1000);assert.deepEqual(filled.filled,[{id:'b',from:'2026-10-05',reason:'no-record'}])
+ const filled=h.totalPoints(edited,now).find(x=>x.date==='2026-10-05');assert.equal(filled.total,1000);assert.deepEqual(filled.filled,[{id:'b',from:'2026-10-05',reason:'no-record',parts:[{key:'["b","cash","","TWD"]',value:1000,date:'2026-10-05'}]}])
  const removed={...edited,history:{...edited.history,quantityDays:[]}}
  assert.equal(h.totalPoints(removed,now).find(x=>x.date==='2026-10-05').total,1100)
  assert.equal(removed.history.snapshots,original)

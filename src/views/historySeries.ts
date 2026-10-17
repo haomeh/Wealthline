@@ -1,5 +1,5 @@
 import { CATEGORIES } from '../model'
-import type { HistoricalPoint } from '../quantityHistory'
+import { entryValue, instrumentKey, type HistoricalPoint, type QuantityEntry } from '../quantityHistory'
 import type { Series } from './TrendChart'
 
 export const MODES = { total: '總資產', account: '依帳戶', category: '依類別' }
@@ -49,4 +49,13 @@ export function filledNote(point: HistoricalPoint, id: string): string {
   if (f.reason === 'partial') return from ? `部分項目沿用 ${from}` : '部分項目無紀錄，以 0 計'
   if (f.reason === 'no-quote') return `缺行情，沿用 ${from}`
   return from ? `沿用 ${from}` : '無紀錄，以 0 計'
+}
+
+// The earlier value the point's total uses for an entry the day leaves unknown (history.ts),
+// so the entry row shows the same amount as its account instead of 估值未知.
+export function carriedEntry(point: HistoricalPoint | undefined, entry: QuantityEntry): { value: number; note: string } | undefined {
+  if (!point || entryValue(entry) !== null) return undefined
+  const part = point.filled?.find(f => f.id === entry.accountId)?.parts?.find(p => p.key === instrumentKey(entry))
+  if (!part) return undefined
+  return { value: part.value, note: part.date === point.date ? '沿用當天快照' : `沿用 ${part.date.replaceAll('-', '/')}` }
 }

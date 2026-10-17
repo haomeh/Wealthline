@@ -92,12 +92,12 @@ test('a later statement for the same day replaces the carried value and is carri
   const points = history.totalPoints({ ...both, history: { ...both.history, valuedQuantityDays: valued } }, now)
   const day = points.find((p) => p.date === '2026-09-30')
   assert.equal(day.accounts.find((a) => a.id === 'hsbc').value, 250000)
-  assert.deepEqual(day.filled, [{ id: 'schwab', from: '2026-09-29', reason: 'no-record' }])
+  assert.deepEqual(day.filled, [{ id: 'schwab', from: '2026-09-29', reason: 'no-record', parts: [{ key: '["schwab","holding","VT","USD"]', value: 38000, date: '2026-09-29' }] }])
   assert.equal(day.total, 536046 + 250000 + 38000)
   // The next statement day carries the statement value, not the older snapshot.
   const later = points.find((p) => p.date === '2026-10-05')
   assert.equal(later.accounts.find((a) => a.id === 'hsbc').value, 250000)
-  assert.deepEqual(later.filled.find((f) => f.id === 'hsbc'), { id: 'hsbc', from: '2026-09-30', reason: 'no-record' })
+  assert.deepEqual(later.filled.find((f) => f.id === 'hsbc'), { id: 'hsbc', from: '2026-09-30', reason: 'no-record', parts: [{ key: '["hsbc","cash","","TWD"]', value: 250000, date: '2026-09-30' }] })
 })
 
 // Review of PR #49: fill per entry, labels that match the source, and accounts the day does not name.
@@ -142,7 +142,7 @@ test('a later point carries the value of a same-day snapshot', async () => {
   const data = statements.importStatementBalances(base(accounts(), [snapshot('2026-09-29', { dbs: 1, hsbc: 1, schwab: 1 }), snapshot('2026-09-30', { dbs: 480000, hsbc: 310000, schwab: 39000 })]), [statement('2026-09-30', 22335.25, 'a'), statement('2026-10-05', 23000, 'b')], now).data
   const later = (await pointsOf(data)).find((p) => p.date === '2026-10-05')
   assert.equal(later.accounts.find((a) => a.id === 'hsbc').value, 310000)
-  assert.deepEqual(later.filled.find((f) => f.id === 'hsbc'), { id: 'hsbc', from: '2026-09-30', reason: 'no-record' })
+  assert.deepEqual(later.filled.find((f) => f.id === 'hsbc'), { id: 'hsbc', from: '2026-09-30', reason: 'no-record', parts: [{ key: '["hsbc","cash","","TWD"]', value: 310000, date: '2026-09-30' }] })
 })
 
 test('accounts only in the same-day snapshot or the previous point stay in the total', async () => {
@@ -169,7 +169,26 @@ test('a known quantity without a quote keeps the day unknown unless an earlier v
   const none = (await pointsOf(base(accounts(), [], [vt]))).find((p) => p.date === '2026-09-30')
   assert.equal(none.total, null)
   const earlier = (await pointsOf(base(accounts(), [snapshot('2026-09-29', { dbs: 480000, hsbc: 300000, schwab: 38000 })], [vt]))).find((p) => p.date === '2026-09-30')
-  assert.deepEqual(earlier.filled.find((f) => f.id === 'schwab'), { id: 'schwab', from: '2026-09-29', reason: 'no-quote' })
+  assert.deepEqual(earlier.filled.find((f) => f.id === 'schwab'), { id: 'schwab', from: '2026-09-29', reason: 'no-quote', parts: [{ key: '["schwab","holding","VT","USD"]', value: 38000, date: '2026-09-29' }] })
   const { filledNote } = await server.ssrLoadModule('/src/views/historySeries.ts')
   assert.equal(filledNote(earlier, 'schwab'), '缺行情，沿用 2026/09/29')
+})
+
+test('entry rows of a statement day show the value its total carries, not 估值未知', async () => {
+  // HSBC holds two currencies, both recorded on 2026-09-01; DBS's statement on 2026-09-30 names only DBS.
+  const list = [...accounts(), { id: 'hsbc-sg', name: 'HSBC', kind: 'bank', category: '現金與外幣活存', country: 'SG', positions: [{ id: 'p4', type: 'cash', symbol: '', currency: 'SGD', quantity: 1000, price: 1 }, { id: 'p5', type: 'cash', symbol: '', currency: 'TWD', quantity: 5000, price: 1 }] }]
+  const entry = (accountId, currency, quantity) => ({ accountId, account: 'HSBC', category: '現金與外幣活存', country: 'SG', type: 'cash', symbol: '', currency, quantity })
+  const recorded = { date: '2026-09-29', updatedAt: now, sparse: true, entries: [entry('hsbc-sg', 'SGD', 1000), entry('hsbc-sg', 'TWD', 5000)] }
+  const data = statements.importStatementBalances(base(list, [snapshot('2026-09-28', { dbs: 480000, hsbc: 300000, schwab: 38000 })], [recorded]), [statement('2026-09-30', 22335.25, 'a')], now).data
+  const valued = await quantity.valueDays(periods.expandPeriodDays(data, now), fetcher)
+  const point = history.totalPoints({ ...data, history: { ...data.history, valuedQuantityDays: valued } }, now).find((p) => p.date === '2026-09-30')
+  const day = valued.find((d) => d.date === '2026-09-30')
+  const { carriedEntry } = await server.ssrLoadModule('/src/views/historySeries.ts')
+  const rows = Object.fromEntries(day.entries.map((e) => [`${e.accountId}:${e.currency}`, carriedEntry(point, e)]))
+  assert.deepEqual(rows['hsbc-sg:SGD'], { value: 24000, note: '沿用 2026/09/29' })
+  assert.deepEqual(rows['hsbc-sg:TWD'], { value: 5000, note: '沿用 2026/09/29' })
+  assert.deepEqual(rows['hsbc:TWD'], { value: 300000, note: '沿用 2026/09/28' })
+  assert.equal(rows['dbs:SGD'], undefined) // recorded that day, valued as usual
+  // The rows add up to the account values the total uses.
+  assert.equal(point.accounts.find((a) => a.id === 'hsbc-sg').value, 24000 + 5000)
 })

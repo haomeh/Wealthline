@@ -208,19 +208,26 @@ function fillUnknownAccounts(points: HistoricalPoint[], days: Map<string, Quanti
           const unpriced = entries.some(e => e.quantity !== null || e.error)
           const same = original?.accounts.find(x => x.id === a.id), prior = lastAccount.get(a.id)
           const value = same ? same.value : prior ? prior.value : unpriced ? NaN : 0
-          filled.push({ id: a.id, from: same ? point.date : prior?.date ?? null, reason: unpriced ? 'no-quote' : 'no-record' })
+          const from = same ? point.date : prior?.date ?? null
+          // Per-entry share of the carried value, for the views: each entry's own value on that
+          // date when the day recorded all of them, else the whole value for a single entry.
+          const own = entries.map(e => ({ key: instrumentKey(e), last: lastEntry.get(instrumentKey(e)) }))
+          const parts = from === null || !Number.isFinite(value) ? []
+            : own.length && own.every(o => o.last?.date === from) ? own.map(o => ({ key: o.key, value: o.last!.value, date: from }))
+            : own.length === 1 ? [{ key: own[0].key, value, date: from }] : []
+          filled.push({ id: a.id, from, reason: unpriced ? 'no-quote' : 'no-record', ...(parts.length && { parts }) })
           addCategory(category, value)
           return { ...a, value }
         }
         let value = 0, from: string | null = null
-        const parts: { key: string; value: number }[] = []
+        const parts: { key: string; value: number; date: string }[] = []
         for (const e of entries) {
           const v = entryValue(e)
           if (v !== null) { value += v; addCategory(e.category, v); continue }
           const prior = lastEntry.get(instrumentKey(e))
           const carried = prior ? prior.value : e.quantity === null && !e.error ? 0 : NaN
           if (prior && (!from || prior.date > from)) from = prior.date
-          if (carried) parts.push({ key: instrumentKey(e), value: carried })
+          if (carried) parts.push({ key: instrumentKey(e), value: carried, date: prior!.date })
           value += carried
           addCategory(e.category, carried)
         }
