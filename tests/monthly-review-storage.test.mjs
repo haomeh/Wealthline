@@ -202,7 +202,7 @@ test('malformed reviews fail before Drive writes and legacy versions load withou
   const from = drive.log.length
   await assert.rejects(storage.saveDrive(token, { ...loaded.data, monthlyReviews: [{}] }, loaded.state, NOW), /核對/)
   assert.equal(writes(from).length, 0)
-  assert.throws(() => model.parseWealthData({ ...model.emptyData(), version: 17 }), /不支援的版本/)
+  assert.throws(() => model.parseWealthData({ ...model.emptyData(), version: 18 }), /不支援的版本/)
 })
 
 test('source bound covers the union of expected and historical confirmations; sparse reviews are invalid', async () => {

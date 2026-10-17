@@ -12,6 +12,7 @@ import { HistoricalFxValue } from './HistoricalFxValue'
 import { quantityOnly } from '../historyBaseline'
 import { prepareCompletion, applyCompletion, completionRevision, resolveCompletion, removalMessage } from '../historyCompletion'
 import { fmt } from '../format'
+import { RecordMoney } from './RecordMoney'
 
 export interface QuantityEditRequest { focusKey?:string; mode?:'baseline'; date: string; expected?: QuantityDay; entryKey?: string }
 const nameOf = (e: QuantityEntry) => `${e.account} · ${e.symbol || e.currency} · ${e.currency}`
@@ -270,7 +271,7 @@ export function QuantityRecord({ entry, actions, carried }: { entry: QuantityEnt
   const value = entryValue(entry) ?? carried?.value ?? null
   const title = `${accountLabel({name:entry.account,country:entry.country})} · ${entry.symbol || entry.currency}${entry.symbol ? ` · ${entry.currency}` : ''}`
   return <DetailRecord className="quantity-record" title={title} label={`查看來源 ${title}`} actions={actions} meta={carried?.note}
-    value={value === null ? <strong className="record-unknown">估值未知</strong> : <span className="record-money"><small>NT$</small><strong>{fmt(value, 2)}</strong></span>}>
+    value={value === null ? <strong className="record-unknown">估值未知</strong> : <RecordMoney currency="NT$" amount={value} sign={value < 0 ? '−' : ''} />}>
     <p>{title}</p>
     {carried && <p className="muted small">這天沒有這項的數量或行情，總資產{carried.note}的金額。可按編輯補登這天的實際數量。</p>}
     <p>數量 {entry.quantity === null ? '未知' : fmt(entry.quantity, 8)}{entry.quantityAsOf && ` · 數量基準 ${entry.quantityAsOf}`}</p>

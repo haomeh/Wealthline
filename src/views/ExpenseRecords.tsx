@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
-import { expenseCategory, type Expense, type ExpenseCategoryRule } from '../expenses'
+import { CARD_TRANSFER, expenseCategory, type Expense, type ExpenseCategoryRule } from '../expenses'
 import { fmt } from '../format'
+import { RecordMoney } from './RecordMoney'
 import { ActionIcon } from './ActionIcon'
 import { CategoryRuleButton } from './ExpenseCategoryRules'
 import { DetailRecord } from './DetailRecord'
@@ -20,17 +21,20 @@ export function ExpenseRecords({ expenses, rules, busy = false, showCategory = f
   }
   return <div className="expense-records record-groups">{[...groups].map(([key, group]) => <section key={key}>
     <header className="record-group-head"><time dateTime={group.date}>{group.date}</time><span title={group.card}>{group.card || '未命名卡片'}</span></header>
-    {group.rows.map(expense => <DetailRecord key={expense.id} className="expense-record" title={expense.description}
-      subtitle={showCategory && <span className={`tag${expenseCategory(expense, rules) === '未分類' ? ' warn' : ''}`}>{expenseCategory(expense, rules)}</span>}
+    {group.rows.map(expense => { const category = expenseCategory(expense, rules), transfer = category === CARD_TRANSFER
+      const kind = transfer ? '帳戶移轉' : expense.amount < 0 ? '退款' : '消費'
+      return <DetailRecord key={expense.id} className="expense-record" title={expense.description}
+      subtitle={showCategory && <span className={`tag${category === '未分類' ? ' warn' : ''}`} title={transfer ? '不計收支' : undefined}>{category}</span>}
       label={`查看消費 ${expense.date} ${expense.description}`}
-      value={<span className="record-money" data-refund={expense.amount < 0 || undefined} aria-label={`${expense.amount < 0 ? '退款' : '消費'} ${expense.currency} ${fmt(Math.abs(expense.amount))}`}><small>{expense.currency}</small><strong>{expense.amount < 0 ? '+' : ''}{fmt(Math.abs(expense.amount))}</strong></span>}
+      // A transfer counts in neither income nor consumption, so a credited one is not green.
+      value={<RecordMoney currency={expense.currency} amount={expense.amount} sign={expense.amount < 0 ? '+' : ''} tone={expense.amount < 0 && !transfer ? 'credit' : undefined} label={`${kind} ${expense.currency} ${fmt(Math.abs(expense.amount))}`} />}
       actions={onEdit && <>
         {onRule && <CategoryRuleButton expense={expense} rules={rules} busy={busy} onClick={index => onRule(expense, index)} />}
         <button type="button" disabled={busy} title="編輯消費" aria-label={`編輯消費 ${expense.date} ${expense.description}`} onClick={() => onEdit(expense)}><ActionIcon name="edit" /></button>
       </>}>
       <p>{expense.description}</p>
-      <dl className="record-evidence"><dt>銀行／卡片</dt><dd>{expense.card || '未命名卡片'}</dd><dt>日期</dt><dd>{expense.date}</dd><dt>分類</dt><dd>{expenseCategory(expense, rules)}</dd><dt>類型</dt><dd>{expense.amount < 0 ? '退款' : '消費'}</dd></dl>
+      <dl className="record-evidence"><dt>銀行／卡片</dt><dd>{expense.card || '未命名卡片'}</dd><dt>日期</dt><dd>{expense.date}</dd><dt>分類</dt><dd>{category}</dd><dt>類型</dt><dd>{transfer ? '帳戶移轉（不計收支）' : kind}</dd></dl>
       {evidence?.(expense)}
-    </DetailRecord>)}
+    </DetailRecord> })}
   </section>)}</div>
 }

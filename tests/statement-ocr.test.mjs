@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict'
 import {before,after,test,mock} from 'node:test'
 import {createServer} from 'vite'
-let server,createStatementOcr,takeStatementOcr,releaseStatementOcr
+let server,createStatementOcr,takeStatementOcr,releaseStatementOcr,statementOcrWorkers
 const originalWorker=globalThis.Worker
 before(async()=>{
   server=await createServer({configFile:false,envDir:false,server:{middlewareMode:true,watch:null,hmr:false,ws:false}})
-  ;({createStatementOcr,takeStatementOcr,releaseStatementOcr}=await server.ssrLoadModule('/src/statementOcr.ts'))
+  ;({createStatementOcr,takeStatementOcr,releaseStatementOcr,statementOcrWorkers}=await server.ssrLoadModule('/src/statementOcr.ts'))
 })
 after(async()=>{globalThis.Worker=originalWorker;await server.close()})
 function fakeWorker(handler) {
@@ -68,13 +68,31 @@ test('the files of one import run reuse a released OCR worker; other runs, abort
   assert.equal(await takeStatementOcr(run.signal),first,'the next file of the run gets the loaded worker')
   assert.equal(calls.filter(m=>m.action==='loadLanguage').length,1)
   const second=await takeStatementOcr(run.signal);assert.notEqual(second,first,'a worker in use is never shared')
-  releaseStatementOcr(run.signal,first);releaseStatementOcr(run.signal,second);assert.ok(instances[1].terminated,'only one idle worker is kept')
+  // Four cores: three files of the run read at once, so three idle workers are kept.
+  const cores=Object.getOwnPropertyDescriptor(globalThis,'navigator');Object.defineProperty(globalThis,'navigator',{value:{hardwareConcurrency:4},configurable:true})
+  try {
+    assert.equal(statementOcrWorkers(),3)
+    const third=await takeStatementOcr(run.signal),fourth=await takeStatementOcr(run.signal)
+    for(const ocr of [first,second,third,fourth]) releaseStatementOcr(run.signal,ocr)
+    assert.deepEqual(instances.slice(0,4).map(w=>!!w.terminated),[false,false,false,true],'up to three idle workers are kept')
+    assert.equal(calls.filter(m=>m.action==='loadLanguage').length,4)
+    const again=[await takeStatementOcr(run.signal),await takeStatementOcr(run.signal),await takeStatementOcr(run.signal)]
+    assert.deepEqual(new Set(again),new Set([first,second,third]),'the next files get the idle workers');assert.equal(calls.filter(m=>m.action==='loadLanguage').length,4)
+    for(const ocr of again) releaseStatementOcr(run.signal,ocr)
+  } finally {Object.defineProperty(globalThis,'navigator',cores)}
   assert.notEqual(await takeStatementOcr(other.signal),first,'another run loads its own')
-  run.abort();assert.ok(instances[0].terminated,'abort terminates the idle worker')
+  run.abort();assert.ok(instances.slice(0,3).every(w=>w.terminated),'abort terminates the idle workers')
   await assert.rejects(takeStatementOcr(run.signal),/已取消/)
   const idle=new AbortController();mock.timers.enable({apis:['setTimeout']})
   try {const ocr=await takeStatementOcr(idle.signal);releaseStatementOcr(idle.signal,ocr);const worker=instances.at(-1)
     mock.timers.tick(9999);assert.equal(worker.terminated,0);mock.timers.tick(1);assert.ok(worker.terminated)
     assert.notEqual(await takeStatementOcr(idle.signal),ocr)} finally {mock.timers.reset()}
   other.abort();idle.abort()
+})
+test('files read at once follow the cores: one core free, two from six cores on, at most six',()=>{
+  const cores=Object.getOwnPropertyDescriptor(globalThis,'navigator')
+  try {
+    const at=n=>{Object.defineProperty(globalThis,'navigator',{value:{hardwareConcurrency:n},configurable:true});return statementOcrWorkers()}
+    assert.deepEqual([undefined,1,2,4,6,8,16].map(at),[1,1,1,3,4,6,6])
+  } finally {Object.defineProperty(globalThis,'navigator',cores)}
 })

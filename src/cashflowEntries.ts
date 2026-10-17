@@ -1,5 +1,5 @@
 import type { CashflowInput } from './cashflow'
-import { expenseCategoryEvidence, type Expense } from './expenses'
+import { CARD_TRANSFER, expenseCategoryEvidence, type Expense } from './expenses'
 import { bankClassificationEvidence } from './bankTransactions'
 
 export type CashflowSource = {kind:'bank'; accountId:string} | {kind:'card'; card:string}
@@ -46,7 +46,9 @@ export function cashflowEntries(input: CashflowInput): CashflowEntry[] {
   for (const row of input.expenses ?? []) {
     validateRecord(row,false)
     const {category,evidence} = expenseCategoryEvidence(row,input.expenseRules)
-    result.push({...common(row),source:{kind:'card',card:row.card},classification:'consumption',category,evidence,
+    if (category === CARD_TRANSFER) result.push({...common(row),source:{kind:'card',card:row.card},classification:'excluded',exclusionReason:CARD_TRANSFER,evidence,
+      income:0,consumption:0,difference:0,metric:'excluded'})
+    else result.push({...common(row),source:{kind:'card',card:row.card},classification:'consumption',category,evidence,
       income:0,consumption:row.amount,difference:-row.amount,metric:'consumption'})
   }
   for (const row of input.bankTransactions ?? []) {

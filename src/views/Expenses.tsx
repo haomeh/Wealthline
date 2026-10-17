@@ -4,11 +4,12 @@ import { ExpenseRecords } from './ExpenseRecords'
 import { ExpenseEditor } from './ExpenseEditor'
 import { ImportSteps, type QueuedImport } from './ImportSteps'
 import { DetailRecord } from './DetailRecord'
+import { RecordMoney } from './RecordMoney'
 import { CsvGuide } from './CsvGuide'
 import { fmt } from '../format'
 import { dataVersion } from '../dataVersion'
 import { useEffect, useRef, useState, type FormEvent } from 'react'
-import { mergeExpenses, prepareExpenses, sha256, expenseCategory, EXPENSE_CATEGORIES, type ExpenseCategoryRule, type ExpenseCategory, type Expense } from '../expenses'
+import { mergeExpenses, prepareExpenses, sha256, expenseCategory, CARD_CATEGORIES, cardCategoryOption, type ExpenseCategoryRule, type CardCategory, type Expense } from '../expenses'
 import { pdfFormatError } from '../bankStatementErrors'
 import { CSV_MAX_BYTES, CsvError, csvErrorText, decodeCsv, isCsvFile, readCardCsv } from '../csvImport'
 import { assertCreditCardFile, parseStatement, statementMetadata } from '../statements'
@@ -265,14 +266,14 @@ function StatementPreviewRow({row:r,index:i,duplicate,rules,busy,onPatch,onRule}
   onPatch:(updates:Partial<Draft>)=>void;onRule:(index?:number)=>void
 }) {
   const amount = r.amountText.trim() ? Number(r.amountText) : null
-  const amountLabel = amount === null ? '待填寫' : Number.isFinite(amount) && Math.abs(amount) <= 1e12 ? fmt(amount) : '金額無效'
+  const valid = amount !== null && Number.isFinite(amount) && Math.abs(amount) <= 1e12
   return <div className="statement-preview-row" aria-label={`交易 ${i+1}`}>
     <label className="statement-preview-select"><input type="checkbox" disabled={busy} aria-label={`第 ${i+1} 筆`} checked={r.selected} onChange={e=>onPatch({selected:e.target.checked})}/></label>
     <div className="statement-preview-body">
       <DetailRecord title={r.description || '商家待填寫'} label={`編輯第 ${i+1} 筆交易`}
         meta={<span title={`${r.date} · ${r.card}`}>{r.date} · {r.card}</span>}
         status={<>{r.needsReview && <span className="tag" title="請核對商家、日期、金額並排除繳款">核對</span>}{duplicate && <span className="tag">重複</span>}</>}
-        value={<span className="record-money"><small>{r.currency}</small><strong>{amountLabel}</strong></span>}
+        value={valid ? <RecordMoney currency={r.currency} amount={amount} sign={amount < 0 ? '−' : ''} /> : <span className="record-money"><small>{r.currency}</small><strong>{amount === null ? '待填寫' : '金額無效'}</strong></span>}
         actions={<CategoryRuleButton expense={r} rules={rules} busy={busy} label={`新增第 ${i+1} 筆分類規則`} editLabel={`編輯第 ${i+1} 筆分類規則`} onClick={onRule}/>}>
         <div className="expense-fields statement-preview-fields">
           <div className="field statement-merchant-field"><span>商家／說明</span><PreviewField label={`第 ${i+1} 筆商家`} value={r.description} maxLength={500} disabled={busy} onChange={description=>onPatch({description})}/></div>
@@ -296,8 +297,8 @@ function PreviewField({label,value,type='text',maxLength,disabled,onChange}: {la
   return <button type="button" className="preview-value" disabled={disabled} aria-label={`編輯${label}`} title={value || '點擊填寫'} onClick={()=>setEditing(value)}>{value || <span className="muted">待填寫</span>}</button>
 }
 
-function PreviewCategory({expense,label,disabled,onChange,rules}: {rules:ExpenseCategoryRule[];expense:Expense;label:string;disabled:boolean;onChange:(category:ExpenseCategory|undefined)=>void}) {
+function PreviewCategory({expense,label,disabled,onChange,rules}: {rules:ExpenseCategoryRule[];expense:Expense;label:string;disabled:boolean;onChange:(category:CardCategory|undefined)=>void}) {
   const [editing,setEditing] = useState(false)
-  if(editing) return <select className="preview-input" autoFocus aria-label={label} disabled={disabled} value={expense.category ?? ''} onBlur={()=>setEditing(false)} onChange={e=>{onChange(e.target.value ? e.target.value as ExpenseCategory : undefined);setEditing(false)}} onKeyDown={e=>{if(e.key==='Escape')setEditing(false)}}><option value="">自動判斷（{expenseCategory({description:expense.description},rules)}）</option>{EXPENSE_CATEGORIES.map(c=><option key={c} value={c}>{c}</option>)}</select>
+  if(editing) return <select className="preview-input" autoFocus aria-label={label} disabled={disabled} value={expense.category ?? ''} onBlur={()=>setEditing(false)} onChange={e=>{onChange(e.target.value ? e.target.value as CardCategory : undefined);setEditing(false)}} onKeyDown={e=>{if(e.key==='Escape')setEditing(false)}}><option value="">自動判斷（{expenseCategory({description:expense.description},rules)}）</option>{CARD_CATEGORIES.map(c=><option key={c} value={c}>{cardCategoryOption(c)}</option>)}</select>
   return <button type="button" className="preview-value" disabled={disabled} aria-label={`編輯${label}`} title={expense.category?'手動分類':'自動判斷；點擊修改'} onClick={()=>setEditing(true)}>{expenseCategory(expense,rules)}</button>
 }

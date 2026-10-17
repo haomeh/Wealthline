@@ -42,20 +42,35 @@ export async function createStatementOcr(signal:AbortSignal) {
 
 type StatementOcr = Awaited<ReturnType<typeof createStatementOcr>>
 // Loading the language models takes longer than reading a statement's merchants, so the files of
-// one import run (one AbortSignal) pass a finished OCR worker on to the next file. One file uses a
-// worker at a time; aborting the run terminates it, and an unused worker closes after a short wait.
+// one import run (one AbortSignal) pass finished OCR workers on to the next files. One file uses a
+// worker at a time; aborting the run terminates them, and an unused worker closes after a short wait.
 const OCR_IDLE_MS = 10_000
-const parked = new WeakMap<AbortSignal, {ocr:StatementOcr;drop:()=>void}>()
+/**
+ * Statement files read at once in one import run, each with its own OCR worker: a full-page layout
+ * read takes seconds, so several HSBC files share the cores. Each worker loads its own models (about
+ * 200 MB while reading a page), so this leaves one core free (two from six cores on) and stops at six.
+ */
+export function statementOcrWorkers() {
+  const cores = globalThis.navigator?.hardwareConcurrency || 2
+  return Math.max(1,Math.min(6,cores-(cores > 4 ? 2 : 1)))
+}
+const parked = new WeakMap<AbortSignal, {ocr:StatementOcr;drop:()=>void}[]>()
 export async function takeStatementOcr(signal:AbortSignal): Promise<StatementOcr> {
-  const idle = parked.get(signal)
+  const idle = parked.get(signal)?.at(-1)
   if(idle && !signal.aborted) {idle.drop();return idle.ocr}
   return createStatementOcr(signal)
 }
 export function releaseStatementOcr(signal:AbortSignal, ocr:StatementOcr) {
-  if(signal.aborted || parked.has(signal)) {ocr.close();return}
+  const idle = parked.get(signal) ?? []
+  if(signal.aborted || idle.length >= statementOcrWorkers() || idle.some(p=>p.ocr === ocr)) {ocr.close();return}
   const close = () => {drop();ocr.close()}
   const timer = setTimeout(close,OCR_IDLE_MS)
-  const drop = () => {clearTimeout(timer);signal.removeEventListener('abort',close);if(parked.get(signal)?.ocr === ocr) parked.delete(signal)}
+  const drop = () => {
+    clearTimeout(timer);signal.removeEventListener('abort',close)
+    const list = parked.get(signal) ?? [], at = list.findIndex(p=>p.ocr === ocr)
+    if(at >= 0) list.splice(at,1)
+    if(!list.length) parked.delete(signal)
+  }
   signal.addEventListener('abort',close,{once:true})
-  parked.set(signal,{ocr,drop})
+  parked.set(signal,[...idle,{ocr,drop}])
 }

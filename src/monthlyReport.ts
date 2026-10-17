@@ -5,6 +5,7 @@ import { parseMonthlyReviews, type MonthlyReview } from './monthlyReview'
 import { monthlyReviewState, reviewSourceKey, type MonthlyReviewState } from './monthlyReviewState'
 import { BANK_EXCLUSION_REASONS, INCOME_CATEGORIES } from './bankTransactions'
 import { CATEGORY_TOKENS } from './cashflowQuery'
+import { CARD_TRANSFER } from './expenses'
 import { isCryptoCurrency } from './historicalFx'
 import { fxSymbol } from './priceHistory'
 
@@ -64,7 +65,7 @@ function parseEntry(raw: unknown, month: string): MonthlyReportEntry {
  if (!['income', 'consumption', 'pending', 'excluded'].includes(classification)) return fail()
  if (!['income', 'consumption', 'excluded'].includes(metric)) return fail()
  if (ref.kind === 'bank' && !['credit', 'debit'].includes(String(value.direction))) return fail()
- if (ref.kind === 'card' && (value.direction !== undefined || classification !== 'consumption')) return fail()
+ if (ref.kind === 'card' && (value.direction !== undefined || !['consumption', 'excluded'].includes(classification))) return fail()
  const wantedMetric = classification === 'excluded' ? 'excluded' : classification === 'pending'
   ? (value.direction === 'credit' ? 'income' : 'consumption') : classification
  if (metric !== wantedMetric) return fail()
@@ -83,7 +84,7 @@ function parseEntry(raw: unknown, month: string): MonthlyReportEntry {
   const categoryMatchesMetric = metric === 'income' ? incomeCategories.includes(category)
    : !incomeCategories.filter(category => category !== '未分類').includes(category)
   if (!categoryMatchesMetric || value.exclusionReason !== undefined) return fail()
- } else if (category !== undefined || !BANK_EXCLUSION_REASONS.includes(value.exclusionReason as typeof BANK_EXCLUSION_REASONS[number])) return fail()
+ } else if (category !== undefined || (ref.kind === 'card' ? value.exclusionReason !== CARD_TRANSFER : !BANK_EXCLUSION_REASONS.includes(value.exclusionReason as typeof BANK_EXCLUSION_REASONS[number]))) return fail()
  if (classification === 'pending' && category !== '未分類') return fail()
 
  const provenancePattern = ref.kind === 'bank' ? /^bank-v1:[a-f0-9]{64}$/ : /^[a-f0-9]{64}$/

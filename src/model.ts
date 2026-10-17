@@ -184,7 +184,7 @@ export function parseWealthData(raw: unknown, source: keyof typeof SOURCES = 'dr
     throw new Error(`${SOURCES[source][0]}格式不正確：${why}。${SOURCES[source][1]}`)
   }
   const obj = (typeof raw === 'object' && raw !== null ? raw : fail('不是 JSON 物件')) as Record<string, unknown>
-  if (!(typeof obj.version === 'number' && Number.isInteger(obj.version) && obj.version >= 1 && obj.version <= 16)) fail(`不支援的版本 ${String(obj.version)}`)
+  if (!(typeof obj.version === 'number' && Number.isInteger(obj.version) && obj.version >= 1 && obj.version <= 17)) fail(`不支援的版本 ${String(obj.version)}`)
   if (!Array.isArray(obj.accounts)) fail('缺少 accounts 陣列')
 
   const str = (v: unknown, fallback = '') => (typeof v === 'string' ? v.trim() : fallback)
