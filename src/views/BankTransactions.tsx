@@ -15,10 +15,11 @@ import { BankStatementImport } from './BankStatementImport'
 import { type QueuedImport } from './ImportSteps'
 import { BankTransactionEditor } from './BankTransactionEditor'
 import { BANK_TEXT_NOTICE, classificationLabel, classificationTag } from './bankUiHelpers'
-import { fmt } from '../format'
+import { fmt, listAmount } from '../format'
 import { RecordMoney } from './RecordMoney'
 import { ActionIcon } from './ActionIcon'
 import { DetailRecord, type RecordProps } from './DetailRecord'
+import { QuickClassify, QuickClassifyCallout } from './QuickClassify'
 
 // Drive: the transactions loaded when earlier quarters are not (driveStore.ts ledgerScope), with
 // the state of a load ('loading' or a failure's message) and the actions that load more.
@@ -39,7 +40,7 @@ export function BankTransactions({data,onChange,busy,passwordScope,historyReady=
  const [opened,setOpened]=useState(false),importing=routed??opened,setImporting=onImporting??setOpened
  const [editing,setEditing]=useState<BankTransaction|null>(()=>data.bankTransactions?.find(e=>e.id===recordId)??null),[managingPasswords,setManagingPasswords]=useState(false),[ruleEditor,setRuleEditor]=useState<{index?:number;rule?:BankCategoryRule}|null>(null)
  const [label,setLabel]=useState(''),[bank,setBank]=useState(''),[message,setMessage]=useState(''),[accountFilter,setAccountFilter]=useState(''),[currencyFilter,setCurrencyFilter]=useState(''),[monthFilter,setMonthFilter]=useState(''),[kindFilter,setKindFilter]=useState<''|'pending'|'classified'>('')
- const [page,setPage]=useState(0),[adding,setAdding]=useState(false)
+ const [page,setPage]=useState(0),[adding,setAdding]=useState(false),[quick,setQuick]=useState(false)
  // An account to delete once every quarter is loaded, which shows whether any record still uses it.
  const [removing,setRemoving]=useState<string|null>(null)
  const ledgerError=ledger?.status&&ledger.status!=='loading'?ledger.status:''
@@ -124,12 +125,14 @@ export function BankTransactions({data,onChange,busy,passwordScope,historyReady=
  return <div className="bank-page">{returnLink}{missingRecord}{dialogs}<div className="page-head"><div><h2>銀行流水</h2><p className="muted">銀行帳戶的每筆入帳與支出。替每筆設定分類，收支總覽才會算得準。</p></div><button disabled={busy} className="primary" onClick={()=>onOpenImport?onOpenImport():setImporting(true)}>匯入銀行帳單</button></div>{message && <p role="status" className="notice">{message}</p>}
  <section className="panel bank-record-panel"><div className="panel-head"><h3>{rows.length} 筆銀行流水</h3>{accounts.length>0&&<button disabled={busy} onClick={()=>setEditing({id:crypto.randomUUID(),accountId:accounts[0].id,date:'',description:'',direction:'debit',amount:0,currency:'TWD'})}>手動新增流水</button>}</div>
  {ledger && <LedgerScopeNotice ledger={ledger}/>}
+ {pendingIds.size>0 && <QuickClassifyCallout count={pendingIds.size} what="筆流水未分類" busy={busy} onStart={()=>setQuick(true)}/>}
+ {quick && <QuickClassify data={data} onChange={onChange} busy={busy} sources={['bank']} onClose={()=>setQuick(false)}/>}
  {(!!rows.length||!!ledger?.months.length) && <><div className="bank-fields bank-filters"><label className="field"><span>月份</span><select aria-label="流水月份篩選" value={monthFilter} onChange={setFilter(setMonthFilter)}><option value="">全部月份</option>{(monthFilter&&!months.includes(monthFilter)?[monthFilter,...months]:months).map(m=><option key={m} value={m}>{monthLabel(m)}</option>)}</select></label><label className="field"><span>帳戶</span><select aria-label="流水帳戶篩選" value={accountFilter} onChange={setFilter(setAccountFilter)}><option value="">全部帳戶</option>{displayAccounts.map(a=><option value={a.id} key={a.id}>{a.label}</option>)}</select></label><label className="field"><span>幣別</span><select aria-label="流水幣別篩選" value={currencyFilter} onChange={setFilter(setCurrencyFilter)}><option value="">全部幣別</option>{[...new Set(rows.map(r=>r.currency))].sort().map(c=><option key={c}>{c}</option>)}</select></label><label className="field"><span>分類</span><select aria-label="流水分類篩選" value={kindFilter} onChange={setFilter(v=>setKindFilter(v as ''|'pending'|'classified'))}><option value="">全部</option><option value="pending">未分類</option><option value="classified">已分類</option></select></label></div>
  <p className="bank-swipe-hint muted small">向左滑一筆流水可編輯或設定分類。</p><p className="bank-filter-summary"><span>{filtered.length} 筆符合篩選</span>{filteredPending>0&&kindFilter!=='pending'&&<button type="button" className="link" onClick={()=>{setKindFilter('pending');setPage(0)}}>其中 {filteredPending} 筆未分類，只看這些</button>}{(monthFilter||accountFilter||currencyFilter||kindFilter)&&<button type="button" className="link" onClick={()=>{setMonthFilter('');setAccountFilter('');setCurrencyFilter('');setKindFilter('');setPage(0)}}>清除篩選</button>}</p></>}
  {!rows.length&&!ledger?.months.length && <p className="empty">{ledger?`${monthLabel(ledger.from)}起沒有銀行流水。`:'還沒有銀行流水。按「匯入銀行帳單」選擇 PDF 或 CSV 帳單；也可以在下方「流水帳戶」新增帳戶後手動記帳。'}</p>}
  {monthUnloaded ? <MonthLoading month={monthFilter} status={ledger!.status} onRetry={()=>ledger!.onLoadMonth(monthFilter)}/> : (!!rows.length||!!ledger?.months.length)&&!filtered.length && <p className="empty">沒有符合篩選的流水。</p>}
  <div className="bank-records">{[...groups.entries()].map(([month,monthRows])=>{const totals=monthTotals.get(month);return <section key={month} className="bank-month" aria-label={`${monthLabel(month)} 銀行流水`}>
-  <header className="bank-month-head"><h4>{monthLabel(month)}</h4><span className="muted small">{totals?.count ?? monthRows.length} 筆</span>{totals&&<span className="bank-month-totals">{[...totals.currencies].sort(([a],[b])=>a.localeCompare(b)).map(([currency,money])=><span key={currency}><small>{currency}</small>{money.credit>0&&<span className="bank-month-in">+{fmt(money.credit)}</span>}{money.debit>0&&<span>−{fmt(money.debit)}</span>}</span>)}</span>}</header>
+  <header className="bank-month-head"><h4>{monthLabel(month)}</h4><span className="muted small">{totals?.count ?? monthRows.length} 筆</span>{totals&&<span className="bank-month-totals">{[...totals.currencies].sort(([a],[b])=>a.localeCompare(b)).map(([currency,money])=><span key={currency}><small>{currency}</small>{money.credit>0&&<span className="bank-month-in">+{listAmount(money.credit,currency)}</span>}{money.debit>0&&<span>−{listAmount(money.debit,currency)}</span>}</span>)}</span>}</header>
   {monthRows.map(row=><BankRecord key={row.id} row={row} date={row.date} account={accountLabels.get(row.accountId)??'未辨識帳戶'} rules={rules} busy={busy} revealed={revealed===row.id} onReveal={open=>setRevealed(open?row.id:null)} onEdit={()=>setEditing(row)} onRule={()=>editRule(row)}/>)}
  </section>})}</div>{ledger&&hasEarlier(ledger)&&!monthFilter&&currentPage+1===pageCount&&<LoadEarlier ledger={ledger}/>}{pager}</section>
  <section className="panel bank-settings" aria-label="銀行流水設定">

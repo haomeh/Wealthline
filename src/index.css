@@ -3200,23 +3200,30 @@ dialog.expense-rule-dialog { max-width: 440px; }
 /* Spending and bank rows may lack the category button; always reserve both slots so amounts stay aligned. */
 .expense-record:has(> .detail-record-actions > button), .bank-record:has(> .detail-record-actions > button) { --record-action-space: 88px; }
 .detail-record-details { min-width: 0; }
-.detail-record-details > summary { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 12px; min-height: 44px; list-style: none; cursor: pointer; border-radius: 6px; }
+.detail-record-details > summary { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 24px; min-height: 44px; list-style: none; cursor: pointer; border-radius: 6px; }
 .detail-record:has(> .detail-record-actions > button) .detail-record-details > summary { padding-right: calc(var(--record-action-space) + 4px); }
 .detail-record-details > summary::-webkit-details-marker { display: none; }
 .detail-record-details > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .detail-record-heading { display: flex; align-items: center; min-width: 0; gap: 8px; }
+/* The full title of a row whose title is cut off, while the pointer is over the row or it has keyboard
+   focus (DetailRecord marks it data-clipped). An open row shows the whole description instead. */
+.detail-record-heading { position: relative; }
+@media (hover: hover) {
+  .detail-record-heading[data-clipped]::after { content: attr(data-full); position: absolute; z-index: 20; top: -6px; left: -10px; width: max-content; max-width: min(640px, calc(100vw - 48px)); padding: 5px 10px; border-radius: 8px; background: var(--ink); color: var(--surface); font-size: 13px; font-weight: 500; line-height: 20px; white-space: normal; overflow-wrap: anywhere; box-shadow: 0 6px 18px rgba(0, 0, 0, .25); opacity: 0; visibility: hidden; pointer-events: none; transition: opacity .12s, visibility 0s .12s; }
+  .detail-record-details > summary:is(:hover, :focus-visible) .detail-record-heading[data-clipped]::after { opacity: 1; visibility: visible; transition: opacity .12s .3s, visibility 0s .3s; }
+  .detail-record-details[open] .detail-record-heading::after { display: none; }
+}
 .detail-record-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; font-weight: 500; line-height: 20px; }
 .detail-record-heading .tag { flex-shrink: 0; font-size: 10px; padding: 2px 4px; }
 .detail-record-secondary { display: flex; align-items: center; min-width: 0; gap: 8px; }
 .detail-record-meta { min-width: 0; max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink-2); font-size: 11px; }
 .detail-record-value { flex-shrink: 0; text-align: right; font-size: 14px; line-height: 20px; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .record-money { display: inline-flex; align-items: baseline; gap: 4px; }
-.record-money small { color: var(--ink-2); font-size: 11px; }
-/* Right-aligned figure with a fixed slot after the decimal point: whole amounts leave it empty,
-   so the digits and decimal points of every row share columns, and so do the currency codes
-   (min-width) unless an amount is unusually long. */
-.record-money strong { display: inline-flex; justify-content: flex-end; min-width: 8ch; font-weight: 600; font-variant-numeric: lining-nums tabular-nums; }
-.record-money-fraction { display: inline-block; min-width: 3ch; text-align: left; }
+.record-money small { flex: 0 0 auto; min-width: 3.4em; color: var(--ink-2); font-size: 11px; text-align: left; }
+/* The currency code in a fixed slot and the figure right-aligned in a fixed width: the codes and
+   right edges of every row share columns unless an amount is unusually long. Each currency keeps
+   one number of decimals (format.ts amountParts), so its decimal points line up as well. */
+.record-money strong { display: inline-block; min-width: 11ch; text-align: right; font-weight: 600; font-variant-numeric: lining-nums tabular-nums; }
 .record-money[data-tone="credit"] { color: var(--good); }
 .record-unknown { color: var(--critical); font-size: 13px; }
 .detail-record-actions { position: absolute; top: 4px; right: 0; display: flex; justify-content: end; min-width: 0; }
@@ -3295,6 +3302,9 @@ dialog.expense-rule-dialog { max-width: 440px; }
   .daily-date { gap: 2px; }
   .daily-source { font-size: 10px; }
   .daily-action-group .daily-action { border-color: transparent; }
+  /* Narrower money slots leave the description room on a phone. */
+  .record-money small { min-width: 2.8em; }
+  .record-money strong { min-width: 9ch; }
 }
 @media (max-width: 360px) {
   .detail-record-value { font-size: 12px; }
@@ -3319,7 +3329,9 @@ dialog.expense-rule-dialog { max-width: 440px; }
 .cashflow-pending-tile > span:first-child { color: var(--ink); }
 .cashflow-pending-tile strong { font-family: inherit; font-size: 13px; font-weight: 700; }
 .cashflow-pending-tile small { line-height: 1.6; }
-.cashflow-pending-tile button.link { align-self: flex-start; padding: 0; font-size: 13px; font-weight: 700; }
+.cashflow-pending-tile button.link { padding: 0; font-size: 13px; font-weight: 700; }
+.cashflow-pending-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
+.cashflow-pending-actions > button:not(.link) { min-height: 36px; padding: 6px 14px; font-size: 13px; font-weight: 700; }
 /* Numbers of the previous period stay up, dimmed, while the new one converts. */
 .cashflow-tiles[data-stale] > .panel { opacity: .55; transition: opacity .15s; }
 .cashflow-bars-tile .panel-head { margin-bottom: 8px; }
@@ -3690,7 +3702,7 @@ button.pin-chip:hover:not(:disabled) { background: var(--ink); opacity: 0.85; }
   .cashflow-tiles .cashflow-phone-summary { order: 0; }
   .cashflow-tiles .cashflow-pending-tile { order: 1; grid-column: 1 / -1; flex-direction: row; flex-wrap: wrap; align-items: center; gap: 4px 12px; padding: 12px 16px; border-radius: 16px; }
   .cashflow-tiles .cashflow-pending-tile small { flex-basis: 100%; order: 2; }
-  .cashflow-tiles .cashflow-pending-tile .link { margin-left: auto; }
+  .cashflow-tiles .cashflow-pending-tile .cashflow-pending-actions { order: 3; flex-basis: 100%; }
   .cashflow-tiles .cashflow-categories-tile { order: 2; }
   .cashflow-tiles .cashflow-bars-tile { order: 3; }
   .cashflow-tiles .cashflow-records-tile { order: 4; }
@@ -3747,7 +3759,7 @@ button.pin-chip:hover:not(:disabled) { background: var(--ink); opacity: 0.85; }
 .bank-load-more.banner { text-align: left; }
 .bank-records { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; min-width: 0; margin-top: 12px; }
 /* Each month is one tinted block, so its rows read as one group. */
-.bank-month { --row-bg: var(--surface-2); min-width: 0; overflow: hidden; padding: 0 16px 4px; border-radius: 14px; background: var(--row-bg); }
+.bank-month { --row-bg: var(--surface-2); min-width: 0; padding: 0 16px 4px; border-radius: 14px; background: var(--row-bg); }
 .bank-month-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; padding: 14px 0 10px; border-bottom: 1px solid var(--border); }
 .bank-month .detail-record { border-bottom-color: var(--border); }
 .bank-month-head h4 { margin: 0; font-size: 15px; }
@@ -3796,7 +3808,8 @@ button.pin-chip:hover:not(:disabled) { background: var(--ink); opacity: 0.85; }
 @media (max-width: 640px) {
   .bank-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .bank-rules-head { flex-direction: column; }
-  .bank-month { padding: 0 12px 4px; }
+  /* Clips rows while a swipe moves them. */
+  .bank-month { overflow: hidden; padding: 0 12px 4px; }
   .bank-account-add { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
   .bank-account-add .field { grid-column: 1 / -1; }
   .bank-account-rename { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
@@ -3904,3 +3917,51 @@ button.pin-chip:hover:not(:disabled) { background: var(--ink); opacity: 0.85; }
   .csv-guide-fields li > span:last-child { flex-basis: 100%; }
 }
 .csv-guide-fields .csv-required { background: var(--accent-wash); border-color: transparent; color: var(--accent); }
+
+/* 快速分類 (QuickClassify.tsx): the records still to classify, one card at a time. */
+.quick-classify-callout { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; margin: 4px 0 12px; padding: 12px 16px; border-radius: 14px; background: var(--warn-wash); }
+.quick-classify-callout > span { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
+.quick-classify-callout strong { font-size: 14px; }
+.quick-classify-callout small { font-size: 12px; }
+.quick-classify-callout > button { min-height: 40px; padding: 8px 18px; border-color: var(--accent); background: var(--accent); color: var(--surface); font-weight: 700; }
+.quick-classify-callout > button:hover:not(:disabled) { background: var(--accent); filter: brightness(1.06); }
+dialog.quick-classify { width: min(560px, calc(100vw - 24px)); max-height: calc(100dvh - 32px); overflow: auto; padding: 20px 22px 18px; border: none; border-radius: 24px; background: var(--surface); color: var(--ink); box-shadow: 0 30px 80px -20px rgba(30, 20, 12, .5); box-sizing: border-box; }
+dialog.quick-classify::backdrop { background: rgba(30, 20, 12, .42); }
+.quick-classify-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.quick-classify-head h3 { margin: 0; font-family: var(--serif); font-size: 22px; }
+.quick-classify-head p { margin: 2px 0 0; }
+.quick-classify-close { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 40px; width: 40px; height: 40px; padding: 0; border-color: transparent; background: transparent; color: var(--ink-2); font-size: 16px; }
+.quick-classify-progress { height: 4px; margin: 12px 0 16px; overflow: hidden; border-radius: 99px; background: var(--surface-2); }
+.quick-classify-progress > i { display: block; height: 100%; border-radius: inherit; background: var(--accent); transition: width .25s ease; }
+.quick-card { margin: 0 0 16px; padding: 16px 18px; border: 1px solid var(--border); border-radius: 18px; background: var(--surface-2); box-shadow: 0 10px 24px -18px rgba(30, 20, 12, .45); animation: quick-card-in .22s cubic-bezier(.2, .8, .2, 1); }
+@keyframes quick-card-in { from { opacity: 0; transform: translateX(24px) scale(.98); } }
+@media (prefers-reduced-motion: reduce) { .quick-card { animation: none; } }
+.quick-card p { margin: 0; }
+.quick-card-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; color: var(--ink-2); font-size: 12px; font-variant-numeric: tabular-nums; }
+.quick-card-meta .tag { padding: 0 6px; font-size: 11px; line-height: 18px; }
+.quick-card-account { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.quick-card-title { margin-top: 10px !important; font-size: 16px; font-weight: 600; line-height: 1.45; overflow-wrap: anywhere; }
+.quick-card-amount { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-top: 12px !important; }
+.quick-card-amount .record-money strong { min-width: 0; font-size: 22px; }
+.quick-card-amount .record-money small { min-width: 0; font-size: 12px; }
+.quick-group { min-width: 0; margin: 0 0 12px; padding: 0; border: 0; }
+.quick-group > legend, .quick-group > summary { margin-bottom: 8px; padding: 0; color: var(--ink-2); font-size: 12px; font-weight: 600; }
+.quick-group-more > summary { cursor: pointer; }
+.quick-options { display: flex; flex-wrap: wrap; gap: 8px; }
+.quick-options .chip { display: inline-flex; align-items: center; gap: 6px; min-height: 40px; padding: 6px 14px; font-size: 14px; }
+.quick-options kbd { display: inline-flex; align-items: center; justify-content: center; min-width: 18px; height: 18px; padding: 0 4px; border-radius: 5px; background: var(--surface-2); color: var(--ink-2); font: 600 11px/1 inherit; font-variant-numeric: tabular-nums; }
+.quick-extras { display: grid; gap: 8px; margin: 4px 0 12px; padding-top: 12px; border-top: 1px solid var(--hairline); }
+.quick-check { display: flex; align-items: center; gap: 8px; min-height: 32px; font-size: 13px; }
+.quick-check input { width: 18px; height: 18px; margin: 0; accent-color: var(--accent); }
+.quick-keyword { margin: 0; }
+.quick-keyword input { width: 100%; box-sizing: border-box; }
+.quick-error { margin: 0 0 12px; color: var(--critical); font-size: 13px; }
+.quick-classify-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+.quick-classify-actions > button { min-height: 44px; padding: 8px 20px; border-radius: 14px; }
+.quick-classify-done > p { margin: 8px 0; }
+.quick-classify-done .quick-classify-actions { justify-content: flex-end; margin-top: 16px; }
+@media (max-width: 640px) {
+  dialog.quick-classify { width: 100vw; max-width: 100vw; max-height: 92dvh; margin: auto 0 0; padding: 16px 16px calc(16px + env(safe-area-inset-bottom)); border-radius: 24px 24px 0 0; }
+  .quick-options .chip { min-height: 44px; }
+  .quick-classify-actions > button { flex: 1; }
+}

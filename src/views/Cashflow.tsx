@@ -5,7 +5,7 @@ import { MonthlyReport } from './MonthlyReport'
 import type { CaptureReport } from '../monthlyReportExport'
 import { MonthlyReviewPanel } from './MonthlyReviewPanel'
 import { CashflowRecords } from './CashflowRecords'
-import { cashflowSummary, type CashflowCurrencySummary, type CashflowMonthTotals, type CashflowPeriod } from '../cashflow'
+import { cashflowSummary, monthsInPeriod, type CashflowCurrencySummary, type CashflowMonthTotals, type CashflowPeriod } from '../cashflow'
 import { fmt } from '../format'
 import type { WealthData } from '../model'
 import { useCalendarNow } from '../useCalendarNow'
@@ -13,6 +13,7 @@ import { cashflowColor } from '../cashflowColor'
 import { monthKey, useCashflowPeriod, useTwdCashflow, type CashflowPeriodState } from '../cashflowPeriod'
 import { CashflowPeriodControls } from './CashflowPeriodControls'
 import { useRecordEditing } from './useRecordEditing'
+import { QuickClassify } from './QuickClassify'
 
 interface Props {
   data: WealthData
@@ -97,10 +98,15 @@ function LiveCashflow({ data, onChange, busy = false, dirty, sessionIdentity, ca
   const converting = (!shown && loading) || (!shownBars && bars.loading)
   const failed = (!shown && needsFx && error) || (!shownBars && bars.needsFx && bars.error)
   const empty = !period.monthList.length
+  // 快速分類 from the 未分類 tile: the shown period's bank rows left pending and card rows left 未分類.
+  const [quick, setQuick] = useState(false)
+  const periodMonths = quick && period.period !== 'all' ? new Set(monthsInPeriod(period.endMonth, period.period)) : null
+  const inPeriod = (date: string) => !periodMonths || periodMonths.has(date.slice(0, 7))
 
   // The editor replaces the page while open; the page stays mounted underneath, so the open month and chosen period survive.
   return <>
     {editing.editor}{editing.dialogs}
+    {quick && onChange && <QuickClassify data={data} onChange={onChange} busy={busy} sources={['bank', 'card']} inRange={inPeriod} onClose={() => setQuick(false)} />}
     <div className="cashflow-body" hidden={editing.editing}>
     {corrected && <p role="status" className="notice">網址篩選無效，已還原為安全的未篩選範圍。</p>}
     {editing.error && <p role="alert">{editing.error}</p>}
@@ -152,7 +158,10 @@ function LiveCashflow({ data, onChange, busy = false, dirty, sessionIdentity, ca
           {shown.pending.count > 0 ? <section className="panel warn tile-stat cashflow-pending-tile" aria-label="未分類">
             <span><strong>{shown.pending.count} 筆銀行流水未分類</strong></span>
             <small>已暫依入帳／支出計入；轉帳或繳卡費請設為不計收支。</small>
-            <button className="link" onClick={onGoBankTransactions}>前往分類 →</button>
+            <div className="cashflow-pending-actions">
+              {onChange && <button disabled={busy || readiness !== 'ready'} onClick={() => setQuick(true)}>快速分類</button>}
+              <button className="link" onClick={onGoBankTransactions}>前往銀行流水 →</button>
+            </div>
           </section> : <section className="panel tile-stat desktop-only" aria-label="儲蓄率">
             <span>儲蓄率</span>
             <strong>{shown.income > 0 ? `${Math.round(shown.difference / shown.income * 100)}%` : '—'}</strong>
