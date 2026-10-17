@@ -185,7 +185,13 @@ const hsbc = (id, ref, extra = {}) => bank(id, '2026-03-02', `SGV0${ref}JG5L33CW
 test('lines that differ only in references and account codes count as similar; the suggested keyword skips those codes', () => {
   const d = data({ bankTransactions: [hsbc('h1', '45551'), hsbc('h2', '46210'), hsbc('h3', '47002'), bank('other', '2026-03-03', 'Interest Earned', 'debit')] })
   assert.deepEqual(quick.similarPending(d, quick.quickItem(d, { source: 'bank', id: 'h1' })).map((r) => r.id), ['h2', 'h3'])
-  assert.equal(quick.descriptionShape('SGV02036JG5L33CW HIB- 26955X791141 zngkn 200319885 OTHR REF IB12-45551'), 'HIB- ZNGKN OTHR REF')
+  assert.equal(quick.descriptionShape('SGV02036JG5L33CW HIB- 26955X791141 zngkn 200319885 OTHR REF IB12-45551'), 'SGV HIB- ZNGKN OTHR REF IB')
+  // A merchant name joined to its store or order number keeps the name, so two merchants are not similar.
+  assert.notEqual(quick.descriptionShape('CARD PURCHASE SHOP1234'), quick.descriptionShape('CARD PURCHASE CAFE5678'))
+  assert.notEqual(quick.descriptionShape('SHOPEE*12345678 SINGAPORE'), quick.descriptionShape('LAZADA*98765432 SINGAPORE'))
+  assert.equal(quick.descriptionShape('SHOPEE*12345678 SINGAPORE'), quick.descriptionShape('SHOPEE*87654321 SINGAPORE'))
+  const shops = data({ bankTransactions: [bank('s1', '2026-03-02', 'CARD PURCHASE SHOP1234'), bank('s2', '2026-03-03', 'CARD PURCHASE CAFE5678'), bank('s3', '2026-03-04', 'CARD PURCHASE SHOP1234')] })
+  assert.deepEqual(quick.similarPending(shops, quick.quickItem(shops, { source: 'bank', id: 's1' })).map((r) => r.id), ['s3'])
   // Too little is left without the codes: only equal descriptions are similar.
   assert.equal(quick.descriptionShape('/CCP/450307XXXXXX3278 REF B502-04559'), '/CCP/450307XXXXXX3278 REF B502-04559')
   const keyword = quick.suggestKeyword(hsbc('x', '45551').description)
@@ -223,4 +229,17 @@ test('after a rule on a card, the cards it matched are passed over and the dialo
   await click(button('自有帳戶轉帳'))
   assert.equal(cardTitle(), 'Quick Cheque Deposit')
   assert.match(document.querySelector('.quick-notice').textContent, /另外 1 筆也一起分類了/)
+})
+
+test('when a rule classifies every card left, the done screen still says how many went with it', async () => {
+  const d = data({ bankTransactions: [hsbc('h1', '45551'), hsbc('h2', '46210'), hsbc('h3', '47002')], expenses: [] })
+  await host(QuickClassify, d, { sources: ['bank'], onClose() {} })
+  const [similarBox, ruleBox] = document.querySelectorAll('.quick-check input')
+  await click(similarBox)
+  await click(ruleBox)
+  const input = document.querySelector('input[aria-label="快速分類規則關鍵字"]')
+  await act(() => { Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, 'value').set.call(input, 'OTHR REF'); input.dispatchEvent(new dom.window.Event('input', { bubbles: true })) })
+  await click(button('自有帳戶轉帳'))
+  assert.match(document.querySelector('.quick-classify-done').textContent, /全部分類完成/)
+  assert.match(document.querySelector('.quick-notice').textContent, /另外 2 筆也一起分類了/)
 })
