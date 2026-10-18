@@ -5,16 +5,21 @@ import { fmt } from '../format'
 import { CashflowChart } from './CashflowChart'
 import { useCashflowPeriod, useTwdCashflow } from '../cashflowPeriod'
 import { CashflowPeriodControls } from './CashflowPeriodControls'
+import type { WealthData } from '../model'
+import type { LedgerReadiness } from '../cashflowQuery'
+import { CashflowDataStatus } from './CashflowDataStatus'
 
 export interface CashflowSummaryProps extends CashflowInput {
   now: string
+  reviewData?: WealthData
+  readiness?: LedgerReadiness
   onGoExpenses?: () => void
   onGoBankTransactions?: () => void
 }
 function Review({label,total,currency}: {label:string;total:CashflowReviewTotals;currency:string}) {
   return <div className="cashflow-review-item"><strong>{label} · {total.count} 筆</strong><span>支出方向 {total.debitCount} 筆 · {currency} {fmt(total.debitAmount)}</span><span>入帳方向 {total.creditCount} 筆 · {currency} {fmt(total.creditAmount)}</span></div>
 }
-export function CashflowSummary({now,onGoExpenses,onGoBankTransactions,...input}: CashflowSummaryProps) {
+export function CashflowSummary({now,reviewData,readiness,onGoExpenses,onGoBankTransactions,...input}: CashflowSummaryProps) {
   const period=useCashflowPeriod(input,now)
   const {rawGroups,groups,needsFx,loading,error,retry}=useTwdCashflow(input,period.endMonth,period.period,period.today)
   const {latestMonth}=period
@@ -25,6 +30,7 @@ export function CashflowSummary({now,onGoExpenses,onGoBankTransactions,...input}
       {onGoExpenses && <button onClick={onGoExpenses}>信用卡消費</button>}
     </div></div>
     <CashflowPeriodControls state={period}/>
+    <CashflowDataStatus data={reviewData} readiness={input.months && readiness !== 'error' ? 'loading' : readiness ?? (reviewData ? 'ready' : 'not-loaded')} period={period} group={groups[0]} reliableTotals={!loading&&!error&&!input.months} onReview={()=>navigate('/cashflow'+cashflowQueryString({range:'month',month:period.endMonth,panel:'review',source:'all',metric:'all',page:1}))}/>
     {loading && <p role="status" className="notice">正在換算每月匯率…</p>}
     {needsFx && error && <div role="alert" className="notice"><p>無法完成 TWD 換算：{error}。未顯示部分合計。</p><button onClick={retry}>重試匯率</button></div>}
     {!rawGroups.length ? <div className="cashflow-no-record"><p className="muted">這段期間無紀錄，不代表收支為零。</p>

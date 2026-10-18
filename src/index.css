@@ -3970,3 +3970,88 @@ dialog.quick-classify::backdrop { background: rgba(30, 20, 12, .42); }
   .quick-options .chip { min-height: 44px; }
   .quick-classify-actions > button { flex: 1; }
 }
+
+/* Asset valuation explanations keep the existing palette and card structure. */
+.asset-change-overview-hero { min-width: 0; flex: 1 1 300px; }
+.asset-change-since-last { min-width: 0; max-width: 100%; }
+.asset-attribution { margin-top: 4px; min-width: 0; }
+.asset-attribution > summary { cursor: pointer; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; min-height: 44px; font-size: 13px; color: var(--ink-2); }
+.asset-attribution-action { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; }
+.asset-attribution > summary::before { content: '▸'; }
+.asset-attribution[open] > summary::before { content: '▾'; }
+.asset-attribution summary { list-style: none; overflow-wrap: anywhere; }
+.asset-attribution summary::-webkit-details-marker { display: none; }
+.asset-attribution summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 8px; }
+.asset-attribution-body { padding-block: 8px; min-width: 0; }
+.asset-attribution-body > p { margin: 0 0 12px; }
+.asset-attribution-factors { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; align-items: start; }
+.asset-attribution-factor { min-width: 0; border: 1px solid var(--border); border-radius: 12px; background: var(--surface-2); }
+.asset-attribution-factor > summary { cursor: pointer; display: flex; flex-direction: column; align-items: flex-start; gap: 8px; min-height: 76px; padding: 14px; font-size: 13px; }
+.asset-attribution-factor > summary > span::after { content: ' ▸'; color: var(--ink-2); }
+.asset-attribution-factor[open] > summary > span::after { content: ' ▾'; }
+.asset-attribution-factor > summary strong { font-size: 16px; font-weight: 600; }
+.asset-attribution-factor-body { padding: 0 14px 14px; min-width: 0; overflow-wrap: anywhere; }
+.asset-attribution-factor-body > p { margin: 0 0 10px; }
+.asset-attribution-factor-body ul { list-style: none; padding: 0; margin: 0; display: grid; gap: 10px; }
+.asset-attribution-evidence { min-width: 0; padding: 12px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; font-size: 12px; }
+.asset-attribution-evidence-head { display: flex; flex-direction: column; gap: 6px; }
+.asset-attribution-evidence p { margin: 8px 0 0; font-size: 11px; }
+.asset-attribution-evidence dl { margin: 10px 0 0; display: grid; gap: 6px; }
+.asset-attribution-evidence dl > div { display: flex; flex-direction: column; gap: 2px; }
+.asset-attribution-evidence dt { color: var(--ink-2); }
+.asset-attribution-evidence dd { margin: 0; }
+.asset-attribution-residual { display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px 16px; margin-top: 12px; padding: 14px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface-2); font-size: 13px; }
+.asset-attribution-residual p { flex-basis: 100%; margin: 0; }
+.asset-attribution-method { margin-top: 8px; }
+.asset-attribution-method > summary { min-height: 44px; display: flex; align-items: center; cursor: pointer; font-size: 12px; color: var(--ink-2); }
+.asset-attribution-method > summary::before { content: '▸'; margin-right: 8px; }
+.asset-attribution-method[open] > summary::before { content: '▾'; }
+.asset-attribution-method p { margin: 0 0 8px; max-width: 75ch; }
+@media (max-width: 900px) {
+  .asset-attribution-factors { grid-template-columns: minmax(0, 1fr); }
+  .asset-attribution-factor > summary { min-height: 76px; }
+}
+
+/* Cashflow evidence and chart controls. Existing palette and card surfaces stay shared. */
+.cashflow-data-status { display: flex; flex-wrap: wrap; align-items: start; gap: 18px 28px; margin-bottom: 16px; }
+.cashflow-status-evidence, .cashflow-savings-context { display: flex; flex: 1 1 240px; min-width: 0; flex-direction: column; align-items: start; gap: 6px; overflow-wrap: anywhere; }
+.cashflow-data-status h3 { margin: 0 0 2px; font-size: 14px; }
+.cashflow-status-evidence > strong { font-size: 14px; }
+.cashflow-status-evidence > span { font-size: 13px; }
+.cashflow-savings-context > strong { font-size: 17px; }
+.cashflow-savings-context button { margin-top: 2px; }
+.cashflow-summary > .cashflow-data-status { margin-top: 14px; background: var(--surface-2); }
+.cashflow-bars-controls { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px; margin-bottom: 12px; }
+.cashflow-bars-controls .segmented { flex-wrap: wrap; max-width: 100%; }
+.cashflow-bars-controls .segmented button { white-space: normal; }
+.cashflow-negative-note { margin: 0 0 8px; }
+.cashflow-bar-pair > span { min-height: 0; }
+.cashflow-bars[data-signed] .cashflow-bar-pair { position: relative; background: linear-gradient(to bottom, transparent calc(50% - .5px), var(--hairline) calc(50% - .5px), var(--hairline) calc(50% + .5px), transparent calc(50% + .5px)); }
+.cashflow-bars[data-signed] .cashflow-bar-pair > span { position: absolute; bottom: 50%; width: calc((100% - 4px) / 2); transform: scaleY(.5); transform-origin: center bottom; }
+.cashflow-bars[data-signed] .cashflow-bar-pair > span:first-child { left: 0; }
+.cashflow-bars[data-signed] .cashflow-bar-pair > span:last-child { right: 0; }
+.cashflow-bars[data-signed] .cashflow-bar-pair > span:only-child { width: 100%; }
+.cashflow-bars[data-signed] .cashflow-bar-pair > span[data-sign="-1"] { transform: scaleY(-.5); }
+@media (max-width: 899px) {
+  .cashflow-data-status { padding: 16px; border: 1px solid var(--border); border-radius: 16px; background: var(--surface); gap: 14px; }
+  .cashflow-status-evidence, .cashflow-savings-context { flex-basis: 100%; }
+  .cashflow-savings-context { padding-top: 12px; border-top: 1px solid var(--hairline); }
+  .cashflow-bars-controls { align-items: start; }
+  .cashflow-bars-legend { flex-wrap: wrap; }
+}
+
+/* Daily causes reuse the overview ring and shared chart tooltip. */
+.daily-asset-change { min-width: 0; }
+.daily-change-head .tile-label { margin: 0; font-size: 13px; font-weight: 400; }
+.overview-tiles .daily-change-head .daily-change-delta { white-space: normal; }
+.daily-change-chart { margin: 14px 0; }
+.daily-change-note { margin: 0; overflow-wrap: anywhere; }
+.donut-chart { position: relative; width: fit-content; }
+.donut-chart svg { display: block; width: 100%; height: 100%; overflow: visible; }
+.donut-chart .donut::after { pointer-events: none; }
+.donut-segment { cursor: pointer; pointer-events: visibleStroke; }
+.donut-segment:focus-visible { outline: none; filter: brightness(.7); }
+.donut-tip { position: fixed; z-index: 5; bottom: auto; transform: none; display: grid; gap: 3px; width: min(220px, calc(100vw - 60px)); white-space: normal; overflow-wrap: anywhere; }
+.donut-tip strong, .donut-tip span, .donut-tip small { font-size: 12px; }
+.donut-tip small { opacity: .85; }
+@media (max-width: 899px) { .daily-change-head .tile-label { font-size: 12px; } }
