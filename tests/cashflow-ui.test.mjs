@@ -169,7 +169,7 @@ test('new currency-month requests automatically and stale selection results cann
  await render(Summary,{expenses:[{...card,currency:'USD',amount:1},{...card,id:'feb',currency:'SGD',date:'2026-02-01',amount:2},{...card,id:'mar',date:'2026-03-01'}],now:'2026-03-10'})
  assert.equal(pending.length,0)
  await picker();await selectMonth(1)
- assert.match(document.querySelector('[role="status"]').textContent,/正在換算/)
+ assert.match(document.querySelector('.notice[role="status"]').textContent,/正在換算/)
  assert.equal(pending.length,1)
  await picker();await selectMonth(2)
  assert.equal(pending.length,2);assert.match(pending[1].url,/SGDTWD/)

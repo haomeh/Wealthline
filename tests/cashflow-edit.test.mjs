@@ -56,7 +56,7 @@ const pending = () => document.querySelector('.cashflow-pending-tile')?.textCont
 test('a bank row\'s tag button edits its category rule, and the summary follows at once', async () => {
   const { changes, data } = await open(baseData())
   assert.equal(consumption(), '700')
-  assert.match(pending(), /1 筆銀行流水未分類/)
+  assert.match(pending(), /未分類 2 筆.*銀行 1 筆 · 信用卡 1 筆/)
   await click(buttonLabelled(/分類規則：未分類/))
   assert.ok(document.querySelector('dialog[open]'), 'the same rule dialog as the bank page')
   assert.equal(document.querySelector('dialog [aria-label="規則關鍵字"]').value, '轉帳 王小明')
@@ -69,7 +69,8 @@ test('a bank row\'s tag button edits its category rule, and the summary follows 
   assert.ok(data().version >= 13)
   assert.equal(document.querySelector('dialog[open]'), null)
   assert.equal(consumption(), '300', 'the excluded transfer leaves the consumption')
-  assert.equal(pending(), '', 'nothing is unclassified any more')
+  assert.match(pending(), /未分類 1 筆.*銀行 0 筆 · 信用卡 1 筆/, 'the bank transfer is classified; the card still needs classification')
+  assert.equal([...document.querySelectorAll('.cashflow-pending-tile button')].find(b => b.textContent === '快速分類')?.disabled, false)
 })
 
 test('a card row\'s tag button adds a rule, and its category shows under the description', async () => {
@@ -113,7 +114,8 @@ test('the row editors open over the page and bring it back unchanged', async () 
   assert.deepEqual(data().bankTransactions.find((r) => r.id === 'move').classification, { kind: 'expense', category: '購物' })
   assert.equal(changes.length, 1)
   assert.equal(document.querySelectorAll('.cashflow-records[open]').length, 2, 'the open sections stay open')
-  assert.match(pending(), /^$/)
+  assert.match(pending(), /未分類 1 筆.*銀行 0 筆 · 信用卡 1 筆/, 'bank editing keeps the pending card actionable')
+  assert.equal([...document.querySelectorAll('.cashflow-pending-tile button')].find(b => b.textContent === '快速分類')?.disabled, false)
   // The card editor.
   await click(buttonLabelled(/^編輯消費 .*ZZZ商店/))
   assert.match(document.querySelector('form.panel h2').textContent, /編輯消費明細/)
@@ -122,6 +124,7 @@ test('the row editors open over the page and bring it back unchanged', async () 
   await wait(60)
   assert.equal(data().expenses[0].category, '娛樂')
   assert.match(document.querySelector('.expense-record .tag').textContent, /娛樂/)
+  assert.equal(pending(), '', 'the tile clears once both bank and card records are classified')
 })
 
 test('cancelling an editor changes nothing', async () => {

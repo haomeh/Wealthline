@@ -8,6 +8,7 @@ import { expandPeriodDays, parseHoldingPeriods, type HoldingPeriod } from './hol
 import { entryValue, instrumentKey, isUnrecordedPartialDay, parseQuantityDays, quantityPoint, validDate, type Filled, type QuantityDay, type HistoricalPoint } from './quantityHistory'
 import { balanceSheet, parseLiability, type Liability } from './liabilities'
 import { accountBaseValue, baseValue, type Account, type Position, type WealthData } from './model'
+import { captureValuation, parseValuation, type ValuationEvidence } from './valuationEvidence'
 
 export interface PositionState {
   quantity: number
@@ -33,6 +34,7 @@ export interface Snapshot {
   total: number
   accounts: { id: string; name: string; value: number }[]
   categories: Record<string, number>
+  valuation?: ValuationEvidence
   liabilityEstimated?: boolean
   liabilityTotal?: number | null // absent: not recorded by older clients; null: cannot convert
   netWorth?: number | null
@@ -137,7 +139,7 @@ export function snapshotOf(data: WealthData, at: string): Snapshot {
   const accounts = data.accounts.map((a) => ({ id: a.id, name: a.name, value: accountBaseValue(data, a) }))
   const totals = balanceSheet(data, at)
   return {
-    date: localDate(at), at, total: accounts.reduce((s, a) => s + a.value, 0), accounts, categories,
+    date: localDate(at), at, total: accounts.reduce((s, a) => s + a.value, 0), accounts, categories, valuation: captureValuation(data, at),
     ...(data.liabilities !== undefined && { liabilityTotal: totals.liabilities, netWorth: totals.net, ...(data.liabilities?.some(d => d.schedule) && { liabilityEstimated: true }) }),
   }
 }
@@ -317,7 +319,10 @@ export function recordSave(saved: WealthData | null, next: WealthData): WealthDa
   let snapshots = next.history.snapshots
   // Files saved before history existed: keep their last state as the starting point.
   if (saved && saved.accounts.length && snapshots.length === 0 && localDate(saved.updatedAt) !== localDate(at)) {
-    snapshots = [snapshotOf(saved, saved.updatedAt)]
+    const baseline = snapshotOf(saved, saved.updatedAt)
+    // This retrospective aggregate is not evidence captured at the old save time.
+    delete baseline.valuation
+    snapshots = [baseline]
   }
   const changes = [...next.history.changes, ...diffPositions(saved ?? { ...next, accounts: [] }, next, at)]
   const stamped: WealthData = { ...next, version: dataVersion(next, { minimumVersion: 2 }), liabilities: next.liabilities ?? [], accounts: stampAdded(saved, next, changes, at) }
@@ -390,6 +395,7 @@ export function parseHistory(raw: unknown, fail: (why: string) => never): Histor
     }
     if (typeof s.liabilityTotal === 'number' && s.liabilityTotal < 0) fail(`${where}的負債不可為負值`)
     return {
+      ...(s.valuation !== undefined && { valuation: parseValuation(s.valuation, fail) }),
       ...(s.liabilityEstimated !== undefined && { liabilityEstimated: s.liabilityEstimated as boolean }),
       ...(s.liabilityTotal !== undefined && { liabilityTotal: s.liabilityTotal as number | null }),
       ...(s.netWorth !== undefined && { netWorth: s.netWorth as number | null }),

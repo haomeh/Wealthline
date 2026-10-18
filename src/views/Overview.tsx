@@ -7,6 +7,7 @@ import { snapshotOf, totalPoints } from '../history'
 import { seriesFor, MODES, type Mode } from './historySeries'
 import { SnapshotDetails } from './SnapshotDetails'
 import { TrendChart } from './TrendChart'
+import { Donut } from './Donut'
 import { useHistoricalValuations } from '../useHistoricalValuations'
 import { balanceSheet } from '../liabilities'
 import { projectLiability } from '../loanSchedule'
@@ -22,12 +23,13 @@ import {
   type WealthData,
 } from '../model'
 import { colorize } from '../chartColors'
-import { ChangeSinceLast } from './AssetChange'
+import { DailyAssetChange } from './AssetChange'
 import { accountChange } from '../accountTrend'
 import { missingStatementAssets } from '../bankStatementAssets'
 import type { ColoredSlice } from '../chartColors'
 import { CashflowSummary } from './CashflowSummary'
 import type { CashflowMonthTotals } from '../cashflow'
+import type { LedgerReadiness } from '../cashflowQuery'
 import { useCashflowPeriod, useTwdCashflow } from '../cashflowPeriod'
 import type { Change, Snapshot } from '../history'
 
@@ -51,6 +53,7 @@ interface Props {
   onGoBankTransactions?: () => void
   // When transactions are not loaded: their monthly totals (dataSummary.ts).
   cashflowMonths?: CashflowMonthTotals[]
+  cashflowReadiness?: LedgerReadiness
   // When earlier years of history are not loaded.
   archive?: ArchiveSummary
   onLoadHistory?: () => void
@@ -61,7 +64,7 @@ interface Props {
   status?: ReactNode
 }
 
-export function Overview({ data: loaded, onGoHistory, onGoRates, onGoLiabilities, onNewAccount, onImport, onOpenAccount, onGoExpenses, onGoBankTransactions, cashflowMonths, archive, onLoadHistory, loadingHistory, onGoAccounts, onGoCashflow, status }: Props) {
+export function Overview({ data: loaded, onGoHistory, onGoRates, onGoLiabilities, onNewAccount, onImport, onOpenAccount, onGoExpenses, onGoBankTransactions, cashflowMonths, cashflowReadiness = 'not-loaded', archive, onLoadHistory, loadingHistory, onGoAccounts, onGoCashflow, status }: Props) {
   const now = useCalendarNow()
   const data = archive ? { ...loaded, history: { ...loaded.history, snapshots: [...archive.points, ...loaded.history.snapshots], changes: [...archive.carried, ...loaded.history.changes] } } : loaded
   const estimated = data.liabilities?.some(d => d.schedule)
@@ -84,7 +87,7 @@ export function Overview({ data: loaded, onGoHistory, onGoRates, onGoLiabilities
   const cashflowPeriod = useCashflowPeriod(cashflowInput, now)
   const monthFlow = useTwdCashflow(cashflowInput, cashflowPeriod.endMonth, cashflowPeriod.period, cashflowPeriod.today)
   const cashflow = (cashflowMonths ? cashflowMonths.length > 0 : !!(data.expenses?.length || data.bankTransactions?.length)) &&
-    <CashflowSummary expenses={data.expenses} expenseRules={data.expenseCategoryRules} bankTransactions={data.bankTransactions} bankRules={data.bankCategoryRules} months={cashflowMonths} now={now} onGoExpenses={onGoExpenses} onGoBankTransactions={onGoBankTransactions}/>
+    <CashflowSummary expenses={data.expenses} expenseRules={data.expenseCategoryRules} bankTransactions={data.bankTransactions} bankRules={data.bankCategoryRules} months={cashflowMonths} reviewData={loaded} readiness={cashflowReadiness} now={now} onGoExpenses={onGoExpenses} onGoBankTransactions={onGoBankTransactions}/>
   if (data.accounts.length === 0 && !data.liabilities?.length && points.length === 1) {
     return (
       <div className="overview"><section className="panel empty span-2">
@@ -151,13 +154,12 @@ export function Overview({ data: loaded, onGoHistory, onGoRates, onGoLiabilities
         {/* Without debts the net worth equals the total above, so the timeline takes its place. */}
         <section className={`panel ${current && hasDebt ? 'span-3' : 'span-4'} snapshot-timeline`} aria-label="資產時間線">
           <div className="trend-head">
-            {current ? <div className="hero">
+            {current ? <div className="hero asset-change-overview-hero">
               <span className="eyebrow">總資產</span>
               <div className="hero-figure num-serif">
                 <small>NT$</small>
                 {fmt(byCategory.total, 0)}
               </div>
-              <ChangeSinceLast data={historical.data} />
             </div> : <div><span className="eyebrow">資產時間線</span><h3>{point.date.replaceAll('-', '/')}</h3></div>}
             <div className="trend-controls">
               <div className="segmented trend-mode" role="group" aria-label="顯示方式">{(Object.keys(MODES) as Mode[]).map(m => <button key={m} aria-pressed={m === mode} className={m === mode ? 'on' : ''} onClick={() => setMode(m)}>{MODES[m]}</button>)}</div>
@@ -192,6 +194,7 @@ export function Overview({ data: loaded, onGoHistory, onGoRates, onGoLiabilities
             <strong>{totals.net === null ? '尚無法換算' : <><small>NT$ </small>{fmt(totals.net, 0)}</>}</strong>
             <small>{totals.net === null ? '總資產 − 總負債 · 請檢查匯率' : netChange === null ? '總資產 − 總負債' : `較上月 ${netChange >= 0 ? '+' : '−'}${Math.abs(netChange * 100).toFixed(1)}%`}</small>
           </section>}
+          <DailyAssetChange data={data} today={live} />
           <section className="panel tile-stat overview-debt" aria-label="總負債">
             <span>{loan ? `負債 · ${loan.name}` : estimated ? '總負債（含預估）' : '總負債'}</span>
             <strong>{totals.liabilities === null ? '尚無法換算' : <><small>NT$ </small>{fmt(totals.liabilities, 0)}</>}</strong>
@@ -281,13 +284,6 @@ function topSlices(slices: ColoredSlice[]) {
   const shown = slices.filter((s) => s.share > 0)
   const rest = shown.slice(3).reduce((n, x) => n + x.share, 0)
   return { head: shown.slice(0, 3), rest }
-}
-
-function Donut({ slices }: { slices: ColoredSlice[] }) {
-  const shown = slices.filter((s) => s.share > 0)
-  const ends = shown.map((_, i) => shown.slice(0, i + 1).reduce((n, s) => n + s.share * 100, 0))
-  const stops = shown.map((s, i) => `${s.color} ${i ? ends[i - 1] : 0}% ${ends[i]}%`)
-  return <div className="donut" role="img" aria-label={slices.map((s) => `${s.label} ${(s.share * 100).toFixed(1)}%`).join('，')} style={{ background: `conic-gradient(${stops.join(', ') || 'var(--hairline) 0 100%'})` }} />
 }
 
 function ShareLegend({ slices }: { slices: ColoredSlice[] }) {

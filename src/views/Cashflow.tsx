@@ -14,6 +14,8 @@ import { monthKey, useCashflowPeriod, useTwdCashflow, type CashflowPeriodState }
 import { CashflowPeriodControls } from './CashflowPeriodControls'
 import { useRecordEditing } from './useRecordEditing'
 import { QuickClassify } from './QuickClassify'
+import { quickQueue } from '../quickClassify'
+import { CashflowDataStatus } from './CashflowDataStatus'
 
 interface Props {
   data: WealthData
@@ -103,14 +105,19 @@ function LiveCashflow({ data, onChange, busy = false, dirty, sessionIdentity, ca
   const failed = (!shown && needsFx && error) || (!shownBars && bars.needsFx && bars.error)
   const empty = !period.monthList.length
   // 快速分類 from the 未分類 tile: the shown period's bank rows left pending and card rows left 未分類.
-  const [quick, setQuick] = useState(false)
-  const periodMonths = quick && period.period !== 'all' ? new Set(monthsInPeriod(period.endMonth, period.period)) : null
+  const [quick, setQuick] = useState<string | null>(null)
+  const periodKey = `${period.period}:${period.endMonth}`
+  const periodMonths = period.period !== 'all' ? new Set(monthsInPeriod(period.endMonth, period.period)) : null
   const inPeriod = (date: string) => !periodMonths || periodMonths.has(date.slice(0, 7))
+  const queueReady = readiness === 'ready' && !months && !stale && !loading && !bars.loading && !error && !bars.error
+  const queue = queueReady ? quickQueue(data, ['bank', 'card'], inPeriod) : undefined
+  const pendingBank = queue?.filter(item => item.source === 'bank').length ?? 0
+  const pendingCard = queue?.filter(item => item.source === 'card').length ?? 0
 
   // The editor replaces the page while open; the page stays mounted underneath, so the open month and chosen period survive.
   return <>
     {editing.editor}{editing.dialogs}
-    {quick && onChange && <QuickClassify data={data} onChange={onChange} busy={busy} sources={['bank', 'card']} inRange={inPeriod} onClose={() => setQuick(false)} />}
+    {quick === periodKey && queueReady && onChange && <QuickClassify key={periodKey} data={data} onChange={onChange} busy={busy} sources={['bank', 'card']} inRange={inPeriod} onClose={() => setQuick(null)} />}
     <div className="cashflow-body" hidden={editing.editing}>
     {corrected && <p role="status" className="notice">網址篩選無效，已還原為安全的未篩選範圍。</p>}
     {editing.error && <p role="alert">{editing.error}</p>}
@@ -121,6 +128,7 @@ function LiveCashflow({ data, onChange, busy = false, dirty, sessionIdentity, ca
     </div>
     {!empty && <div className="segmented cashflow-panels" role="group" aria-label="檢視"><button aria-pressed={query.panel === 'records'} className={query.panel === 'records' ? 'on' : ''} onClick={() => onQuery({...query,panel:'records'})}>收支明細</button><button aria-pressed={query.panel === 'review'} className={query.panel === 'review' ? 'on' : ''} onClick={() => onQuery({...query,range:'month',month:panelMonth,year:undefined,panel:'review',page:1})}>{query.range === 'month' ? '每月核對' : `核對 ${panelMonth}`}</button><button onClick={()=>onQuery({...query,range:'month',month:panelMonth,year:undefined,panel:'report',page:1})}>每月報表</button></div>}
     {query.panel === 'review' && query.month && <MonthlyReviewPanel key={`${query.month}:${sessionIdentity}`} data={data} month={query.month} today={period.today} readiness={readiness} onChange={onChange} busy={busy} dirty={dirty} sessionIdentity={sessionIdentity} captureReviewGuard={captureReviewGuard} onUnclassified={source => choose({...query,panel:'records',source,metric:'all',category:'unclassified',page:1})} />}
+    <CashflowDataStatus data={data} readiness={months && readiness !== 'error' ? 'loading' : readiness} period={period} group={group} reliableTotals={queueReady&&!busy} onReview={()=>onQuery({...query,range:'month',month:panelMonth,year:undefined,panel:'review',page:1})}/>
     {empty && readiness!=='ready' && <div role={readiness==='error'?'alert':'status'}>{readiness==='error' ? <>{ledgerError || '無法載入明細'}<button onClick={onRetryLedger}>重試明細</button></> : '正在載入明細…'}</div>}
     {empty ? <section className="panel empty">
       <p className="muted">還沒有收支紀錄。匯入信用卡帳單或銀行帳單後，這裡會合併算出每月的收入與花費。</p>
@@ -142,7 +150,6 @@ function LiveCashflow({ data, onChange, busy = false, dirty, sessionIdentity, ca
               <span className="cashflow-hbar-track"><i style={{ width: `${Math.max(2, Math.max(0, value) / Math.max(shown.income, shown.consumption, 1) * 100)}%`, background: color }} /></span>
               <span className="num-serif">{fmt(value, 0)}</span>
             </div>)}
-            {shown.income > 0 && <small className="muted">儲蓄率 {Math.round(shown.difference / shown.income * 100)}%</small>}
           </section>
           <section className="panel deep tile-stat desktop-only" aria-label="收支差額">
             <span>收支差額 · TWD</span>
@@ -159,24 +166,21 @@ function LiveCashflow({ data, onChange, busy = false, dirty, sessionIdentity, ca
             <button disabled={stale} onClick={()=>selectMetric('consumption')}><strong>{fmt(shown.consumption, 0)}</strong></button>
             <small>信用卡 {shown.coverage.cardCount} 筆 · 銀行 {Math.max(0, count(shown.consumptionCategories) - shown.coverage.cardCount)} 筆</small>
           </section>
-          {shown.pending.count > 0 ? <section className="panel warn tile-stat cashflow-pending-tile" aria-label="未分類">
-            <span><strong>{shown.pending.count} 筆銀行流水未分類</strong></span>
-            <small>已暫依入帳／支出計入；轉帳或繳卡費請設為不計收支。</small>
+          {(!queue || queue.length > 0) && <section className="panel warn tile-stat cashflow-pending-tile" aria-label="未分類">
+            <span><strong>{queue ? `未分類 ${queue.length} 筆` : '未分類筆數待確認'}</strong></span>
+            <small>{queue ? `銀行 ${pendingBank} 筆 · 信用卡 ${pendingCard} 筆` : readiness !== 'ready' || months ? '明細載入後確認未分類筆數' : '金額與目前期間確認後顯示筆數'}</small>
+            {pendingBank > 0 && <small>銀行未分類已暫依入帳／支出計入；轉帳或繳卡費請設為不計收支。</small>}
             <div className="cashflow-pending-actions">
-              {onChange && <button disabled={busy || readiness !== 'ready'} onClick={() => setQuick(true)}>快速分類</button>}
+              {onChange && <button disabled={busy || !queueReady || !queue?.length} onClick={() => setQuick(periodKey)}>快速分類</button>}
               <button className="link" onClick={onGoBankTransactions}>前往銀行流水 →</button>
             </div>
-          </section> : <section className="panel tile-stat desktop-only" aria-label="儲蓄率">
-            <span>儲蓄率</span>
-            <strong>{shown.income > 0 ? `${Math.round(shown.difference / shown.income * 100)}%` : '—'}</strong>
-            <small>收支差額 ÷ 收入</small>
           </section>}
         </>}
 
         {/* Stays up when the chosen month has no records, so the other months remain visible. */}
         <section className={`panel ${shown ? 'span-3' : 'span-4'} cashflow-bars-tile`} aria-label={trend.title}>
-          <div className="panel-head"><h3>{trend.title}</h3><div className="cashflow-bars-legend"><span><i style={{ background: 'var(--s2)' }} />收入</span><span><i style={{ background: 'var(--s1)' }} />消費</span></div></div>
-          {shownBars ? <MonthBars group={shownBars} selected={period.selection.range === 'month' ? period.endMonth : ''} onSelect={month => { setBarPicked(true); period.showMonth(month) }} /> : <p className="muted small">{bars.loading ? '正在換算每月匯率…' : '無法顯示月份對照。'}</p>}
+          <div className="panel-head"><h3>{trend.title}</h3></div>
+          {shownBars ? <MonthBars group={shownBars} disabled={stale} selected={period.selection.range === 'month' ? period.endMonth : ''} onSelect={month => { setBarPicked(true); period.showMonth(month) }} /> : <p className="muted small">{bars.loading ? '正在換算每月匯率…' : '無法顯示月份對照。'}</p>}
         </section>
         {shown && <>
           <section className="panel cashflow-categories-tile" aria-label="消費分類">
@@ -210,25 +214,35 @@ function monthOf(year: CashflowCurrencySummary | undefined, month: string): Cash
   return cashflowSummary({ months: [{ currency: year.currency, month, coverage, totals: { income, consumption, difference, incomeCategories, consumptionCategories, excluded, exclusions, pending, investmentRecovery } }] }, month, 1)[0]
 }
 
-function MonthBars({ group, selected, onSelect }: { group: CashflowCurrencySummary; selected: string; onSelect: (month: string) => void }) {
-  const max = Math.max(1, ...group.months.flatMap((m) => [m.income ?? 0, m.consumption ?? 0]))
-  const height = (v: number | null) => `${Math.max(0, (v ?? 0) / max) * 100}%`
-  return <div className="cashflow-bars" style={{ gridTemplateColumns: `repeat(${group.months.length}, minmax(0, 1fr))` }}>
+function MonthBars({ group, selected, disabled, onSelect }: { group: CashflowCurrencySummary; selected: string; disabled?: boolean; onSelect: (month: string) => void }) {
+  const [view, setView] = useState<'both' | 'consumption'>('both')
+  const values = group.months.flatMap(m => view === 'both' ? [m.income ?? 0, m.consumption ?? 0] : [m.consumption ?? 0])
+  const max = Math.max(1, ...values.map(Math.abs))
+  const negative = values.some(value => value < 0)
+  const height = (v: number | null) => `${Math.abs(v ?? 0) / max * 100}%`
+  return <>
+    <div className="cashflow-bars-controls"><div className="segmented" role="group" aria-label="圖表顯示">
+      <button className={view === 'both' ? 'on' : ''} aria-pressed={view === 'both'} onClick={() => setView('both')}>收入與消費</button>
+      <button className={view === 'consumption' ? 'on' : ''} aria-pressed={view === 'consumption'} onClick={() => setView('consumption')}>只看消費</button>
+    </div><div className="cashflow-bars-legend">{view === 'both' && <span><i style={{ background: 'var(--s2)' }} />收入</span>}<span><i style={{ background: 'var(--s1)' }} />消費</span></div></div>
+    {negative && <p className="muted small cashflow-negative-note">退款及沖回的負值顯示於零線下方。</p>}
+    <div className="cashflow-bars" data-signed={negative || undefined} style={{ gridTemplateColumns: `repeat(${group.months.length}, minmax(0, 1fr))` }}>
     {group.months.map((m) => {
       const label = `${Number(m.month.slice(5, 7))} 月`
       const none = m.income === null && m.consumption === null
       return <button key={m.month} className={`cashflow-bar${m.month === selected ? ' on' : ''}`} onClick={() => onSelect(m.month)}
+        disabled={disabled}
         aria-pressed={m.month === selected}
         aria-label={`${Number(m.month.slice(0, 4))} 年 ${label}：${none ? '無紀錄' : `收入 ${fmt(m.income ?? 0, 0)}，消費 ${fmt(m.consumption ?? 0, 0)}`}`}>
         <span className="cashflow-bar-pair" aria-hidden>
-          <span style={{ height: height(m.income), background: 'var(--s2)' }} title={`收入 ${fmt(m.income ?? 0, 0)}`} />
-          <span style={{ height: height(m.consumption), background: 'var(--s1)' }} title={`消費 ${fmt(m.consumption ?? 0, 0)}`} />
+          {view === 'both' && <span data-series="income" data-sign={Math.sign(m.income ?? 0)} style={{ height: height(m.income), background: 'var(--s2)' }} title={`收入 ${fmt(m.income ?? 0, 0)}`} />}
+          <span data-series="consumption" data-sign={Math.sign(m.consumption ?? 0)} style={{ height: height(m.consumption), background: 'var(--s1)' }} title={`消費 ${fmt(m.consumption ?? 0, 0)}`} />
         </span>
         <span className="cashflow-bar-label">{label}</span>
         {!none && <span className="cashflow-bar-tip" aria-hidden>收入 {fmt(m.income ?? 0, 0)}<br />消費 {fmt(m.consumption ?? 0, 0)}</span>}
       </button>
     })}
-  </div>
+  </div></>
 }
 
 function CategoryList({ categories, income = false, onSelect }: { onSelect: (category:string)=>void; categories: CashflowCurrencySummary['consumptionCategories'] | CashflowCurrencySummary['incomeCategories']; income?: boolean }) {

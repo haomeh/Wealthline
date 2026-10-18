@@ -21,6 +21,7 @@ import { ledgerPart } from './dataParts'
 import { applyFetchedRates, emptyData, missingRates, parseWealthData, ratesStale, usedCurrencies, type WealthData } from './model'
 import { finishSave } from './saveState'
 import { classifyBankTransaction } from './bankTransactions'
+import type { LedgerReadiness } from './cashflowQuery'
 import { clearLocal, downloadDataFile, hasLocalData, loadLocal, opensLocal, readDataFile, readLocalPreview, replaceLocal, saveLocal, setLocalActive, storageEstimate, LocalConflictError, type LocalFile, type LocalPreview } from './localStore'
 import { localDate, pendingChanges, pendingLiabilityChanges, recordSave, revertChange, revertLiabilityChange } from './history'
 import { applyQuotes, fetchHoldingQuotes } from './quotes'
@@ -219,8 +220,9 @@ export default function App() {
 
   // Updates holding prices, then exchange rates (new quotes can bring new currencies).
   // Like rates, prices stay in memory until the next save. Returns `from` with the
-  // new prices and rates, or null when the user signed out meanwhile.
-  async function refreshMarket(from: WealthData): Promise<WealthData | null> {
+  // new prices and rates, or null when the user signed out meanwhile. Explicit refresh
+  // capture rejects failed requested quotes/rates; startup can still use cached values.
+  async function refreshMarket(from: WealthData, allowCachedOnFailure = true): Promise<WealthData | null> {
     const version = sessionVersion.current
     const { quotes, failed } = await fetchHoldingQuotes(from)
     if (version !== sessionVersion.current) return null
@@ -228,12 +230,13 @@ export default function App() {
     setData((d) => (d ? applyQuotes(d, quotes, at) : d))
     setPriceError(failed.length ? `找不到 ${failed.join('、')} 的報價，可以點價格手動輸入。` : '')
     const withQuotes = applyQuotes(from, quotes, at)
-    return ratesStale(withQuotes) ? refreshRates(withQuotes) : withQuotes
+    const market = ratesStale(withQuotes) ? await refreshRates(withQuotes, allowCachedOnFailure) : withQuotes
+    return !allowCachedOnFailure && failed.length ? null : market
   }
 
   // Updates exchange rates in the background. The new rates are kept in memory and
   // written to Drive with the next save (or today's first record), so opening the app never leaves unsaved changes.
-  async function refreshRates(from: WealthData): Promise<WealthData | null> {
+  async function refreshRates(from: WealthData, allowCachedOnFailure = true): Promise<WealthData | null> {
     const version = sessionVersion.current
     setRatesError('')
     try {
@@ -241,11 +244,11 @@ export default function App() {
       if (version !== sessionVersion.current) return null
       setData((d) => (d ? applyFetchedRates(d, r.rates, r.updatedAt) : d))
       if (r.unsupported.length) setRatesError(`找不到 ${r.unsupported.join('、')} 的匯率，請手動輸入。`)
-      return applyFetchedRates(from, r.rates, r.updatedAt)
+      return !allowCachedOnFailure && r.unsupported.length ? null : applyFetchedRates(from, r.rates, r.updatedAt)
     } catch (e) {
       if (version !== sessionVersion.current) return null
       setRatesError(e instanceof Error ? e.message : String(e))
-      return from
+      return allowCachedOnFailure ? from : null
     }
   }
 
@@ -642,6 +645,7 @@ export default function App() {
   // Transactions: the monthly totals while some parts are not loaded, from the records loaded
   // and the summary of the rest (ledgerCashflow); undefined once all are loaded.
   const ledgerMissing = state && data ? missingParts(state, data, 'ledger') : []
+  const ledgerReadiness: LedgerReadiness = !ledgerMissing.length ? 'ready' : groupLoad.ledger === 'loading' ? 'loading' : groupLoad.ledger ? 'error' : 'not-loaded'
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const ledgerMonths = useMemo(() => state && data && ledgerMissing.length ? ledgerCashflow(state, data) : undefined, [state, data, summaryVersion])
   const ledger = state && data ? ledgerScope(state, data) : null
@@ -906,6 +910,7 @@ export default function App() {
             onGoCashflow={() => go({ tab: 'cashflow' })}
             status={syncPill}
             cashflowMonths={ledgerMonths}
+            cashflowReadiness={ledgerReadiness}
             archive={archive ?? undefined}
             onLoadHistory={() => void loadGroup('history')}
             loadingHistory={groupLoad.history === 'loading'}
@@ -942,7 +947,7 @@ export default function App() {
               return () => session === sessionVersion.current && edit === editVersion.current && selection === restoreSelection.current && !savingRef.current
             }}
             months={ledgerMonths}
-            readiness={!missing('ledger') ? 'ready' : groupLoad.ledger === 'loading' ? 'loading' : groupLoad.ledger ? 'error' : 'not-loaded'}
+            readiness={ledgerReadiness}
             ledgerError={groupLoad.ledger && groupLoad.ledger !== 'loading' ? groupLoad.ledger : undefined}
             onRetryLedger={() => void loadGroup('ledger')}
             onGoExpenses={() => go({ tab: 'expenses' })}
@@ -965,7 +970,10 @@ export default function App() {
             view={route}
             setView={goAccounts}
             onBack={(fallback) => goBack(routePath({ tab: 'accounts', ...fallback }))}
-            onRefreshPrices={async () => void (await refreshMarket(data))}
+            onRefreshPrices={async () => {
+              const market = await refreshMarket(data, false)
+              if (market) await recordToday(market)
+            }}
             priceError={priceError}
             saved={saved.current}
           />
@@ -978,7 +986,10 @@ export default function App() {
         {data && tab === 'bank-transactions' && bankShown && <BankTransactions recordId={route.tab==='bank-transactions'?route.recordId:undefined} returnTo={route.tab==='bank-transactions'?route.returnTo:undefined} key={`${local?'local':user?.sub}:${route.recordId??''}`}  passwordScope={local?'local':user?`google:${user.sub}`:undefined} data={data} onChange={update} busy={busy} historyReady={!missing('history')} historyStatus={groupLoad.history} onLoadHistory={()=>void loadGroup('history')}
           importing={route.tab === 'bank-transactions' && !!route.importing} onImporting={(open) => goImport('bank-transactions', open)} onOpenImport={() => openImportFrom('bank-transactions')}
           ledger={ledger ? { ...ledger, status: groupLoad.ledger, onLoadEarlier: () => loadEarlier(ledger.next), onLoadAll: () => loadEarlier(''), onLoadMonth: (month) => void loadGroup('ledger', [ledgerPart(`${month}-01`)]) } : undefined} />}
-        {data && tab === 'rates' && <Rates data={data} onChange={update} onRefresh={async () => void (await refreshRates(data))} error={ratesError} />}
+        {data && tab === 'rates' && <Rates data={data} onChange={update} onRefresh={async () => {
+          const market = await refreshRates(data, false)
+          if (market) await recordToday(market)
+        }} error={ratesError} />}
       </main>
       <SiteFooter />
       </div>
