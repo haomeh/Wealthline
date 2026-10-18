@@ -51,14 +51,14 @@ test('older, future and same-day records do not substitute for yesterday', () =>
   }
 })
 
-test('legacy exact snapshot shows signed unknown residual as a neutral slice', () => {
+test('legacy exact snapshot shows an observed account difference without inventing factor causes', () => {
   const d = fixture(); delete d.history.snapshots[0].valuation
   const dom = render(d), doc = dom.window.document
   assert.match(doc.querySelector('.daily-change-delta').textContent, /\+1,480/)
   assert.equal(segments(doc).length, 1)
-  assert.match(segments(doc)[0].getAttribute('aria-label'), /未解釋差額.*\+1,480/)
-  assert.equal(segments(doc)[0].getAttribute('stroke'), 'var(--other)')
-  assert.match(doc.querySelector('.daily-change-note').textContent, /尚無法拆解/)
+  assert.match(segments(doc)[0].getAttribute('aria-label'), /Bank.*\+1,480/)
+  assert.match(doc.querySelector('.daily-change-note').textContent, /帳戶差額/)
+  assert.doesNotMatch(segments(doc)[0].getAttribute('aria-label'), /匯率影響|價格影響|持倉調整/)
   dom.window.close()
 })
 
@@ -166,6 +166,38 @@ test('ring pointer, keyboard focus, Enter, Escape and mobile-style click expose 
     assert.match(document.querySelector('[role="tooltip"]').textContent, /匯率影響NT\$ −1,000/)
     await act(() => fx.dispatchEvent(new window.MouseEvent('click', { bubbles: true })))
     assert.equal(document.querySelector('[role="tooltip"]'), null)
+    delete d.history.snapshots[0].valuation
+    await act(() => root.render(createElement(DailyAssetChange, { data: d, today: history.snapshotOf(d, at) })))
+    await act(() => segments(document)[0].dispatchEvent(new window.MouseEvent('click', { bubbles: true })))
+    assert.match(document.querySelector('[role="tooltip"]').textContent, /BankNT\$ \+1,480/)
+    assert.match(document.querySelector('[role="tooltip"]').textContent, /帳戶差額.*尚未拆分匯率、價格或持倉原因/)
+    const accountData = entries => ({ ...model.emptyData(), accounts: entries.map(([id, name, value]) => ({ id, name, kind: 'bank', country: 'TW', category: 'Cash', positions: [{ id: `${id}-cash`, type: 'cash', currency: 'TWD', symbol: '', quantity: value, price: 1 }] })) })
+    const legacyPoint = entries => ({ date: '2026-10-17', at: '2026-10-17T12:00:00', total: entries.reduce((sum, [, , value]) => sum + value, 0), accounts: entries.map(([id, name, value]) => ({ id, name, value })), categories: {} })
+    const colliding = accountData([['reserved', '未解釋差額', 110]])
+    colliding.history.snapshots = [legacyPoint([['reserved', '未解釋差額', 100], ['gone', 'Gone', 20]])]
+    await act(() => root.render(createElement(DailyAssetChange, { data: colliding, today: history.snapshotOf(colliding, at) })))
+    const residual = document.querySelector('[data-slice-id="residual"]'), account = document.querySelector('[data-slice-id="account:reserved"]')
+    assert.equal(residual.dataset.cause, account.dataset.cause)
+    await act(() => residual.focus())
+    assert.match(document.querySelector('[role="tooltip"]').textContent, /NT\$ −20/)
+    assert.ok(residual.getAttribute('aria-describedby')); assert.equal(account.getAttribute('aria-describedby'), null)
+    await act(() => residual.dispatchEvent(new window.MouseEvent('click', { bubbles: true })))
+    assert.match(document.querySelector('[role="tooltip"]').textContent, /NT\$ −20/, 'first click after focus remains selected')
+    await act(() => residual.dispatchEvent(new window.MouseEvent('click', { bubbles: true })))
+    assert.equal(document.querySelector('[role="tooltip"]'), null)
+    await act(() => account.focus())
+    assert.match(document.querySelector('[role="tooltip"]').textContent, /NT\$ \+10/)
+    const duplicateNames = accountData([['a', 'Same', 110], ['b', 'Same', 180], ['c', 'Same · a', 330]])
+    duplicateNames.history.snapshots = [legacyPoint([['a', 'Same', 100], ['b', 'Same', 200], ['c', 'Same · a', 300]])]
+    await act(() => root.render(createElement(DailyAssetChange, { data: duplicateNames, today: history.snapshotOf(duplicateNames, at) })))
+    await act(() => document.querySelector('[data-slice-id="account:a"]').focus())
+    assert.match(document.querySelector('[role="tooltip"]').textContent, /NT\$ \+10/)
+    await act(() => document.querySelector('[data-slice-id="account:b"]').dispatchEvent(new window.MouseEvent('click', { bubbles: true })))
+    assert.match(document.querySelector('[role="tooltip"]').textContent, /NT\$ −20/, 'click selects B immediately despite stale keyboard focus on A')
+    assert.ok(document.querySelector('[data-slice-id="account:b"]').getAttribute('aria-describedby'))
+    assert.equal(document.querySelector('[data-slice-id="account:a"]').getAttribute('aria-describedby'), null)
+    await act(() => document.querySelector('[data-slice-id="account:c"]').dispatchEvent(new window.Event('pointerover', { bubbles: true })))
+    assert.match(document.querySelector('[role="tooltip"]').textContent, /Same · aNT\$ \+30/)
   } finally {
     await act(() => root.unmount()); dom.window.close()
     for (const [k, value] of prior) { if (value === undefined) delete globalThis[k]; else globalThis[k] = value }
@@ -182,5 +214,31 @@ test('partial attribution keeps signed unknown remainder beside known effects', 
   assert.equal(unknown.getAttribute('stroke'), 'var(--other)')
   assert.ok(Math.abs(segments(doc).reduce((sum, n) => sum + Number(n.dataset.share), 0) - 1) < 1e-12)
   assert.match(doc.querySelector('.daily-change-note').textContent, /部分可拆解/)
+  dom.window.close()
+})
+
+
+test('parsed legacy fallback keeps signed offsetting account slices and partial removed-account residual', () => {
+  const d = { ...model.emptyData(), accounts: [
+    { id: 'a', name: 'Synthetic A', kind: 'bank', country: 'TW', category: 'Cash', positions: [{ id: 'a-cash', type: 'cash', currency: 'TWD', symbol: '', quantity: 1100, price: 1 }] },
+    { id: 'b', name: 'Synthetic B', kind: 'bank', country: 'TW', category: 'Cash', positions: [{ id: 'b-cash', type: 'cash', currency: 'TWD', symbol: '', quantity: 1950, price: 1 }] },
+  ] }
+  const legacy = { date: '2026-10-17', at: '2026-10-17T12:00:00', total: 3000, accounts: [{ id: 'a', name: 'Synthetic A', value: 1000 }, { id: 'b', name: 'Synthetic B', value: 2000 }], categories: { Cash: 3000 } }
+  d.history = history.parseHistory({ snapshots: [legacy] }, why => { throw new Error(why) })
+  let dom = render(d), doc = dom.window.document
+  assert.match(doc.querySelector('.daily-change-delta').textContent, /\+50/)
+  assert.deepEqual(segments(doc).map(n => n.getAttribute('aria-label')), ['Synthetic A NT$ +100', 'Synthetic B NT$ −50'])
+  assert.ok(Math.abs(Number(segments(doc)[0].dataset.share) - 2 / 3) < 1e-12)
+  assert.match(doc.querySelector('.daily-change-note').textContent, /帳戶差額/)
+  dom.window.close()
+  d.history.snapshots[0].accounts.push({ id: 'removed', name: 'Removed', value: 20 }); d.history.snapshots[0].total += 20
+  dom = render(d); doc = dom.window.document
+  assert.match(segments(doc).find(n => n.dataset.cause === '未解釋差額').getAttribute('aria-label'), /−20/)
+  assert.match(doc.querySelector('.daily-change-note').textContent, /帳戶差額.*部分/)
+  dom.window.close()
+  d.accounts.push({ ...d.accounts[0], id: 'new', name: 'New' })
+  dom = render(d); doc = dom.window.document
+  assert.match(doc.querySelector('.daily-change-delta').textContent, /尚無法比較/, 'new nonzero accounts still fail the unchanged baseline coverage gate')
+  assert.equal(segments(doc).length, 0)
   dom.window.close()
 })
