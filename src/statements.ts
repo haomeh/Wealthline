@@ -32,15 +32,19 @@ export function hsbcSgPage(items:unknown[]) {
   if(!header) return undefined
   const dates=header.items.filter(i=>/^DATE$/i.test(i.str.trim()))
   const merchantX=header.items.find(i=>/^DESCRIPTION$/i.test(i.str.trim()))!.x
-  const amountX=header.items.find(i=>/^AMOUNT/i.test(i.str.trim()))!.x
+  const amountHeader=header.items.find(i=>/^AMOUNT/i.test(i.str.trim()))!
+  const amountX=amountHeader.x
+  // Page 1 prints the account summary box to the right of the table, on the same lines as its rows,
+  // so only the AMOUNT(SGD) column counts as an amount and only a Total in the description column ends the table.
+  const amountRight=amountHeader.width ? amountHeader.x+amountHeader.width+20 : Infinity
   const transactionIndexes:number[]=[]
   for(const [index,row] of rows.entries()) {
     if(row.y>=header.y) continue
-    if(row.items.some(i=>i.x>=merchantX-5 && /^Total(?:\s|$)/i.test(i.str.trim()))) break
+    if(row.items.some(i=>i.x>=merchantX-5 && i.x<amountX && /^Total(?:\s|$)/i.test(i.str.trim()))) break
     const date=dates.map(column=>englishDate(row.items.find(i=>Math.abs(i.x-column.x)<5)?.str ?? ''))
     if(!date.every(Boolean)) continue
     const description=row.items.filter(i=>i.x>=merchantX-5 && i.x<amountX).map(i=>i.str.trim()).join(' ')
-    const amount=row.items.filter(i=>i.x>=amountX).map(i=>i.str.trim()).join(' ').replace(/(\d)(CR|DR)$/i,'$1 $2')
+    const amount=row.items.filter(i=>i.x>=amountX && i.x<amountRight).map(i=>i.str.trim()).join(' ').replace(/(\d)(CR|DR)$/i,'$1 $2')
     lines[index]=`${date.join(' ')} ${description} ${amount}`
     transactionIndexes.push(index)
   }
