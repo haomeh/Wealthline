@@ -481,11 +481,26 @@ test('the import entry detects each file, lists the unrecognized one, then shows
 test('a detected card statement shows which file and step it is on while it parses, without the empty file picker',async()=>{
  drive(appData());const {kind,card}=await openEntry()
  kind.setKinds([{kind:'card',bank:'匯豐'}]);card.setResults([cardResult()]);card.pause();await entryFiles(['card-2026-04.pdf']);await detect()
- await settle(()=>!!box('信用卡帳單解析進度'))
+ // The box shows 讀取 PDF… until the paused reader reports its step, which can take a render longer under load.
+ await settle(()=>/定位匯豐交易區段/.test(box('信用卡帳單解析進度')?.textContent??''))
  const status=box('信用卡帳單解析進度').textContent
  assert.match(status,/正在本機解析 · 第 1／1 份/);assert.match(status,/目前檔案（第 1／1 份）：card-2026-04\.pdf · 正在本機定位匯豐交易區段 · 第 2／3 頁/)
  assert.equal(document.querySelector('.statement-import form').hidden,true,'files from the entry are not asked for again')
  await act(async()=>card.release());await settle(()=>!!document.querySelector('.statement-group'));assert.equal(box('信用卡帳單解析進度'),null)
+ await click('取消匯入')
+})
+test('a card statement whose rows do not add up to its printed total says so on its report line',async()=>{
+ drive(appData());const {kind,card}=await openEntry()
+ kind.setKinds([{kind:'card',bank:'玉山'},{kind:'card',bank:'玉山'}])
+ card.setResults([{lines:['玉山銀行','本期合計：TWD 150','04/01 04/02 SYNTHETIC SHOP TWD 100'],title:'',ocrUsed:false},{lines:['玉山銀行','本期合計：TWD 100','04/01 04/02 SYNTHETIC SHOP TWD 100'],title:'',ocrUsed:false}])
+ await entryFiles(['esun-2026-04.pdf','esun-2026-05.pdf']);await detect()
+ await settle(()=>!!document.querySelector('.statement-group'))
+ const report=box('各帳單解析結果')
+ const alert=report.querySelector('[role="alert"]')
+ assert.match(alert.textContent,/帳單「本期合計」TWD 150，讀到的明細合計 TWD 100，相差 TWD 50/)
+ assert.ok(alert.closest('li').textContent.startsWith('esun-2026-04.pdf'))
+ assert.equal(report.querySelectorAll('[role="alert"]').length,1)
+ assert.match(report.textContent,/esun-2026-05\.pdf：.*與帳單「本期合計」TWD 100 相符/)
  await click('取消匯入')
 })
 test('each file is read once: the tabs use what detection read (card lines, bank result, card error) and detection shows file and step',async()=>{

@@ -296,6 +296,10 @@ textarea {
   word-break: break-word;
 }
 
+.total-check-mismatch {
+  color: var(--critical);
+}
+
 .storage-notice.warn {
   background: var(--warn-wash);
 }

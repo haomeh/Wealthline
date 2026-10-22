@@ -323,8 +323,8 @@ test('SG HSBC metadata uses statement-period end month and the billed SGD header
   assert.deepEqual(info,{bank:'匯豐',currency:'SGD',month:'2026-01',monthSource:'帳單結帳日'})
 })
 test('SG HSBC positioned columns preserve merchant numbers, final SGD amount and CR, excluding summary/payment',()=>{
-  const item=(str,x,y)=>({str,width:20,height:8,transform:[1,0,0,1,x,y]})
-  const items=[item('DATE',56,660),item('DATE',101,660),item('DESCRIPTION',139,660),item('AMOUNT(SGD)',278,660),
+  const item=(str,x,y,width=20)=>({str,width,height:8,transform:[1,0,0,1,x,y]})
+  const items=[item('DATE',56,660),item('DATE',101,660),item('DESCRIPTION',139,660),item('AMOUNT(SGD)',278,660,76),
     item('Previous statement balance',139,625),item('999',338,625),
     item('31 DEC',59,600),item('02 JAN',100,600),item('SYNTHETIC SHOP 123',139,600),item('12.34',348,600),
     item('CNY 80.00',139,590),item('COUNTRY',200,590),
@@ -336,6 +336,23 @@ test('SG HSBC positioned columns preserve merchant numbers, final SGD amount and
   const parsed=statements.parseStatement(page.lines,'2026-01','SGD','HSBC',page.transactionIndexes)
   assert.deepEqual(parsed.rows,[{date:'2025-12-31',description:'SYNTHETIC SHOP 123',amount:12.34,currency:'SGD'},{date:'2026-01-03',description:'SYNTHETIC REFUND',amount:-2,currency:'SGD'}])
   assert.deepEqual(statements.hsbcSgPage([item('HSBC',50,700)]),undefined)
+})
+test('SG HSBC page 1 ignores the account summary box printed to the right of the table',()=>{
+  // Synthetic layout matching the real page 1: the summary box at x≈389 shares lines with transaction rows.
+  const item=(str,x,y,width=20)=>({str,width,height:8,transform:[1,0,0,1,x,y]})
+  const items=[item('DATE',56,660),item('DATE',101,660),item('DESCRIPTION',139,660),item('AMOUNT(SGD)',278,660,76),
+    item('Credit Limit (SGD)',389,660),item('99,999.00',529,660),
+    item('01 JAN',59,630),item('02 JAN',100,630),item('SYNTHETIC SHOP A',139,630),item('10.00',330,630),
+    item('Total Account Balance',389,615),item('9,999.99',529,615),
+    item('03 JAN',59,600),item('04 JAN',100,600),item('SYNTHETIC SHOP B',139,600),item('20.50',330,600),item('Available Credit (SGD)',389,600),item('99,999.99',529,600),
+    item('05 JAN',59,575),item('06 JAN',100,575),item('SYNTHETIC REFUND',139,575),item('3.00CR',330,575),item('Purchase',389,575),item('99.99%',529,575),
+    item('07 JAN',59,550),item('08 JAN',100,550),item('SYNTHETIC SHOP C',139,550),item('1,234.56',318,550),
+    item('Total Due',139,520),item('9,999.99',330,520),
+    item('09 JAN',59,500),item('10 JAN',100,500),item('AD',139,500),item('999',348,500)]
+  const page=statements.hsbcSgPage(items)
+  assert.ok(page)
+  const parsed=statements.parseStatement(page.lines,'2026-01','SGD','HSBC',page.transactionIndexes)
+  assert.deepEqual(parsed.rows.map(r=>[r.description,r.amount]),[['SYNTHETIC SHOP A',10],['SYNTHETIC SHOP B',20.5],['SYNTHETIC REFUND',-3],['SYNTHETIC SHOP C',1234.56]])
 })
 test('E.SUN statement is titled by the month before its closing month: later rows stay in the statement year',()=>{
   const lines=['這是您 120年02月 信用卡帳單','02/27 03/01 SYNTHETIC SHOP TWD 1,913','03/10 03/12 SYNTHETIC SHOP 退貨 TWD -1,913','03/03 03/04 SYNTHETIC SUB TWD 298','11/30 12/02 SYNTHETIC OLD TWD 5']
