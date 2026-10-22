@@ -14,6 +14,7 @@ import { mergeExpenses, prepareExpenses, sha256, expenseCategory, CARD_CATEGORIE
 import { pdfFormatError } from '../bankStatementErrors'
 import { CSV_MAX_BYTES, CsvError, csvErrorText, decodeCsv, isCsvFile, readCardCsv } from '../csvImport'
 import { assertCreditCardFile, parseStatement, statementMetadata } from '../statements'
+import { statementTotalCheck, type StatementTotalCheck } from '../statementTotals'
 import { ExpenseCategoryRules, CategoryRuleButton, CategoryRuleDialog } from './ExpenseCategoryRules'
 import { StatementPasswordSettings } from './StatementPasswordSettings'
 import { usePasswordSettings } from './usePasswordSettings'
@@ -79,7 +80,7 @@ export function Expenses({data,onChange,busy,passwordScope,recordId,returnTo,imp
 type Draft = Expense & {selected:boolean;amountText:string;needsReview?:boolean;sourceFile?:number}
 function StatementImport({existing,busy,onCancel,onImport,rules,onAddRule,passwords,passwordScope,onManagePasswords,queued}: {queued?:QueuedImport;passwords:StatementPassword[];passwordScope?:string;onManagePasswords:()=>void;onAddRule:(expense:Expense,index?:number)=>void;rules:ExpenseCategoryRule[];existing:Expense[];busy:boolean;onCancel:()=>void;onImport:(rows:Expense[],context:Expense[])=>void}) {
   const [files,setFiles] = useState<File[]>([])
-  const [reports,setReports] = useState<{name:string;bank?:string;month?:string;source?:string;currency?:string;count?:number;error?:string;ocr?:boolean;warning?:string;note?:string}[]>([])
+  const [reports,setReports] = useState<{name:string;bank?:string;month?:string;source?:string;currency?:string;count?:number;error?:string;ocr?:boolean;warning?:string;note?:string;check?:StatementTotalCheck}[]>([])
   const [password,setPassword] = useState('')
   const [available,setAvailable] = useState<string[]>([])
   const [passwordNotice,setPasswordNotice] = useState('')
@@ -181,7 +182,9 @@ function StatementImport({existing,busy,onCancel,onImport,rules,onAddRule,passwo
           previews.push(...rows.map(r=>({...r,selected:true,needsReview:pdf.ocrUsed,amountText:String(r.amount),sourceFile:outcomes.length})))
           previews.push(...parsed.rows.filter(r=>!r.description).map(r=>({...r,id:crypto.randomUUID(),card:statementCard,selected:false,needsReview:true,amountText:String(r.amount),sourceFile:outcomes.length})))
           ignored.push(...parsed.skipped.map(line=>`${file.name}：${line}`))
-          outcomes.push({name:file.name,bank:statementCard,month:statementMonth,source:info.monthSource || '手動備用',currency:info.currency || currency || 'TWD',count:parsed.rows.length,ocr:pdf.ocrUsed,warning:pdf.ocrError || (!parsed.rows.length ? '沒有辨識到可匯入的交易，請核對下方未匯入文字列並手動補登。' : undefined)})
+          // The statement's own total of new charges against the rows read from it.
+          const check = statementTotalCheck(pdf.lines,info.bank,info.currency || currency || 'TWD',parsed.rows)
+          outcomes.push({name:file.name,check,bank:statementCard,month:statementMonth,source:info.monthSource || '手動備用',currency:info.currency || currency || 'TWD',count:parsed.rows.length,ocr:pdf.ocrUsed,warning:pdf.ocrError || (!parsed.rows.length ? '沒有辨識到可匯入的交易，請核對下方未匯入文字列並手動補登。' : undefined)})
         } catch(e) {
           if(abort.signal.aborted) return
           outcomes.push({name:file.name,error:e instanceof Error?e.message:'無法解析帳單'})
@@ -226,7 +229,7 @@ function StatementImport({existing,busy,onCancel,onImport,rules,onAddRule,passwo
     {passwordNotice && <p role="status" className="notice">{passwordNotice}</p>}
     {parsing && count && <div className="notice bank-progress" role="status" aria-label="信用卡帳單解析進度" aria-live="polite"><progress value={count.processed} max={count.total} aria-label="信用卡帳單處理進度"/><p>正在本機解析 · 第 {count.processed+1}／{count.total} 份{count.processed?` · 完成 ${count.processed} 份${count.failures?`（${count.failures} 份未匯入）`:''}`:''}</p><p>目前檔案（第 {count.processed+1}／{count.total} 份）：{count.current} · {progress || '讀取 PDF…'}</p></div>}
     {error && <p className="banner error" role="alert">{error}</p>}
-    {!!reports.length && <ul className="notice" aria-label="各帳單解析結果">{reports.map((r,i)=><li key={i}><strong>{r.name}</strong>：{r.error || `${r.bank} · ${r.month}（${r.source}）· ${r.count} 筆待核對${r.ocr?' · OCR 商家請核對':''}${r.note?` · ${r.note}`:''}${r.warning?` · ${r.warning}`:''}`}</li>)}</ul>}
+    {!!reports.length && <ul className="notice" aria-label="各帳單解析結果">{reports.map((r,i)=><li key={i}><strong>{r.name}</strong>：{r.error || `${r.bank} · ${r.month}（${r.source}）· ${r.count} 筆待核對${r.ocr?' · OCR 商家請核對':''}${r.note?` · ${r.note}`:''}${r.warning?` · ${r.warning}`:''}`}{r.check && <TotalCheck check={r.check} />}</li>)}</ul>}
     {!drafts ? <form onSubmit={parse} hidden={parsing && fromEntry}>
       <fieldset className="statement-upload-fields" disabled={locked}>
         <label className="field statement-upload"><span>帳單 PDF 或 CSV（可選多份）</span><small className="muted">選擇信用卡帳單 · PDF 每份最多 20 MB · CSV 格式見下方說明</small><FileInput multiple accept=".pdf,application/pdf,.csv,text/csv" required onChange={e=>{setFiles(Array.from(e.target.files??[]));setPassword('');setError('');setReports([])}}/></label>
@@ -309,4 +312,12 @@ function PreviewCategory({expense,label,disabled,onChange,rules}: {rules:Expense
   const [editing,setEditing] = useState(false)
   if(editing) return <select className="preview-input" autoFocus aria-label={label} disabled={disabled} value={expense.category ?? ''} onBlur={()=>setEditing(false)} onChange={e=>{onChange(e.target.value ? e.target.value as CardCategory : undefined);setEditing(false)}} onKeyDown={e=>{if(e.key==='Escape')setEditing(false)}}><option value="">自動判斷（{expenseCategory({description:expense.description},rules)}）</option>{CARD_CATEGORIES.map(c=><option key={c} value={c}>{cardCategoryOption(c)}</option>)}</select>
   return <button type="button" className="preview-value" disabled={disabled} aria-label={`編輯${label}`} title={expense.category?'手動分類':'自動判斷；點擊修改'} onClick={()=>setEditing(true)}>{expenseCategory(expense,rules)}</button>
+}
+
+// Whether the rows read add up to the total the statement prints for this period's new charges.
+function TotalCheck({ check }: { check: StatementTotalCheck }) {
+  const amount = (n: number) => `${check.currency} ${fmt(n, check.currency === 'TWD' ? 0 : 2)}`
+  return check.matches
+    ? <span className="muted"> · 與帳單「{check.label}」{amount(check.stated)} 相符</span>
+    : <strong className="total-check-mismatch" role="alert"> · 帳單「{check.label}」{amount(check.stated)}，讀到的明細合計 {amount(check.parsed)}，相差 {amount(Math.abs(check.stated - check.parsed))}：可能漏了或多讀了交易，請核對明細與未匯入的文字列</strong>
 }
