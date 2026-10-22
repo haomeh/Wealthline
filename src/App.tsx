@@ -1,5 +1,5 @@
 import { dataVersion } from './dataVersion'
-import { Fragment, useEffect, useMemo, useReducer, useRef, useState } from 'react'
+import { Fragment, Suspense, lazy, useEffect, useMemo, useReducer, useRef, useState } from 'react'
 import {
   clearSession,
   fetchProfile,
@@ -31,12 +31,10 @@ import { Accounts, type AccountsView } from './views/Accounts'
 import { Liabilities } from './views/Liabilities'
 import { Expenses } from './views/Expenses'
 import { BankTransactions } from './views/BankTransactions'
-import { StatementImportEntry, type ImportPlan } from './views/StatementImportEntry'
-import { SecuritiesImport } from './views/SecuritiesImport'
-import { StatementImportBatch, type BatchResults } from './views/StatementImportBatch'
+import type { ImportPlan } from './views/StatementImportEntry'
+import type { BatchResults } from './views/StatementImportBatch'
 import { Overview } from './views/Overview'
 import { Cashflow } from './views/Cashflow'
-import { HistoryView } from './views/History'
 import { Rates } from './views/Rates'
 import { SaveReview } from './views/SaveReview'
 import { More } from './views/More'
@@ -52,6 +50,20 @@ import { DataPrivacy } from './views/DataPrivacy'
 import { summarizeBackup } from './backupPreview'
 import { BackupRestore } from './views/BackupRestore'
 import { byteSize, serializeData } from './storageLimits'
+
+// Pages the public home page never shows load as their own files, fetched in the background once
+// data is open (preloadViews), so the sign-in page downloads less and opening them rarely waits.
+const viewLoaders = {
+  entry: () => import('./views/StatementImportEntry'),
+  securities: () => import('./views/SecuritiesImport'),
+  batch: () => import('./views/StatementImportBatch'),
+  history: () => import('./views/History'),
+}
+const StatementImportEntry = lazy(() => viewLoaders.entry().then((m) => ({ default: m.StatementImportEntry })))
+const SecuritiesImport = lazy(() => viewLoaders.securities().then((m) => ({ default: m.SecuritiesImport })))
+const StatementImportBatch = lazy(() => viewLoaders.batch().then((m) => ({ default: m.StatementImportBatch })))
+const HistoryView = lazy(() => viewLoaders.history().then((m) => ({ default: m.HistoryView })))
+const preloadViews = () => { for (const load of Object.values(viewLoaders)) void load().catch(() => {}) }
 
 // When the data was last saved, as the sidebar shows it: the time today, else the date.
 function savedLabel(iso: string) {
@@ -137,6 +149,9 @@ export default function App() {
   const path = useRouteLocation()
   const route = parseRoute(path)
   const tab = route.tab
+
+  const opened = !!data
+  useEffect(() => { if (opened) preloadViews() }, [opened])
 
   // Warn before closing the tab with unsaved edits.
   useEffect(() => {
@@ -881,6 +896,8 @@ export default function App() {
 
       <div className="shell-main">
       <main className="content view-enter" key={tab}>
+        {/* Import and history pages load their code when first opened. */}
+        <Suspense fallback={<p className="muted" role="status">載入中…</p>}>
         <PrivacyNotice />
         {status.kind === 'busy' && !data && <p className="muted">{status.text}</p>}
         {status.kind === 'error' && <div className="banner error" role="alert">
@@ -999,6 +1016,7 @@ export default function App() {
           const market = await refreshRates(data, false)
           if (market) await recordToday(market)
         }} error={ratesError} />}
+        </Suspense>
       </main>
       <SiteFooter />
       </div>
