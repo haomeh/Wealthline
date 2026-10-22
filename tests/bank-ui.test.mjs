@@ -481,7 +481,8 @@ test('the import entry detects each file, lists the unrecognized one, then shows
 test('a detected card statement shows which file and step it is on while it parses, without the empty file picker',async()=>{
  drive(appData());const {kind,card}=await openEntry()
  kind.setKinds([{kind:'card',bank:'匯豐'}]);card.setResults([cardResult()]);card.pause();await entryFiles(['card-2026-04.pdf']);await detect()
- await settle(()=>!!box('信用卡帳單解析進度'))
+ // The box shows 讀取 PDF… until the paused reader reports its step, which can take a render longer under load.
+ await settle(()=>/定位匯豐交易區段/.test(box('信用卡帳單解析進度')?.textContent??''))
  const status=box('信用卡帳單解析進度').textContent
  assert.match(status,/正在本機解析 · 第 1／1 份/);assert.match(status,/目前檔案（第 1／1 份）：card-2026-04\.pdf · 正在本機定位匯豐交易區段 · 第 2／3 頁/)
  assert.equal(document.querySelector('.statement-import form').hidden,true,'files from the entry are not asked for again')
