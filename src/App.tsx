@@ -16,6 +16,7 @@ import {
   type UserProfile,
 } from './google/auth'
 import { DATA_FILE_NAME, FOLDER_NAME, HISTORY_FOLDER_NAME, LEDGER_FOLDER_NAME } from './google/drive'
+import { clearHistoryCache } from './priceHistory'
 import { MissingPartError, archiveSummary, emptyDriveState, ledgerCashflow, ledgerScope, loadDrive, mergeParts, missingParts, readGroup, recentLedgerFrom, saveDrive, skippedNotice, storedSizes, withHeldParts, type DriveState, type PartGroup } from './google/driveStore'
 import { ledgerPart } from './dataParts'
 import { applyFetchedRates, emptyData, missingRates, parseWealthData, ratesStale, usedCurrencies, type WealthData } from './model'
@@ -474,6 +475,8 @@ export default function App() {
       token.current = null
       driveState.current = null
       saved.current = null
+      // The tickers asked for in the last minute are this account's holdings.
+      clearHistoryCache()
       setGroupLoad({})
       setBankFrom(null)
       setReturning(null)

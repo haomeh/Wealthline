@@ -154,6 +154,7 @@ test('HTML responses prevent framing and restrict script execution', async () =>
   assert.match(csp, /script-src 'self' 'sha256-[^']+' https:\/\/accounts\.google\.com\/gsi\/client/)
   assert.ok(!csp.split(';').find((part) => part.includes('script-src'))?.includes('unsafe-inline'))
   assert.equal(response.headers.get('X-Content-Type-Options'), 'nosniff')
+  assert.match(response.headers.get('Permissions-Policy') ?? '', /camera=\(\), microphone=\(\), geolocation=\(\)/)
 })
 
 test('only OCR JavaScript assets may compile WebAssembly', async () => {

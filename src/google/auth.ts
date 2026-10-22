@@ -1,6 +1,6 @@
 // Google sign-in: a same-tab OAuth redirect from the sign-in page, and the Google Identity Services (GIS)
 // token popup to renew an expired token.
-// The access token lives only in memory; nothing is stored on any server.
+// The access token is kept in this tab's sessionStorage (see storeSession); nothing is stored on any server.
 
 const GIS_SRC = 'https://accounts.google.com/gsi/client'
 const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.file'

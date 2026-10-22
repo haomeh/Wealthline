@@ -85,6 +85,7 @@
 - [x] 深色／淺色模式自動跟隨系統，支援手機版面。
 - [x] 公開產品首頁 `/`，登入後總覽 `/app`；隱私權政策、使用條款與免責聲明頁面（`/privacy`、`/terms`、`/disclaimer`）。
 - [x] App 圖示、PWA manifest 與 Apple touch icon。
+- [x] CI：對 main 的推送與 PR 會執行測試、lint、型別檢查、建置與相依套件稽核（`scripts/verify-release.sh`）。
 - [x] SEO：`sitemap.xml`、`robots.txt`（允許搜尋引擎與 AI 爬蟲讀取公開頁面）、給 AI 助理閱讀的 `llms.txt`、各頁的 canonical 與描述、首頁的 schema.org 結構化資料；登入後的 App 頁面一律標示 `noindex`。
 
 ## 規劃中的功能
@@ -101,7 +102,6 @@
 - [ ] **資料加密**：可選擇以使用者自訂密碼在瀏覽器端加密 Drive 中的資料檔。
 - [ ] **離線使用（PWA）**：安裝到手機主畫面，離線檢視最近一次資料。
 - [ ] **多語系**：英文介面。
-- [ ] **CI**（已有安全回歸測試）。
 
 ## 技術架構
 
