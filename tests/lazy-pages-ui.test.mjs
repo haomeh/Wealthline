@@ -268,6 +268,28 @@ test('failed full backup explains missing Drive part inside data management and 
   assert.equal(downloads.length, 0)
 })
 
+test('a part file Drive no longer lists: the user may open the rest, which says what is missing, or stop', async () => {
+  const drive = await splitDrive()
+  drive.drive.parts().find((f) => f.appProperties.part === 'ledger-2026-Q1').trashed = true
+  const asked = []
+  globalThis.confirm = (text) => { asked.push(text); return false }
+  await open('/app')
+  assert.match(asked[0], /找不到分檔 wealthline-ledger-2026-Q1\.json.*要先開啟其他資料嗎/s)
+  assert.equal(document.querySelector('.banner.warn'), null, 'declined: nothing is opened')
+  assert.ok(document.querySelector('button.google.returning'), 'back to the resume button')
+
+  if (root) await act(() => root.unmount())
+  globalThis.confirm = (text) => { asked.push(text); return true }
+  await open('/expenses')
+  assert.match(document.querySelector('.banner.warn')?.textContent ?? '', /wealthline-ledger-2026-Q1\.json.*垃圾桶還原/)
+  assert.doesNotMatch(main(), /Coffee shop/)
+  // A backup says it leaves the missing records out before downloading.
+  await click(button('下載完整備份'))
+  await settle()
+  assert.match(asked.at(-1), /備份不會包含這些分檔中的紀錄/)
+  assert.equal(downloads.length, 1)
+})
+
 test('the Drive main file itself is refused as a backup', async () => {
   const drive = await splitDrive()
   const text = drive.drive.dataFile().text

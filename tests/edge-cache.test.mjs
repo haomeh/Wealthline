@@ -60,7 +60,7 @@ test('stored answers carry the edge TTL: minutes for quotes, hours for past clos
   await edge.cachedApiResponse(get('/api/quote?symbol=AAPL'), cache, { produce })
   await edge.cachedApiResponse(get('/api/history?symbol=AAPL&from=2026-01-05'), cache, { produce })
   assert.equal(cache.store.get('https://wealthline.example/api/quote?symbol=AAPL').headers.get('Cache-Control'), `public, max-age=${edge.EDGE_TTL_SECONDS.quote}`)
-  assert.equal(cache.store.get('https://wealthline.example/api/history?symbol=AAPL&from=2026-01-05').headers.get('Cache-Control'), `public, max-age=${edge.EDGE_TTL_SECONDS.history}`)
+  assert.equal(cache.store.get('https://wealthline.example/api/history?symbol=AAPL&from=2026-01-01').headers.get('Cache-Control'), `public, max-age=${edge.EDGE_TTL_SECONDS.history}`)
   assert.ok(edge.EDGE_TTL_SECONDS.quote <= 600 && edge.EDGE_TTL_SECONDS.history > edge.EDGE_TTL_SECONDS.quote)
 })
 
@@ -72,11 +72,11 @@ test('ticker case does not create separate entries', async () => {
   assert.deepEqual(calls, ['/api/quote?symbol=AAPL'])
 })
 
-test('history entries are keyed by ticker and start date', async () => {
+test('history entries are keyed by ticker and the quarter of the start date, so varying the date cannot bypass the cache', async () => {
   const cache = fakeCache()
   const { calls, produce } = producer(200, { symbol: 'AAPL', currency: 'USD', points: [] })
-  for (const from of ['2026-01-05', '2026-01-05', '2026-02-01']) await edge.cachedApiResponse(get(`/api/history?symbol=AAPL&from=${from}`), cache, { produce })
-  assert.deepEqual(calls, ['/api/history?symbol=AAPL&from=2026-01-05', '/api/history?symbol=AAPL&from=2026-02-01'])
+  for (const from of ['2026-01-05', '2026-01-05', '2026-02-01', '2026-03-31', '2026-04-01', '2026-12-31']) await edge.cachedApiResponse(get(`/api/history?symbol=AAPL&from=${from}`), cache, { produce })
+  assert.deepEqual(calls, ['/api/history?symbol=AAPL&from=2026-01-01', '/api/history?symbol=AAPL&from=2026-04-01', '/api/history?symbol=AAPL&from=2026-10-01'])
 })
 
 test('provider errors and unknown tickers are never stored', async () => {

@@ -1,7 +1,8 @@
 import type { Slice } from './model'
 
-// Eight categorical slots (CSS vars --s1..--s8), assigned by a fixed entity order so
-// a category keeps its color no matter its rank. Anything past slot 8 is folded into 其他.
+// Eight categorical slots (CSS vars --s1..--s8), assigned in a fixed entity order so a category keeps
+// its color no matter its rank. Only the entities present take a slot: a user's own category name is not
+// pushed out by preset ones that hold nothing. Past the eighth present entity, the rest fold into 其餘.
 const SLOTS = 8
 
 export interface ColoredSlice extends Slice {
@@ -9,7 +10,8 @@ export interface ColoredSlice extends Slice {
 }
 
 export function colorize(slices: Slice[], order: string[]): ColoredSlice[] {
-  const known = [...order]
+  const present = new Set(slices.map((s) => s.label))
+  const known = order.filter((label) => present.has(label))
   for (const s of slices) if (!known.includes(s.label) && s.label !== '未設定') known.push(s.label)
   const colored: ColoredSlice[] = []
   const other: ColoredSlice = { label: '其餘', value: 0, share: 0, color: 'var(--other)' }

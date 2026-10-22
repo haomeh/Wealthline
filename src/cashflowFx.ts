@@ -69,8 +69,3 @@ export async function cashflowWithFxEvidence(groups:readonly CashflowCurrencySum
   const results=converted.flat()
   return {group:cashflowSummary({months:results.map(result=>result.month)},groups[0].endMonth,groups[0].period)[0],fx:results.map(result=>result.fx)}
 }
-
-/** Compatibility projection for callers that only need totals. */
-export async function cashflowInTwd(groups:readonly CashflowCurrencySummary[],today:string,fetcher:HistoryFetcher=fetchHistory):Promise<CashflowCurrencySummary|undefined> {
-  return (await cashflowWithFxEvidence(groups,today,fetcher)).group
-}

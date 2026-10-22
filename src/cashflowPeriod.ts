@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { cashflowMonthList, cashflowSummary, type CashflowCurrencySummary, type CashflowInput, type CashflowPeriod } from './cashflow'
 import { cashflowWithFxEvidence, twdCashflowEvidence, type CashflowFxEvidence } from './cashflowFx'
 import { fetchHistory } from './priceHistory'
+import { localDate } from './history'
 
 // The period the cashflow views show, the picker that changes it, and the totals converted to TWD.
 // Shared by the overview's cashflow card and the cashflow page; the picker is views/CashflowPeriodControls.tsx.
@@ -9,7 +10,6 @@ import { fetchHistory } from './priceHistory'
 export type Selection = { range: 'month' | 'year' | 'all'; year: number; month: number }
 export const monthKey = (year: number, month: number) => `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}`
 const monthSelection = (key: string): Selection => ({ range: 'month', year: Number(key.slice(0, 4)), month: Number(key.slice(5, 7)) })
-const dayOf = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
 
 export function useCashflowPeriod(input: CashflowInput, now: string) {
   const date = new Date(now)
@@ -25,7 +25,7 @@ export function useCashflowPeriod(input: CashflowInput, now: string) {
   const label = selection.range === 'all' ? '全部期間' : `${selection.year} 年${selection.range === 'month' ? ` ${selection.month} 月` : ''}`
   const isCurrentMonth = selection.range === 'month' && selection.year === date.getFullYear() && selection.month === date.getMonth() + 1
   return {
-    date, today: dayOf(date), monthList, recordedMonths, latestMonth, selection, setSelection, endMonth, period, label, isCurrentMonth,
+    date, today: localDate(now), monthList, recordedMonths, latestMonth, selection, setSelection, endMonth, period, label, isCurrentMonth,
     showMonth: (key: string) => setSelection(monthSelection(key)),
   }
 }

@@ -278,6 +278,20 @@ test('a bank import with no asset account offers to create one so today\'s total
  }
 })
 
+test('a newer statement offers to update the current balance of an existing asset account',async()=>{
+ const statement=()=>{const r=parsed([]);r.bank='DBS Singapore';r.sections[0].bank='DBS Singapore';r.sections[0].currency='SGD';r.sections[0].noTransactions=false;r.balances=[{bank:'DBS Singapore',date:'2025-09-30',currency:'SGD',quantity:888.5}];return r}
+ const asset={id:'asset-dbs',name:'DBS',country:'SG',kind:'bank',category:'現金與外幣活存',positions:[{id:'dbs-sgd',type:'cash',symbol:'',currency:'SGD',quantity:999,price:1,addedAt:'2025-09-01T00:00:00Z'}]}
+ for(const update of [true,false]){
+  pdf.reset([statement()]);const latest=await render({...model.emptyData(),accounts:[asset],bankTransactionAccounts:[],bankTransactions:[],bankCategoryRules:[]});await click('匯入銀行帳單');await files();await submitImport();await click('確認匯入')
+  const offer=box('更新目前餘額');assert.ok(offer,'the review stays open to ask');assert.match(offer.textContent,/DBS \(SG\).*SGD 999.*888\.5.*2025\/09\/30/);assert.equal(box('一併更新目前餘額').checked,true)
+  if(!update)await act(()=>box('一併更新目前餘額').click())
+  await click('確認銀行匯入')
+  assert.equal(latest().accounts[0].positions[0].quantity,update?888.5:999);assert.equal(latest().history.quantityDays[0].entries[0].quantity,888.5)
+  if(update)assert.match(document.body.textContent,/更新目前餘額 1 筆/)
+  await act(()=>root.unmount());root=null
+ }
+})
+
 test('automatic same-bank sections share a ledger even when the first section is unchecked',async()=>{
  const r=parsed();r.bank='DBS Singapore';const first={...r.sections[0],bank:'DBS Singapore',currency:'SGD',rows:[{...draft,currency:'SGD'}]};r.sections=[first,{...first,key:'section-2',rows:[{...draft,sectionKey:'section-2',currency:'SGD',rowKey:'row-2'}]}];r.recognizedCount=2;pdf.reset([r]);const latest=await render({...model.emptyData(),bankTransactionAccounts:[],bankTransactions:[],bankCategoryRules:[]});await click('匯入銀行帳單');await files();await submitImport();await act(()=>box('區段 1 選取 1').click());await click('確認匯入');assert.equal(latest().bankTransactionAccounts.length,1);assert.equal(latest().bankTransactions.length,1);
 })

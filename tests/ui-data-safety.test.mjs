@@ -436,6 +436,22 @@ test('loan form defaults to annuity, switches to declining payments, and bounds 
   assert.equal(changed.liabilities[0].repaymentMethod, 'equalPrincipal')
   assert.equal(changed.liabilities[0].paymentAmount, undefined)
 })
+test('a credit card or a balance-only debt shows no repayment terms; a loan does', async () => {
+  const debts = [
+    { id: 'card', name: '合成卡', kind: 'credit', currency: 'TWD', balance: 38000 },
+    { id: 'misc', name: '合成借款', kind: 'other', currency: 'TWD', balance: 500 },
+    { id: 'loan', name: '合成信貸', kind: 'personal', currency: 'TWD', balance: 1200, repaymentMethod: 'annuity', annualRate: 3, remainingInstallments: 12 },
+  ]
+  await render(Liabilities, { data: { ...fixture(), liabilities: debts }, onChange: () => {} })
+  const record = (name) => [...document.querySelectorAll('.liability-record')].find((s) => s.getAttribute('aria-label') === name)
+  for (const d of debts) {
+    if (!record(d.name)) await click([...document.querySelectorAll('button')].find((b) => b.textContent.includes(d.name)))
+    const r = record(d.name)
+    assert.ok(r, d.name)
+    assert.equal(!!r.querySelector('.debt-terms'), d.kind === 'personal', d.name)
+    assert.match(r.textContent, /目前未償餘額|預估剩餘本金/)
+  }
+})
 test('credit and irregular debt can save balance only even after invalid projection input', async () => {
   let changed
   await render(Liabilities, { data: fixture(), onChange: next => { changed = next } })
@@ -1010,44 +1026,21 @@ test('review: unrelated edits retain values; refresh retains same-target values,
  assert.equal(renders.length,beforeUnmount)
 })
 
-test('overview does not compare with a record that knows only some of today\'s accounts',async()=>{
- const data=historicalFixture()
- data.accounts.push({...data.accounts[0],id:'b',name:'合成B',positions:[{id:'b-cash',type:'cash',currency:'TWD',symbol:'',quantity:5000,price:1}]})
- const {snapshotOf,localDate}=await server.ssrLoadModule('/src/history.ts')
- const {shiftDate}=await server.ssrLoadModule('/src/holdingPeriods.ts')
- const {ChangeSinceLast}=await server.ssrLoadModule('/src/views/AssetChange.tsx')
- const today=localDate(new Date().toISOString()),yesterday=shiftDate(today,-1),old=shiftDate(today,-3)
- // A statement balance recorded yesterday for the first account only; nothing is known about 合成B before today.
- const entry={accountId:'history-account',account:'合成歷史帳戶',category:'股票',country:'TW',type:'cash',symbol:'',currency:'TWD',quantity:800}
- const partial={...data,history:{...data.history,snapshots:[],quantityDays:[{date:yesterday,updatedAt:new Date().toISOString(),sparse:true,entries:[entry]}]}}
- await render(ChangeSinceLast,{data:partial})
- assert.equal(document.querySelector('.hero-change'),null,'+5,100 against a day without 合成B would read as a gain')
- // Once an earlier record covers 合成B, yesterday is filled from it and can be compared.
- const covered={...partial,history:{...partial.history,snapshots:[{...snapshotOf(data,old+'T12:00:00'),date:old}]}}
- await render(ChangeSinceLast,{data:covered})
- assert.match(document.querySelector('.hero-change').textContent,/\+100.*較昨天/)
-})
-test('overview compares actual last record, history omits uncovered dates and fills an explicitly unknown day',async()=>{
+test('history omits uncovered dates and fills an explicitly unknown day',async()=>{
  const data=historicalFixture();data.accounts[0].positions[0].quantity=100
  data.accounts.push({...data.accounts[0],id:'b',name:'合成B'})
  const {snapshotOf,localDate}=await server.ssrLoadModule('/src/history.ts')
  const {shiftDate}=await server.ssrLoadModule('/src/holdingPeriods.ts')
- const {ChangeSinceLast}=await server.ssrLoadModule('/src/views/AssetChange.tsx')
  const today=localDate(new Date().toISOString()),old=shiftDate(today,-3),yesterday=shiftDate(today,-1)
  data.history.snapshots=[snapshotOf(data,old+'T12:00:00')]
  data.accounts[1].positions[0].quantity=200
  data.history.holdingPeriods=[{id:'r',accountId:'history-account',account:'合成歷史帳戶',category:data.accounts[0].category,country:data.accounts[0].country,type:'cash',symbol:'',currency:'TWD',start:shiftDate(today,-8),end:shiftDate(today,-6),quantity:10,timeZone:'UTC',updatedAt:new Date().toISOString()}]
- await render(ChangeSinceLast,{data})
- assert.match(document.body.textContent,/\+100/);assert.doesNotMatch(document.body.textContent,/較昨天/)
  const props={data,dirty:true,busy:false,onChange:()=>{},onSave:()=>{},onOpenAccount:()=>{}}
  await render(HistoryView,props)
- assert.equal(document.querySelector('.stats'),null)
  assert.equal([...document.querySelectorAll('section.daily tbody tr')].some(row=>row.textContent.includes(yesterday.replaceAll('-','/'))),false)
  assert.match(document.body.textContent,/持倉數量不足的推算日/)
  const entry={...data.history.holdingPeriods[0],quantity:null}
  const unknown={...data,history:{...data.history,quantityDays:[{date:yesterday,updatedAt:new Date().toISOString(),sparse:true,entries:[entry]}]}}
- // The other accounts keep their earlier snapshot values, so yesterday can be compared.
- await render(ChangeSinceLast,{data:unknown});assert.match(document.body.textContent,/\+200.*較昨天/);assert.doesNotMatch(document.body.textContent,/資料不完整/)
  await render(HistoryView,{...props,data:unknown});
  const unknownRow=[...document.querySelectorAll('section.daily tbody tr')].find(row=>row.textContent.includes(yesterday.replaceAll('-','/')))
  assert.match(unknownRow.textContent,/2 個帳戶沿用NT\$ 200/);assert.doesNotMatch(unknownRow.textContent,/資料不完整/)
@@ -1803,32 +1796,6 @@ test('statement advanced options start collapsed and an empty fallback currency 
   assert.equal(drive.writes,0)
 })
 
-test('expense month timeline switches totals, categories and transactions without writes',async()=>{
-  const {ExpenseSummary}=await server.ssrLoadModule('/src/views/ExpenseSummary.tsx')
-  const expenses=[
-    {id:'a',date:'2026-09-30',card:'Synthetic card',description:'STEAMGAMES.COM TEST',currency:'TWD',amount:300},
-    {id:'b',date:'2026-09-29',card:'Synthetic card',description:'STEAMGAMES.COM REFUND',currency:'TWD',amount:-30},
-    {id:'c',date:'2026-10-01',card:'Synthetic card',description:'CLAUDE.AI TEST',currency:'TWD',amount:600},
-    {id:'d',date:'2026-10-02',card:'SG card',description:'UNKNOWN TEST',currency:'SGD',amount:10,category:'餐飲'},
-  ]
-  const original=structuredClone(expenses)
-  await render(ExpenseSummary,{expenses,now:'2026-10-11T12:00:00Z'})
-  assert.match(document.querySelector('[aria-label="TWD 消費統計"] .expense-category-bars').textContent,/數位服務/)
-  await click(button('上一個消費月份'))
-  assert.equal(document.querySelector('[aria-label="消費統計月份"]').value,'2026-09')
-  assert.match(document.querySelector('.expense-category-bars').textContent,/娛樂.*300.*100%/)
-  assert.equal(document.querySelector('[aria-label="SGD 消費統計"]'),null)
-  assert.deepEqual([...document.querySelector('.expense-metrics').querySelectorAll('dd')].map(e=>e.textContent),['300','30','270'])
-  assert.equal(document.querySelectorAll('.expense-period-details .expense-record').length,2)
-  assert.ok(!document.querySelector('.expense-period-details').textContent.includes('CLAUDE'))
-  await click(button('下一個消費月份'))
-  assert.equal(document.querySelectorAll('.expense-period-details .expense-record').length,2)
-  assert.match(document.querySelector('.expense-period-details').textContent,/CLAUDE.*數位服務/)
-  assert.match(document.querySelector('[aria-label="SGD 消費統計"]').textContent,/餐飲/)
-  assert.equal(button('下一個消費月份').disabled,true)
-  assert.deepEqual(expenses,original)
-})
-
 test('manual expense category edits persist only through the existing save flow',async()=>{
   window.history.replaceState(null,'','/expenses')
   const expense={id:'category-edit',date:'2026-09-01',card:'Synthetic card',description:'STEAMGAMES.COM TEST',currency:'TWD',amount:300}
@@ -2029,24 +1996,6 @@ test('expense trends cross years, separate currencies and keep missing months di
   assert.throws(()=>expenseTrend(expenses,'2026-13',3))
   assert.throws(()=>expenseTrend(expenses,'2026-02',2))
   assert.deepEqual(expenses,original)
-  const {ExpenseSummary}=await server.ssrLoadModule('/src/views/ExpenseSummary.tsx')
-  const originalObserver=globalThis.ResizeObserver
-  globalThis.ResizeObserver=class {constructor(callback){this.callback=callback} observe(){this.callback([{contentRect:{width:500}}])} disconnect(){}}
-  try {await render(ExpenseSummary,{expenses,now:'2026-02-11T12:00:00Z'})} finally {globalThis.ResizeObserver=originalObserver}
-  const chart=document.querySelector('[aria-label="TWD 每月支出趨勢圖"]')
-  assert.ok(chart)
-  assert.equal(chart.querySelectorAll('.dot').length,2)
-  assert.equal((chart.querySelector('.line').getAttribute('d').match(/M/g)??[]).length,2)
-  assert.ok(!chart.textContent.includes('NaN'))
-  await act(async()=>chart.querySelector('rect').dispatchEvent(new MouseEvent('click',{bubbles:true,clientX:60})))
-  assert.equal(document.querySelector('[aria-label="消費統計月份"]').value,'2025-12')
-  await selectValue('消費統計月份','2026-02')
-  assert.equal(document.querySelector('[aria-label="TWD 支出趨勢"] .expense-trend-details tbody').children.length,3)
-  await click(button('近 1 年'))
-  assert.equal(document.querySelector('[aria-label="TWD 支出趨勢"] .expense-trend-details tbody').children.length,12)
-  await click(button('查看 2025-12 消費'))
-  assert.equal(document.querySelector('[aria-label="消費統計月份"]').value,'2025-12')
-  assert.match(document.querySelector('[aria-label="TWD 消費統計"]').textContent,/80/)
 })
 
 

@@ -7,6 +7,7 @@ import type { PreparedStatement, StatementKind } from '../statementKind'
 import { ImportSteps } from './ImportSteps'
 import { REPO_URL } from '../site'
 import { CsvGuide } from './CsvGuide'
+import { FileInput } from './FileInput'
 
 /**
  * Files sorted by kind, handed to the card and bank import screens in turn. `notes` is the detection report.
@@ -122,7 +123,7 @@ export function StatementImportEntry({ passwords, passwordScope, busy, onCancel,
     <p className="statement-privacy">信用卡帳單、銀行帳單和券商（moomoo、台新證券）對帳單可以一起選，會自動分辨；分不出來的檔案會先列出，不會自動匯入。檔案只在這個瀏覽器讀取，原始帳單不保存、不上傳。</p>
     {!results ? <form onSubmit={detect}>
       <fieldset className="statement-upload-fields" disabled={locked}>
-        <label className="field statement-upload"><span>帳單 PDF 或 CSV（可選多份）</span><small className="muted">PDF 每份最多 20 MB</small><input aria-label="帳單 PDF" type="file" multiple accept=".pdf,application/pdf,.csv,text/csv" onChange={e => { const chosen = Array.from(e.target.files ?? []); setFiles(chosen); setPassword(''); setProgress(null); if (chosen.some(f => !isCsvFile(f))) void import('../statementKind').then(m => m.warmStatementReader()).catch(() => {}) }} /></label>
+        <label className="field statement-upload"><span>帳單 PDF 或 CSV（可選多份）</span><small className="muted">PDF 每份最多 20 MB</small><FileInput aria-label="帳單 PDF" multiple accept=".pdf,application/pdf,.csv,text/csv" onChange={e => { const chosen = Array.from(e.target.files ?? []); setFiles(chosen); setPassword(''); setProgress(null); if (chosen.some(f => !isCsvFile(f))) void import('../statementKind').then(m => m.warmStatementReader()).catch(() => {}) }} /></label>
         <label className="field statement-password"><span>PDF 密碼（多組以逗號 , 分隔）</span><input aria-label="帳單 PDF 密碼" type="password" autoComplete="off" placeholder="未加密的帳單可留空" value={password} onChange={e => setPassword(e.target.value)} /><small className="muted">已設定的帳單密碼會自動套用。這裡輸入的只供本次匯入，不會保存。</small></label>
       </fieldset>
       <button className="primary" disabled={locked || !files.length}>{detecting ? '正在本機讀取帳單…' : `開始匯入${files.length ? `（${files.length} 份）` : ''}`}</button>

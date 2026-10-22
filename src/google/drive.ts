@@ -3,7 +3,7 @@
 // subfolders, so the user can see, download or delete them.
 
 import type { AccessToken } from './auth'
-import { assertWritable, serializeData } from '../storageLimits'
+import { assertWritable } from '../storageLimits'
 
 const API = 'https://www.googleapis.com/drive/v3/files'
 // v2 exposes the file ETag in JSON (v3 removed this field). Keep v3 discovery
@@ -136,10 +136,6 @@ function multipartBody(metadata: object, content: string): { body: string; conte
   return { body, contentType: `multipart/related; boundary=${boundary}` }
 }
 
-export interface DriveFile<T> extends DriveVersion {
-  data: T
-}
-
 export interface DriveText extends DriveVersion {
   text: string
 }
@@ -167,15 +163,6 @@ export function parseJson(text: string): unknown {
   } catch {
     throw new Error('Drive 中的主資料檔不是有效的 JSON，請修正或刪除該檔案後重新登入。')
   }
-}
-
-// Returns null when the user has no data file yet. `parse` validates the file's contents.
-export async function loadData<T>(token: AccessToken, parse: (raw: unknown) => T): Promise<DriveFile<T> | null> {
-  const fileId = await findDataFile(token)
-  if (!fileId) return null
-  const file = await readFile(token, fileId)
-  const raw = parseJson(file.text)
-  return { fileId: file.fileId, etag: file.etag, data: parse(raw) }
 }
 
 // The ids of every part file of data set `datasetId` (see dataParts.ts).
@@ -238,10 +225,8 @@ export async function updatePart(token: AccessToken, version: DriveVersion, cont
   return partVersionOf(await res.json())
 }
 
-// Refuses, before any request, a file over the size limit (storageLimits.ts).
-export const saveData = <T>(token: AccessToken, data: T, version?: DriveVersion) => saveDataText(token, serializeData(data), version)
-
 // Writes the main data file's text: creates it on first save, afterwards overwrites the same file.
+// Refuses, before any request, a file over the size limit (storageLimits.ts).
 export async function saveDataText(token: AccessToken, content: string, version?: DriveVersion): Promise<DriveVersion> {
   assertWritable(content)
   if (version) {

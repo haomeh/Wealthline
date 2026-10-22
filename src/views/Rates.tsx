@@ -60,9 +60,9 @@ export function Rates({ data, onChange, onRefresh, error }: Props) {
               <thead>
                 <tr>
                   <th>幣別</th>
-                  <th>用於</th>
+                  <th className="rates-used">用於</th>
                   <th className="num">兌 {BASE_CURRENCY}</th>
-                  <th>來源</th>
+                  <th className="rates-source">來源</th>
                   <th className="num">設定</th>
                 </tr>
               </thead>
@@ -75,11 +75,11 @@ export function Rates({ data, onChange, onRefresh, error }: Props) {
                       <td>
                         <strong>{c}</strong>
                       </td>
-                      <td className="muted ellipsis">{usedBy(c).join(' · ') || '—'}</td>
+                      <td className="muted ellipsis rates-used">{usedBy(c).join(' · ') || '—'}</td>
                       <td className="num">
                         <NumberInput className="cell-input num-serif" digits={4} value={rate ?? 0} onCommit={(v) => setManual(c, v)} aria-label={`${c} 匯率`} />
                       </td>
-                      <td className="muted">{manual ? '手動' : c in CRYPTO_IDS ? 'CoinGecko' : 'ExchangeRate-API'}</td>
+                      <td className="muted rates-source">{manual ? '手動' : c in CRYPTO_IDS ? 'CoinGecko' : 'ExchangeRate-API'}</td>
                       <td className="num">
                         {!(rate > 0) ? (
                           <span className="tag warn">缺少匯率</span>

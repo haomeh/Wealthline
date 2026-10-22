@@ -48,6 +48,8 @@ export default {
     response.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin')
     response.headers.set('Cross-Origin-Opener-Policy', 'same-origin-allow-popups')
     response.headers.set('Strict-Transport-Security', 'max-age=31536000')
+    // The app uses none of these; a script that got in could not ask for them either.
+    response.headers.set('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=()')
     return response
   },
 }

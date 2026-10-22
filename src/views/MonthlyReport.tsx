@@ -9,6 +9,7 @@ import { reviewStatusLabel } from '../monthlyReviewState'
 import { navigate } from '../site'
 import { routePath } from '../routes'
 import { cashflowQueryString } from '../cashflowQuery'
+import { FileInput } from './FileInput'
 
 export interface MonthlyReportProps {data:WealthData;month:string;today:string;readiness:LedgerReadiness;dirty?:boolean;busy?:boolean;sessionIdentity?:number;captureReport?:CaptureReport;onClose:()=>void}
 export function MonthlyReport({data,month,today,readiness,dirty,busy,sessionIdentity,captureReport,onClose}:MonthlyReportProps){
@@ -56,7 +57,7 @@ export function MonthlyReport({data,month,today,readiness,dirty,busy,sessionIden
  return <section className="panel monthly-report" aria-label="每月報表">
   <div className="row"><h2>{report?.month??month} 每月報表</h2><button onClick={onClose}>{current?.snapshot?'離開快照，查看目前收支資料':'返回收支明細'}</button></div>
   <p>{current?.snapshot?'原始 JSON 快照 · 唯讀，不受目前資料變更影響':dirty?'目前資料預覽 · 包含未儲存修改；匯出前請儲存':'目前資料預覽 · 匯出使用已儲存版本'}</p>
-  <div className="row"><button disabled={working||busy||readiness!=='ready'} onClick={()=>void generate()}>產生目前資料預覽</button><button disabled={working||busy||dirty||readiness!=='ready'||!captureReport} onClick={()=>void generate('json')}>匯出 JSON</button><button disabled={working||busy||dirty||readiness!=='ready'||!captureReport} onClick={()=>void generate('csv')}>匯出 CSV</button><label>開啟 JSON 快照<input aria-label="開啟 JSON 快照" type="file" accept=".json,application/json" disabled={working} onChange={e=>{const file=e.target.files?.[0];e.target.value='';if(file)void open(file)}}/></label></div>
+  <div className="row"><button disabled={working||busy||readiness!=='ready'} onClick={()=>void generate()}>產生目前資料預覽</button><button disabled={working||busy||dirty||readiness!=='ready'||!captureReport} onClick={()=>void generate('json')}>匯出 JSON</button><button disabled={working||busy||dirty||readiness!=='ready'||!captureReport} onClick={()=>void generate('csv')}>匯出 CSV</button><label>開啟 JSON 快照<FileInput aria-label="開啟 JSON 快照" accept=".json,application/json" disabled={working} onChange={e=>{const file=e.target.files?.[0];e.target.value='';if(file)void open(file)}}/></label></div>
   {readiness!=='ready'&&<p role="status">目前明細尚未完整載入，無法產生完整報表；仍可開啟既有快照。</p>}
   {working&&<p role="status">正在驗證報表…</p>}{error&&<p role="alert">{error}</p>}
   {report&&<><h3>{reviewLabel}</h3><p>政策基準日 {report.asOfDate} · 產生時間 {report.generatedAt} · 資料版本 {report.sourceDataVersion} · 政策 {report.policyVersion}</p><p className="report-fingerprint">內容指紋 {report.fingerprint}</p>

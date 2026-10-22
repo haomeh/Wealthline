@@ -23,6 +23,8 @@ interface Stored { status: number; body: string; cacheControl: string }
 // A lookup already running in this isolate, so a burst of identical requests asks Yahoo once.
 const inflight = new Map<string, Promise<Stored>>()
 
+const quarterStart = (date: string) => `${date.slice(0, 4)}-${String(Math.floor((Number(date.slice(5, 7)) - 1) / 3) * 3 + 1).padStart(2, '0')}-01`
+
 // Normalizes the request into a cache key; null means "not cacheable" (the handler answers it itself).
 function normalize(url: URL): { kind: Kind; url: URL } | null {
   const kind: Kind | null = url.pathname === '/api/quote' ? 'quote' : url.pathname === '/api/history' ? 'history' : null
@@ -34,7 +36,10 @@ function normalize(url: URL): { kind: Kind; url: URL } | null {
   if (kind === 'history') {
     const from = url.searchParams.get('from') ?? ''
     if (!DATE.test(from)) return null
-    key.searchParams.set('from', from)
+    // Asked from the first day of its quarter: the answer only gains a few older closes (the client
+    // never shows days before its own start), and a ticker has a handful of cache keys instead of one
+    // per day, so varying the date cannot turn every request into an upstream one.
+    key.searchParams.set('from', quarterStart(from))
   }
   return { kind, url: key }
 }

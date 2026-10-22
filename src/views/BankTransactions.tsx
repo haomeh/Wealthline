@@ -5,11 +5,10 @@ import { applyBankLedger, bankDisplayAccounts, type BankLedgerPatch } from '../l
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { WealthData } from '../model'
 import type { LedgerScope } from '../google/driveStore'
-import { dataVersion } from '../dataVersion'
 import { bankCategoryRuleIndex, classifyBankTransaction, mergeBankTransactions, type BankTransaction, type BankTransactionAccount, type BankCategoryRule } from '../bankTransactions'
 import { protectBankText } from '../bankTextPrivacy'
-import { mergeStatementPasswords, parseStatementPasswords } from '../statementPasswords'
 import { StatementPasswordSettings } from './StatementPasswordSettings'
+import { usePasswordSettings } from './usePasswordSettings'
 import { BankCategoryRules, BankRuleDialog } from './BankCategoryRules'
 import { BankStatementImport } from './BankStatementImport'
 import { type QueuedImport } from './ImportSteps'
@@ -36,6 +35,7 @@ export function BankTransactions({data,onChange,busy,passwordScope,historyReady=
  useLayoutEffect(()=>{if(recordId)focusRoot.current?.querySelector<HTMLInputElement>('input, select, button')?.focus()},[recordId])
  const latest=useRef<{data:WealthData;busy:boolean;onChange:(next:WealthData)=>void;loadMonth?:(month:string)=>void}>({data,busy,onChange})
  useLayoutEffect(()=>{latest.current={data,busy,onChange,loadMonth:ledger?.onLoadMonth}})
+ const passwordSettings=usePasswordSettings({data,busy,onChange})
  // The app keeps the open import in the URL; mounted on its own, the page keeps it itself.
  const [opened,setOpened]=useState(false),importing=routed??opened,setImporting=onImporting??setOpened
  const [editing,setEditing]=useState<BankTransaction|null>(()=>data.bankTransactions?.find(e=>e.id===recordId)??null),[managingPasswords,setManagingPasswords]=useState(false),[ruleEditor,setRuleEditor]=useState<{index?:number;rule?:BankCategoryRule}|null>(null)
@@ -87,7 +87,7 @@ export function BankTransactions({data,onChange,busy,passwordScope,historyReady=
  const current=latest.current;if(current.busy)return
  current.onChange(applyBankLedger(current.data,patch))
  }
- const dialogs=<>{ruleEditor && <BankRuleDialog key={ruleEditor.index??'new'} rule={ruleEditor.rule} busy={busy} onCancel={()=>setRuleEditor(null)} onSave={rule=>{const current=latest.current.data.bankCategoryRules??[];change({rules:ruleEditor.index===undefined?[...current,rule]:current.map((r,i)=>i===ruleEditor.index?rule:r)});setRuleEditor(null)}}/>}{managingPasswords && passwordScope && <StatementPasswordSettings scope={passwordScope} passwords={passwords} busy={busy} onClose={()=>setManagingPasswords(false)} onSave={rows=>{const current=latest.current;if(current.busy)return;current.onChange({...current.data,version:dataVersion(current.data,{minimumVersion:12}),statementPasswords:parseStatementPasswords(mergeStatementPasswords(current.data.statementPasswords??[],rows))})}} onRemove={id=>{const current=latest.current;if(!current.busy)current.onChange({...current.data,version:dataVersion(current.data,{minimumVersion:12}),statementPasswords:(current.data.statementPasswords??[]).filter(s=>s.id!==id)})}} onRemoveAll={()=>{const current=latest.current;if(!current.busy)current.onChange({...current.data,version:dataVersion(current.data,{minimumVersion:12}),statementPasswords:[]})}}/>}</>
+ const dialogs=<>{ruleEditor && <BankRuleDialog key={ruleEditor.index??'new'} rule={ruleEditor.rule} busy={busy} onCancel={()=>setRuleEditor(null)} onSave={rule=>{const current=latest.current.data.bankCategoryRules??[];change({rules:ruleEditor.index===undefined?[...current,rule]:current.map((r,i)=>i===ruleEditor.index?rule:r)});setRuleEditor(null)}}/>}{managingPasswords && passwordScope && <StatementPasswordSettings scope={passwordScope} passwords={passwords} busy={busy} onClose={()=>setManagingPasswords(false)} {...passwordSettings}/>}</>
  function removeAccount(id:string){const current=latest.current.data;if(current.bankTransactions?.some(r=>r.accountId===id)||current.bankStatementBalances?.some(b=>b.ledgerAccountId===id)){setMessage('帳戶仍被流水引用，請先清除流水。');return}change({accounts:(current.bankTransactionAccounts??[]).filter(v=>v.id!==id)})}
  useEffect(()=>{
   if(!removing)return
@@ -114,8 +114,8 @@ export function BankTransactions({data,onChange,busy,passwordScope,historyReady=
  const result=mergeBankTransactions(current.data.bankTransactions??[],review.rows,mappedAccounts,review.context,{keepSuspectedDuplicates:keep})
  // Don't retain preview-only new labels when all of their rows were deduplicated.
  const used=new Set([...result.transactions.map(r=>r.accountId),...review.balances.map(b=>b.ledgerAccountId)])
- change({accounts:mappedAccounts.filter(a=>accountIds.has(a.id)||used.has(a.id)),transactions:result.transactions,balances:review.balances,balanceRevision:review.balanceRevision,createAssets:review.createAssets})
- const done=`已新增 ${result.added} 筆，略過 ${result.duplicates} 筆。期末餘額補入 ${review.balanceCount} 筆。${review.createAssets?`建立資產帳戶 ${review.newAssets.length} 個。`:''}請按「儲存變更」。`
+ change({accounts:mappedAccounts.filter(a=>accountIds.has(a.id)||used.has(a.id)),transactions:result.transactions,balances:review.balances,balanceRevision:review.balanceRevision,createAssets:review.createAssets,updateAssets:review.updateAssets})
+ const done=`已新增 ${result.added} 筆，略過 ${result.duplicates} 筆。期末餘額補入 ${review.balanceCount} 筆。${review.createAssets?`建立資產帳戶 ${review.newAssets.length} 個。`:''}${review.updateAssets?`更新目前餘額 ${review.assetUpdates.length} 筆。`:''}請按「儲存變更」。`
  setMessage(done)
  // In a detected batch the batch screen shows the result, so the import does not close.
  if(!onImported?.(done))setImporting(false)

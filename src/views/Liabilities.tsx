@@ -77,6 +77,8 @@ function LiabilityDetail({ data, d, now, onEdit, onReset, onDelete }: { data: We
   }, [d])
   const repaid = d.schedule && d.balance > 0 ? projected.principalRepaid / d.balance : null
   const hasDetails = d.schedule || d.annualRate !== undefined || d.paymentAmount !== undefined || d.totalInstallments !== undefined || d.paidInstallments !== undefined || (d.repaymentMethod && d.repaymentMethod !== 'none') || d.basisHistory?.length || d.notes
+  // A credit card, or another debt kept as a balance only, has no repayment terms to show (the form asks for none).
+  const termsShown = d.kind !== 'credit' && !(d.kind === 'other' && !d.schedule && (d.repaymentMethod ?? 'none') === 'none')
   const field = (label: string, text: string) => <div className="debt-field"><span>{label}</span><strong>{text}</strong></div>
   return <section className="panel debt-detail liability-record" aria-label={d.name}>
     <div className="panel-head">
@@ -87,8 +89,8 @@ function LiabilityDetail({ data, d, now, onEdit, onReset, onDelete }: { data: We
         <button className="danger" title="刪除" aria-label={`刪除負債 ${d.name}`} onClick={onDelete}><ActionIcon name="delete" /></button>
       </div>
     </div>
-    <div className="debt-columns">
-      <div className="debt-terms">
+    <div className={`debt-columns${termsShown ? '' : ' balance-only'}`}>
+      {termsShown && <div className="debt-terms">
         <strong className="debt-col-title">還款條件</strong>
         <div className="segmented debt-method" aria-label="還款方式">{Object.entries(REPAYMENT_METHODS).map(([key, label]) => <span key={key} className={(d.repaymentMethod ?? 'none') === key ? 'on' : ''}>{label.replace('攤還', '').replace('只記錄餘額／不試算', '手動餘額')}</span>)}</div>
         <div className="debt-fields">
@@ -97,7 +99,7 @@ function LiabilityDetail({ data, d, now, onEdit, onReset, onDelete }: { data: We
           {field(d.schedule?.source === 'original' ? '總期數' : '剩餘期數', d.remainingInstallments === undefined ? '—' : String(d.remainingInstallments))}
           {field(d.schedule ? (d.schedule.source === 'original' ? '第一期還款日' : '新基準後第一期') : '下次到期日', d.schedule?.firstDueDate ?? d.nextDueDate ?? '—')}
         </div>
-      </div>
+      </div>}
       <div className="debt-result">
         <strong className="debt-col-title">{d.schedule ? '試算結果' : '目前狀態'}</strong>
         <div className="tile-stat">

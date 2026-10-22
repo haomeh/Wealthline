@@ -41,7 +41,8 @@ export function classifyStatement(pages: readonly BankPage[], fileName = ''): St
 function classify(pages: readonly BankPage[], fileName: string): { kind: StatementKindResult; bank?: BankStatementResult; securities?: SecuritiesStatementResult } {
   const lines = pages.flatMap(p => spatialLines(p.items).map(l => l.text))
   const compact = lines.map(l => l.normalize('NFKC').replace(/\s+/g, '').toUpperCase())
-  const card = CARD_MARKERS.some(marker => compact.some(l => marker.test(l)))
+  const cardMarkers = CARD_MARKERS.filter(marker => compact.some(l => marker.test(l))).length
+  const card = cardMarkers > 0
   let bank: ReturnType<typeof parseBankStatement> | undefined
   try { bank = parseBankStatement(pages) } catch { bank = undefined }
   if (bank && bank.status !== 'unsupported') return { bank, kind: {
@@ -54,6 +55,9 @@ function classify(pages: readonly BankPage[], fileName: string): { kind: Stateme
     ...(securities.status === 'partial' && { reason: '部分內容與對帳單自己印的合計對不上，不會匯入' }) } }
   // Bank statements may carry a securities section; only a file the bank parser rejected is checked.
   if (SECURITIES(compact.join('')) || /證券|证券/.test(fileName)) return { kind: { kind: 'unknown', reason: '證券對帳單不支援' } }
+  // A deposit statement whose transaction table the bank parser found but rejected can still print one card
+  // phrase (an advert, a card payment line): one phrase alone does not make it a card statement.
+  if (card && cardMarkers === 1 && bank?.bank && bank.sections.length > 0) return { kind: { kind: 'unknown', bank: statementAccountLabel(bank.bank), reason: `看起來是 ${statementAccountLabel(bank.bank)} 的存款帳單，只有一處信用卡字樣，無法確定是信用卡帳單；可手動選擇類型` } }
   if (card) {
     const issuer = statementMetadata(lines, '', fileName).bank
     return { kind: { kind: 'card', ...(issuer && { bank: issuer }) } }

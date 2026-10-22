@@ -5,7 +5,8 @@ let server, cashflow, convert
 before(async()=>{
  server=await createServer({configFile:false,envDir:false,server:{middlewareMode:true,watch:null,hmr:false,ws:false}})
  cashflow=await server.ssrLoadModule('/src/cashflow.ts')
- ;({cashflowInTwd:convert}=await server.ssrLoadModule('/src/cashflowFx.ts'))
+ const fx=await server.ssrLoadModule('/src/cashflowFx.ts')
+ convert=async(...args)=>(await fx.cashflowWithFxEvidence(...args)).group
 })
 after(()=>server?.close())
 const expense=(id,date,currency,amount)=>({id,date,currency,amount,description:'Test',card:'Test',category:'購物'})

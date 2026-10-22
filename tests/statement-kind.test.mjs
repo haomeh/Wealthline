@@ -62,6 +62,19 @@ test('a deposit table decides bank even with card words; card words alone decide
   }
 })
 
+test('a deposit statement whose table was rejected is not a card statement on one card phrase', () => {
+  for (const [b, label] of [['esun', '玉山銀行 (TW)'], ['fubon', '富邦銀行 (TW)']]) {
+    // The deposit table is found but every amount is unreadable; an advert prints one card phrase.
+    const pages = compact(b); for (const i of pages[0].items) if (/^[\d,]+\.\d\d$/.test(i.text)) i.text = `(${i.text})`
+    pages[0].items.push(item('本期應繳總額 1,200', 35, 100, 200))
+    const r = kind.classifyStatement(pages)
+    assert.equal(r.kind, 'unknown', b); assert.equal(r.bank, label); assert.match(r.reason, /只有一處信用卡字樣/)
+    // Two card phrases still decide card.
+    pages[0].items.push(item('最低應繳金額 120', 35, 80, 200))
+    assert.equal(kind.classifyStatement(pages).kind, 'card', b)
+  }
+})
+
 test('a file that is neither is unknown and says why; the bank it names is kept for the report', () => {
   // The bank's masthead but no supported table and no card phrase: not guessed either way.
   const summary = [page(1, [...mast('台北富邦銀行'), item('帳戶摘要 帳號: 8800002222 TWD', 35, 770), item('一般存款 餘額 1,000', 35, 740)])]

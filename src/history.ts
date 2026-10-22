@@ -1,4 +1,4 @@
-import { parseBankStatementBalances } from './bankStatementAssets'
+import { parseBankStatementBalances, statementChangeDate } from './bankStatementAssets'
 // History kept inside the data file: every edit to a balance or holding, and one
 // value snapshot per day, so the user can see how their assets change over time.
 
@@ -17,6 +17,7 @@ export interface PositionState {
 
 // One balance or holding as it was before and after a save.
 export interface Change {
+  statementDate?: string // closing date when this balance was explicitly applied from a statement
   at: string
   accountId: string
   account: string // the account's name at the time
@@ -113,7 +114,9 @@ export function diffPositions(prev: WealthData, next: WealthData, at: string): C
       const edited =
         !b || !n || b.s.quantity !== n.s.quantity || (p.type === 'holding' && n.p.priceManual && b.s.price !== n.s.price)
       if (!edited) continue
+      const statementDate=p.type==='cash'&&n&&n.s.quantity===n.p.quantity?statementChangeDate(b?.p,n.p):undefined
       changes.push({
+        ...(statementDate && {statementDate}),
         at,
         accountId: id,
         account: (na ?? pa)!.name,
@@ -357,7 +360,9 @@ export function parseHistory(raw: unknown, fail: (why: string) => never): Histor
     const where = `第 ${i + 1} 筆異動紀錄`
     const c = (typeof item === 'object' && item !== null ? item : fail(`${where}不是物件`)) as Record<string, unknown>
     if (!isStr(c.at) || !isStr(c.accountId) || !isStr(c.symbol)) fail(`${where}缺少欄位`)
+    if(c.statementDate!==undefined&&(!isStr(c.statementDate)||!validDate(c.statementDate)||c.type!=='cash'||!c.after))fail(`${where}的帳單日期格式不正確`)
     return {
+      ...(c.statementDate!==undefined && {statementDate:c.statementDate as string}),
       at: c.at as string,
       accountId: c.accountId as string,
       account: isStr(c.account) ? c.account : '',

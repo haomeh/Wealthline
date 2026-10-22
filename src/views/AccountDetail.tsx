@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react'
-import { fmt } from '../format'
+import { currencyDecimals, fmt, listAmount } from '../format'
 import {
   ACCOUNT_KINDS,
   BASE_CURRENCY,
@@ -168,8 +168,8 @@ export function AccountDetail({ data, account: a, onChange, onEdit, onBack, onRe
                           <td className="num">
                             <PriceCell position={p} onChange={setPosition} />
                           </td>
-                          <td className="num">
-                            {fmt(positionValue(p))} <span className="muted small">{p.currency}</span>
+                          <td className="num nowrap">
+                            {listAmount(positionValue(p), p.currency)} <span className="muted small">{p.currency}</span>
                           </td>
                           <td className="num num-serif">{fmt(baseValue(data, p), 0)}</td>
                           <td className="row-actions">
@@ -236,6 +236,9 @@ export function AccountDetail({ data, account: a, onChange, onEdit, onBack, onRe
   )
 }
 
+// A unit price keeps its currency's decimals (231.50 USD beside 548.12 USD) and up to four when it has them.
+const priceText = (price: number, currency: string) =>
+  Number.isFinite(price) ? price.toLocaleString('zh-TW', { minimumFractionDigits: currencyDecimals(currency), maximumFractionDigits: 4 }) : '—'
 const quoteTime = (iso: string) => new Date(iso).toLocaleString('zh-TW', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false })
 const shortDate = (iso: string) => new Date(iso).toLocaleDateString('zh-TW', { month: 'numeric', day: 'numeric' })
 const shortDay = (iso: string) => new Date(iso).toLocaleDateString('zh-TW', { year: 'numeric', month: 'numeric', day: 'numeric' })
@@ -272,7 +275,7 @@ function PriceCell({ position: p, onChange }: { position: Position; onChange: (p
   return (
     <span className="price">
       <button className="link" onClick={() => setEditing(true)} title="點一下手動輸入價格">
-        {fmt(p.price, 4)} <span className="muted small">{p.currency}</span>
+        {priceText(p.price, p.currency)} <span className="muted small">{p.currency}</span>
       </button>
       {p.priceManual ? (
         <button className="tag-btn" onClick={() => onChange({ ...p, priceManual: false })} title="改回自動報價">

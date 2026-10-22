@@ -11,6 +11,7 @@ import { useCalendarNow } from '../useCalendarNow'
 import { AccountDetail } from './AccountDetail'
 import { AccountForm } from './AccountForm'
 import { CsvGuide } from './CsvGuide'
+import { FileInput } from './FileInput'
 
 interface Props {
   data: WealthData
@@ -215,7 +216,7 @@ function ImportPanel({ data, onChange, onDone }: Props & { onDone: () => void })
         <p>機構、類別、子類別、幣別、數量、單價、原幣市值、匯率、台幣市值、佔比。試算表的匯率會一併更新；有錯誤時整批不匯入。CSV 欄位見 <a href={`${REPO_URL}/blob/main/docs/csv-import.md`} target="_blank" rel="noreferrer">CSV 匯入格式</a>。</p>
       </details>
       <textarea aria-label="匯入資料" value={text} onChange={(e) => { setText(e.target.value); setPreview(null) }} rows={8} placeholder="在這裡貼上…" />
-      <label className="field"><span>或選擇 CSV 檔（只在此瀏覽器讀取）</span><input aria-label="帳戶 CSV" type="file" accept=".csv,text/csv" onChange={async (e) => {
+      <label className="field"><span>或選擇 CSV 檔（只在此瀏覽器讀取）</span><FileInput aria-label="帳戶 CSV" accept=".csv,text/csv" onChange={async (e) => {
         const file = e.target.files?.[0]
         e.target.value = ''
         setPreview(null); setFileError('')

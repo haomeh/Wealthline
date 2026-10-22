@@ -1,5 +1,5 @@
 import { dataVersion } from './dataVersion'
-import { Fragment, useEffect, useMemo, useReducer, useRef, useState } from 'react'
+import { Fragment, Suspense, lazy, useEffect, useMemo, useReducer, useRef, useState } from 'react'
 import {
   clearSession,
   fetchProfile,
@@ -16,7 +16,8 @@ import {
   type UserProfile,
 } from './google/auth'
 import { DATA_FILE_NAME, FOLDER_NAME, HISTORY_FOLDER_NAME, LEDGER_FOLDER_NAME } from './google/drive'
-import { archiveSummary, emptyDriveState, ledgerCashflow, ledgerScope, loadDrive, mergeParts, missingParts, readGroup, recentLedgerFrom, saveDrive, storedSizes, withHeldParts, type DriveState, type PartGroup } from './google/driveStore'
+import { clearHistoryCache } from './priceHistory'
+import { MissingPartError, archiveSummary, emptyDriveState, ledgerCashflow, ledgerScope, loadDrive, mergeParts, missingParts, readGroup, recentLedgerFrom, saveDrive, skippedNotice, storedSizes, withHeldParts, type DriveState, type PartGroup } from './google/driveStore'
 import { ledgerPart } from './dataParts'
 import { applyFetchedRates, emptyData, missingRates, parseWealthData, ratesStale, usedCurrencies, type WealthData } from './model'
 import { finishSave } from './saveState'
@@ -30,12 +31,10 @@ import { Accounts, type AccountsView } from './views/Accounts'
 import { Liabilities } from './views/Liabilities'
 import { Expenses } from './views/Expenses'
 import { BankTransactions } from './views/BankTransactions'
-import { StatementImportEntry, type ImportPlan } from './views/StatementImportEntry'
-import { SecuritiesImport } from './views/SecuritiesImport'
-import { StatementImportBatch, type BatchResults } from './views/StatementImportBatch'
+import type { ImportPlan } from './views/StatementImportEntry'
+import type { BatchResults } from './views/StatementImportBatch'
 import { Overview } from './views/Overview'
 import { Cashflow } from './views/Cashflow'
-import { HistoryView } from './views/History'
 import { Rates } from './views/Rates'
 import { SaveReview } from './views/SaveReview'
 import { More } from './views/More'
@@ -51,6 +50,20 @@ import { DataPrivacy } from './views/DataPrivacy'
 import { summarizeBackup } from './backupPreview'
 import { BackupRestore } from './views/BackupRestore'
 import { byteSize, serializeData } from './storageLimits'
+
+// Pages the public home page never shows load as their own files, fetched in the background once
+// data is open (preloadViews), so the sign-in page downloads less and opening them rarely waits.
+const viewLoaders = {
+  entry: () => import('./views/StatementImportEntry'),
+  securities: () => import('./views/SecuritiesImport'),
+  batch: () => import('./views/StatementImportBatch'),
+  history: () => import('./views/History'),
+}
+const StatementImportEntry = lazy(() => viewLoaders.entry().then((m) => ({ default: m.StatementImportEntry })))
+const SecuritiesImport = lazy(() => viewLoaders.securities().then((m) => ({ default: m.SecuritiesImport })))
+const StatementImportBatch = lazy(() => viewLoaders.batch().then((m) => ({ default: m.StatementImportBatch })))
+const HistoryView = lazy(() => viewLoaders.history().then((m) => ({ default: m.HistoryView })))
+const preloadViews = () => { for (const load of Object.values(viewLoaders)) void load().catch(() => {}) }
 
 // When the data was last saved, as the sidebar shows it: the time today, else the date.
 function savedLabel(iso: string) {
@@ -137,6 +150,9 @@ export default function App() {
   const route = parseRoute(path)
   const tab = route.tab
 
+  const opened = !!data
+  useEffect(() => { if (opened) preloadViews() }, [opened])
+
   // Warn before closing the tab with unsaved edits.
   useEffect(() => {
     if (!dirty) return
@@ -174,7 +190,11 @@ export default function App() {
     try {
       p = await fetchProfile(t)
       setOpening({ step: 'drive', profile: p })
-      file = await loadDrive(t, parseWealthData)
+      file = await loadDrive(t, parseWealthData).catch((e) => {
+        // A part file Drive does not list: the user may open without it, nothing is removed.
+        if (!(e instanceof MissingPartError) || !confirm(`${e.message}\n\n要先開啟其他資料嗎？找不到的分檔中的紀錄這次不會顯示，主檔仍保留它的記錄，檔案還原後重新載入就會出現。`)) throw e
+        return loadDrive(t, parseWealthData, e.names)
+      })
     } finally {
       setOpening(null)
     }
@@ -326,6 +346,7 @@ export default function App() {
   async function completeData(from: WealthData, strict = false): Promise<WealthData | null> {
     const state = driveState.current
     if (localMode.current || !state) return from
+    if (state.skipped && !confirm(`${skippedNotice(state.skipped)}\n\n備份不會包含這些分檔中的紀錄。要下載嗎？`)) return null
     try {
       let full = from
       for (const group of ['ledger', 'history'] as const) full = mergeParts(full, await readGroup(await validToken(), state, group), parseWealthData)
@@ -469,6 +490,8 @@ export default function App() {
       token.current = null
       driveState.current = null
       saved.current = null
+      // The tickers asked for in the last minute are this account's holdings.
+      clearHistoryCache()
       setGroupLoad({})
       setBankFrom(null)
       setReturning(null)
@@ -678,9 +701,9 @@ export default function App() {
   }
 
   // Bank rows still to classify, for the sidebar badge: from the rows, or with the stored monthly totals for parts not loaded.
-  const unclassified = !data ? 0 : ledgerMonths
-    ? ledgerMonths.reduce((n, m) => n + m.totals.pending.count, 0)
-    : (data.bankTransactions ?? []).filter((t) => classifyBankTransaction(t, data.bankCategoryRules ?? []).kind === 'pending').length
+  const bankRows = data?.bankTransactions, bankRules = data?.bankCategoryRules
+  const pendingRows = useMemo(() => (bankRows ?? []).filter((t) => classifyBankTransaction(t, bankRules ?? []).kind === 'pending').length, [bankRows, bankRules])
+  const unclassified = !data ? 0 : ledgerMonths ? ledgerMonths.reduce((n, m) => n + m.totals.pending.count, 0) : pendingRows
   const savedAt = saved.current?.updatedAt ? savedLabel(saved.current.updatedAt) : ''
 
   const go = (r: Route, replace = false) => navigate(routePath(r), { replace })
@@ -873,12 +896,15 @@ export default function App() {
 
       <div className="shell-main">
       <main className="content view-enter" key={tab}>
+        {/* Import and history pages load their code when first opened. */}
+        <Suspense fallback={<p className="muted" role="status">載入中…</p>}>
         <PrivacyNotice />
         {status.kind === 'busy' && !data && <p className="muted">{status.text}</p>}
         {status.kind === 'error' && <div className="banner error" role="alert">
           <p>{status.text}</p>
           {data && <button onClick={() => void completeData(data).then((full) => full && downloadDataFile(full, 'wealthline-local-backup.json'))}>下載本機資料備份</button>}
         </div>}
+        {data && !local && driveState.current?.skipped && <div className="banner warn" role="status"><p>{skippedNotice(driveState.current.skipped)}</p></div>}
         {(tab === 'overview' || tab === 'cashflow' || tab === 'expenses' || tab === 'bank-transactions') && <StorageNotice bytes={storedBytes} browser={local ? browserStorage : undefined} />}
 
         {data && (tab === 'cashflow' || tab === 'expenses' || tab === 'bank-transactions') && <div className="segmented cashflow-tabs mobile-only" role="group" aria-label="收支分頁">
@@ -990,6 +1016,7 @@ export default function App() {
           const market = await refreshRates(data, false)
           if (market) await recordToday(market)
         }} error={ratesError} />}
+        </Suspense>
       </main>
       <SiteFooter />
       </div>

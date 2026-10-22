@@ -8,6 +8,7 @@ import { CashflowPeriodControls } from './CashflowPeriodControls'
 import type { WealthData } from '../model'
 import type { LedgerReadiness } from '../cashflowQuery'
 import { CashflowDataStatus } from './CashflowDataStatus'
+import { CurrencyTotals } from './CurrencyTotals'
 
 export interface CashflowSummaryProps extends CashflowInput {
   now: string
@@ -32,7 +33,7 @@ export function CashflowSummary({now,reviewData,readiness,onGoExpenses,onGoBankT
     <CashflowPeriodControls state={period}/>
     <CashflowDataStatus data={reviewData} readiness={input.months && readiness !== 'error' ? 'loading' : readiness ?? (reviewData ? 'ready' : 'not-loaded')} period={period} group={groups[0]} reliableTotals={!loading&&!error&&!input.months} onReview={()=>navigate('/cashflow'+cashflowQueryString({range:'month',month:period.endMonth,panel:'review',source:'all',metric:'all',page:1}))}/>
     {loading && <p role="status" className="notice">正在換算每月匯率…</p>}
-    {needsFx && error && <div role="alert" className="notice"><p>無法完成 TWD 換算：{error}。未顯示部分合計。</p><button onClick={retry}>重試匯率</button></div>}
+    {needsFx && error && <div role="alert" className="notice"><p>無法完成 TWD 換算：{error}。未顯示部分合計。</p>{rawGroups.length > 0 && <CurrencyTotals groups={rawGroups} label={period.label} />}<button onClick={retry}>重試匯率</button></div>}
     {!rawGroups.length ? <div className="cashflow-no-record"><p className="muted">這段期間無紀錄，不代表收支為零。</p>
       {latestMonth && <button onClick={()=>period.showMonth(latestMonth)}>查看 {Number(latestMonth.slice(0,4))} 年 {Number(latestMonth.slice(5,7))} 月</button>}
     </div>:groups.map(group=><section className="cashflow-currency" key={group.currency} aria-label={`${group.currency} 收支`}>

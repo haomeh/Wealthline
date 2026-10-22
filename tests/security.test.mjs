@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { after, before, beforeEach, test } from 'node:test'
 import { createServer } from 'vite'
+import { loadData } from './helpers/drive-data.mjs'
 
 let server, auth, worker, drive
 const profile = { sub: 'account-a', email: 'a@example.com', name: 'Alice' }
@@ -154,6 +155,7 @@ test('HTML responses prevent framing and restrict script execution', async () =>
   assert.match(csp, /script-src 'self' 'sha256-[^']+' https:\/\/accounts\.google\.com\/gsi\/client/)
   assert.ok(!csp.split(';').find((part) => part.includes('script-src'))?.includes('unsafe-inline'))
   assert.equal(response.headers.get('X-Content-Type-Options'), 'nosniff')
+  assert.match(response.headers.get('Permissions-Policy') ?? '', /camera=\(\), microphone=\(\), geolocation=\(\)/)
 })
 
 test('only OCR JavaScript assets may compile WebAssembly', async () => {
@@ -189,7 +191,7 @@ test('legacy plaintext Drive files remain readable', async () => {
   globalThis.fetch = async (url) => new URL(url).searchParams.has('alt')
     ? Response.json(data) : new URL(url).pathname.endsWith('/file-a')
       ? Response.json({ id: 'file-a', etag: '"v1"', headRevisionId: 'r1' }) : Response.json({ files: [{ id: 'file-a' }] })
-  assert.deepEqual(await drive.loadData(token, (raw) => raw), { fileId: 'file-a', etag: '"v1"', data })
+  assert.deepEqual(await loadData(drive, token, (raw) => raw), { fileId: 'file-a', etag: '"v1"', data })
 })
 
 test('invalid quote symbols cannot turn the proxy into an arbitrary URL fetcher', async () => {
