@@ -1,0 +1,464 @@
+/* App shell: a sidebar on wide screens, a top bar with scrolling page links on narrow ones. */
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.logo {
+  flex: none;
+  display: block;
+}
+
+.sidebar .brand-name {
+  font-family: var(--serif);
+  font-size: 17px;
+}
+
+#root {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.shell,
+.app-enter.shell {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 232px minmax(0, 1fr);
+  min-height: 100vh;
+  /* The sidebar's column keeps its colour below the sticky sidebar on long pages. */
+  background: linear-gradient(to right, var(--surface-2) 231px, var(--hairline) 231px 232px, transparent 232px);
+}
+
+.sidebar {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow-y: auto;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  padding: 22px 14px;
+  background: var(--surface-2);
+  border-right: 1px solid var(--hairline);
+}
+
+.sidebar .brand {
+  padding: 0 8px;
+}
+
+.side-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.side-nav .nav-group {
+  font-size: 12px;
+  color: var(--muted);
+  padding: 14px 10px 6px;
+}
+
+.side-nav .nav-group:first-child {
+  padding-top: 0;
+}
+
+.side-nav button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 12px 9px 28px;
+  border: none;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--ink-2);
+  font-size: 14px;
+  text-align: left;
+}
+
+.side-nav button:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--surface) 60%, transparent);
+  color: var(--ink);
+}
+
+.side-nav button.active {
+  padding-left: 12px;
+  justify-content: flex-start;
+  background: var(--surface);
+  color: var(--ink);
+  font-weight: 700;
+  box-shadow: var(--shadow);
+}
+
+.side-nav button.active::before {
+  content: '';
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.side-nav button.active .nav-badge {
+  margin-left: auto;
+}
+
+.nav-badge {
+  font-size: 12px;
+  padding: 0 7px;
+  border-radius: 999px;
+  background: var(--accent-wash);
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.side-foot {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.sync-card {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 12px;
+  border-radius: 14px;
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  font-size: 12px;
+  color: var(--ink-2);
+}
+
+.sync-card strong {
+  font-size: 13px;
+}
+
+.sync-card.dirty {
+  background: var(--warn-wash);
+  border-color: transparent;
+}
+
+.sync-card.dirty strong {
+  color: var(--ink);
+}
+
+.sync-card button.save {
+  margin-top: 8px;
+}
+
+.synced {
+  color: var(--good);
+  white-space: nowrap;
+}
+
+.account-menu {
+  position: relative;
+}
+
+.account-menu summary {
+  list-style: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px;
+  border-radius: 12px;
+}
+
+.account-menu[open] summary,
+.account-menu summary:hover {
+  background: var(--surface);
+}
+
+.account-menu summary::-webkit-details-marker {
+  display: none;
+}
+
+.account-menu summary .who {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.account-menu summary .who span,
+.account-menu summary .who small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.account-menu summary .who small {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--muted);
+}
+
+.account-menu img,
+.avatar {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--accent-wash);
+  color: var(--accent);
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.menu {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 8px);
+  width: 320px;
+  max-width: calc(100vw - 28px);
+  padding: 18px;
+  border-radius: 22px;
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  box-shadow: 0 24px 60px -20px rgba(30, 20, 12, 0.4);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  word-break: break-word;
+}
+
+.menu-who {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.menu-who .avatar,
+.menu-who img {
+  width: 44px;
+  height: 44px;
+  font-size: 18px;
+}
+
+.menu-who > div {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.menu-who strong {
+  font-size: 15px;
+}
+
+.menu-where {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border-radius: 14px;
+  background: var(--surface-2);
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--ink-2);
+}
+
+.menu > button {
+  border-radius: 12px;
+  padding: 10px;
+}
+
+.menu-foot {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--hairline);
+  font-size: 14px;
+}
+
+.shell-main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.content {
+  flex: 1;
+  width: 100%;
+  max-width: 1180px;
+  padding: 24px 28px 64px;
+}
+
+/* Phone (Claude Design "Wealthline Mobile"): no sidebar; a bottom tab bar, a floating save bar
+   and the account menu on the 更多 page. Both bars are hidden on wide screens. */
+@media (min-width: 900px) {
+  .tab-bar,
+  .save-bar,
+  .mobile-only {
+    display: none !important;
+  }
+}
+
+@media (max-width: 899px) {
+  .shell,
+  .app-enter.shell {
+    display: block;
+    background: none;
+  }
+
+  .sidebar,
+  .desktop-only {
+    display: none !important;
+  }
+
+  .content {
+    padding: 8px 16px calc(96px + env(safe-area-inset-bottom));
+  }
+
+  .shell-main .site-footer {
+    padding-bottom: calc(72px + env(safe-area-inset-bottom));
+  }
+
+  .page-head h2 {
+    font-size: 22px;
+  }
+
+  .tab-bar {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 20;
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    padding: 4px 0 calc(4px + env(safe-area-inset-bottom));
+    background: var(--surface);
+    border-top: 1px solid var(--hairline);
+  }
+
+  .tab-bar button {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    min-height: 50px;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: none;
+    font-size: 11px;
+    color: var(--muted);
+  }
+
+  .tab-bar button.active {
+    color: var(--accent);
+    font-weight: 700;
+  }
+
+  .tab-bar .nav-badge {
+    position: absolute;
+    top: 2px;
+    left: calc(50% + 6px);
+    font-size: 10px;
+    padding: 0 5px;
+  }
+
+  .tab-icon {
+    width: 18px;
+    height: 18px;
+    border: 2px solid currentColor;
+    border-radius: 6px;
+  }
+
+  .tab-icon.cashflow {
+    border-radius: 50%;
+  }
+
+  .tab-icon.more {
+    border: 0;
+    border-radius: 0;
+    font-size: 16px;
+    line-height: 18px;
+    letter-spacing: 1px;
+    width: auto;
+  }
+
+  .tab-icon.more::before {
+    content: '•••';
+  }
+
+  .tab-bar button.active .tab-icon:not(.more) {
+    background: var(--accent);
+    border-color: var(--accent);
+  }
+
+  .save-bar {
+    position: fixed;
+    left: 12px;
+    right: 12px;
+    bottom: calc(66px + env(safe-area-inset-bottom));
+    z-index: 21;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 10px 10px 10px 16px;
+    border-radius: 18px;
+    background: var(--ink);
+    color: var(--page);
+    font-size: 14px;
+    box-shadow: 0 12px 30px -10px rgba(0, 0, 0, 0.4);
+  }
+
+  .save-bar button.primary {
+    flex: none;
+    padding: 10px 16px;
+    border-radius: 12px;
+    min-height: 44px;
+  }
+
+  .content:has(~ .save-bar),
+  .shell:has(.save-bar) .content {
+    padding-bottom: calc(160px + env(safe-area-inset-bottom));
+  }
+}
+
+/* The save state as a pill in phone page headers. */
+.sync-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+  background: var(--good-wash);
+  color: var(--good);
+}
+
+.sync-pill.dirty {
+  background: var(--accent-wash);
+  color: var(--accent);
+}
+
+.sync-pill.busy {
+  background: var(--surface-2);
+  color: var(--ink-2);
+}
+
+.sync-pill.error {
+  background: var(--critical-wash);
+  color: var(--critical);
+}

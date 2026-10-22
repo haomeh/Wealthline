@@ -1,0 +1,239 @@
+/* Independent bank ledger: compact editorial records, not the card table. */
+.bank-page { display:grid; gap:20px; min-width:0; }
+.bank-page h4 { margin:6px 0; overflow-wrap:anywhere; }
+.bank-fields { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,210px),1fr)); gap:12px; border:0; padding:0; margin:12px 0; min-width:0; }
+.bank-fields > *, .bank-fields input, .bank-fields select { min-width:0; max-width:100%; }
+@media (max-width: 640px) { .bank-record-panel { padding: 16px; } }
+.bank-section { border-top:1px solid var(--border); padding-top:18px; margin-top:18px; }
+.bank-preview-row { padding:8px 0; border-bottom:1px solid var(--border); }
+.bank-review-flag { border-left:3px solid currentColor; padding:4px 0 4px 12px; margin:12px 0; overflow-wrap:anywhere; }
+.bank-review-flag li { margin:6px 0; }
+.bank-import li, .bank-rules li { overflow-wrap:anywhere; }
+.bank-rules li { padding:8px 0; }
+.bank-rules li button { margin-left:8px; }
+.bank-rule-dialog { width:min(calc(100% - 32px),640px); max-height:90dvh; overflow:auto; }
+.bank-rule-dialog::backdrop { background:rgb(0 0 0 / .45); }
+@media(max-width:480px) { .bank-page .page-head,.bank-import .panel-head { flex-wrap:wrap; gap:12px; } .bank-page button { white-space:normal; } }
+
+/* Bank import: skim transactions first, expand only the row being reviewed. */
+.bank-fields .field { margin: 0; min-width: 0; }
+.bank-fields input, .bank-fields select { width: 100%; box-sizing: border-box; }
+.bank-fields select { appearance: none; -webkit-appearance: none; padding-right: 32px; }
+.bank-fields .field:has(> select) { position: relative; align-self: start; }
+.bank-fields .field:has(> select)::after { content: ''; position: absolute; right: 13px; bottom: 18px; width: 7px; height: 7px; border-right: 1.5px solid var(--ink-2); border-bottom: 1.5px solid var(--ink-2); transform: rotate(45deg); pointer-events: none; }
+.bank-import-intro { margin: 8px 0 12px; font-size: .85rem; }
+.bank-help { min-width: 0; margin: 10px 0; font-size: .82rem; color: var(--ink-2); }
+.bank-help > summary { cursor: pointer; min-height: 32px; padding: 5px 0; }
+.bank-help p + p { margin-top: 8px; }
+.bank-import-report { margin: 18px 0; padding: 12px 14px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-2); min-width: 0; }
+.bank-import-report > summary { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 4px 12px; cursor: pointer; min-height: 32px; font-size: .85rem; }
+.bank-import-report > summary::before { content: '▸'; }
+.bank-import-report[open] > summary::before { content: '▾'; }
+.bank-import-report > summary::-webkit-details-marker { display: none; }
+.bank-import-report > summary > span:first-of-type { flex: 1; }
+.bank-import-report ul { padding-left: 18px; margin: 12px 0 0; font-size: .82rem; }
+.bank-import-report li + li { margin-top: 8px; }
+.bank-section-head { display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 4px 12px; }
+.bank-section-head h3 { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.bank-section-note { margin-top: 8px; font-size: .82rem; color: var(--ink-2); }
+.bank-section-warning { padding: 10px 12px; border-left-color: var(--accent); border-radius: 0 8px 8px 0; background: var(--accent-wash); font-size: .85rem; }
+.bank-section-warning .bank-help { margin-bottom: 0; }
+.bank-account-mapping { margin: 16px 0; }
+.bank-preview-list { border-top: 1px solid var(--border); }
+.bank-preview-row { padding: 6px 0; min-width: 0; }
+.bank-preview-overview { display: grid; grid-template-columns: 32px auto minmax(0, 1fr) auto; align-items: center; column-gap: 10px; row-gap: 2px; }
+.bank-preview-select { grid-row: 1 / 3; align-self: start; display: flex; align-items: center; flex-direction: column; gap: 2px; min-height: 44px; cursor: pointer; }
+.bank-preview-select input, .bank-summary-check input { width: 20px; height: 20px; margin: 0; flex: none; }
+.bank-preview-copy { display: contents; }
+.bank-preview-copy > time { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.bank-preview-copy > strong { min-width: 0; font-size: .9rem; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.bank-preview-tags { grid-column: 2 / 5; grid-row: 2; display: flex; align-items: center; gap: 4px 8px; flex-wrap: wrap; padding-right: 48px; font-size: .72rem; color: var(--ink-2); }
+.bank-preview-category { display: inline-flex; align-items: center; gap: 5px; min-width: 0; max-width: 100%; min-height: 32px; padding: 2px 8px; border: 0; border-radius: 6px; background: var(--accent-wash); color: var(--accent); font-size: .75rem; }
+.bank-preview-category > span { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.bank-preview-category svg { flex: none; width: 14px; height: 14px; }
+.bank-summary-pending { background: var(--warn-wash); color: var(--ink); border-radius: 5px; padding: 1px 6px; }
+.bank-preview-amount { grid-column: 4; grid-row: 1; display: flex; align-items: baseline; justify-content: flex-end; gap: 6px; white-space: nowrap; }
+.bank-preview-amount strong { font-size: .95rem; font-variant-numeric: tabular-nums; }
+/* Closed edit toggle floats into the tag line as an icon button; open, it returns to flow above the editor. */
+.bank-row-details:not([open]) { margin-top: -40px; pointer-events: none; }
+.bank-row-details > summary { display: flex; align-items: center; justify-content: flex-end; gap: 7px; min-height: 40px; cursor: pointer; list-style: none; font-size: .82rem; color: var(--accent); }
+.bank-row-details:not([open]) > summary { pointer-events: auto; margin-left: auto; width: 44px; min-height: 40px; justify-content: center; }
+.bank-row-details:not([open]) .bank-row-expand { display: none; }
+.bank-row-details > summary::-webkit-details-marker { display: none; }
+.bank-row-details > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 6px; }
+.bank-row-details[open] > summary { border-bottom: 1px solid var(--border); }
+.bank-row-collapse, .bank-row-details[open] .bank-row-expand { display: none; }
+.bank-row-details[open] .bank-row-collapse { display: inline; }
+.bank-row-editor { padding: 4px 0 12px; }
+.bank-row-editor .bank-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.bank-row-editor .bank-description-field { grid-column: 1 / -1; grid-row: 1; }
+.bank-row-editor .bank-fields > p { grid-column: 1 / -1; font-size: .82rem; }
+.bank-narration { background: var(--surface-2); border-left-color: var(--accent); border-radius: 0 8px 8px 0; padding: 12px; font-size: .85rem; }
+.bank-narration ul { padding: 0; list-style: none; margin: 12px 0; }
+.bank-narration li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 10px 0; border-top: 1px solid var(--border); }
+.bank-candidate-text { display: block; overflow-wrap: anywhere; }
+.bank-narration li button { display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-height: 44px; white-space: nowrap; }
+.bank-narration li button { padding: 6px 9px; font-size: .8rem; }
+.bank-summary-check { display: flex; align-items: start; gap: 10px; min-height: 44px; padding-top: 10px; cursor: pointer; }
+.bank-summary-check input { margin-top: 2px; }
+.bank-add-row { margin-top: 12px; }
+.bank-import-actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 10px; padding-top: 20px; }
+.bank-import-actions > span { margin-right: auto; }
+.bank-pagination { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; margin: 16px 0; }
+.bank-pagination span { min-width: 0; overflow-wrap: anywhere; font-size: 0.85rem; color: var(--muted); }
+.bank-preview-navigation { margin-top: 20px; }
+.bank-progress progress { width: 100%; accent-color: var(--accent); }
+.bank-progress p { overflow-wrap: anywhere; margin: 8px 0; }
+.bank-import-review { margin-top: 16px; }
+.bank-import-confirm-actions { margin-top: 12px; flex-wrap: wrap; }
+.bank-closing-balances, .bank-import-review { overflow-wrap: anywhere; }
+@media (max-width: 600px) {
+  .bank-import { padding: 16px; }
+  .bank-upload-fields { grid-template-columns: minmax(0, 1fr); }
+  .bank-upload-actions { flex-wrap: wrap; gap: 8px; }
+  .bank-upload-actions button { min-height: 44px; }
+  .bank-preview-overview { grid-template-columns: 24px auto minmax(0, 1fr) auto; column-gap: 8px; }
+  .bank-preview-copy > time { font-size: .7rem; }
+  .bank-fields input, .bank-fields select { min-height: 44px; font-size: 16px; }
+  .bank-row-editor .bank-date-field { grid-column: 1 / -1; }
+  .bank-fields input[type="date"], .bank-fields input[type="month"] { display: block; min-width: 0; max-width: 100%; }
+  .bank-fields input[type="date"]::-webkit-date-and-time-value, .bank-fields input[type="month"]::-webkit-date-and-time-value { text-align: left; }
+  .bank-import-actions > span { flex-basis: 100%; }
+  .bank-import-actions > button { flex: 1 1 120px; min-height: 44px; }
+  .bank-narration .bank-help { margin: 4px 0; }
+}
+
+.bank-field-hint { font-size: .72rem; color: var(--ink-2); }
+
+/* Detail pages share a summary-first record layout. */
+.record-groups { display: grid; grid-template-columns: minmax(0, 1fr); gap: 20px; min-width: 0; }
+.record-groups > section { min-width: 0; }
+.record-group-head { display: flex; align-items: baseline; gap: 12px; min-width: 0; margin-bottom: 4px; color: var(--ink-2); font-size: 12px; }
+.record-group-head time { flex-shrink: 0; font-variant-numeric: tabular-nums; }
+.record-group-head > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.detail-record { --record-action-space: 0px; position: relative; min-width: 0; padding: 4px 0; border-bottom: 1px solid var(--hairline); }
+.detail-record:last-child { border-bottom: 0; }
+.detail-record:has(> .detail-record-actions > button) { --record-action-space: 44px; }
+.detail-record:has(> .detail-record-actions > button + button) { --record-action-space: 88px; }
+/* Statement preview rows may lack the category button; always reserve its slot so dates and amounts stay aligned. */
+.statement-preview-row .detail-record { --record-action-space: 44px; }
+.statement-preview-row .detail-record .detail-record-details > summary { padding-right: calc(var(--record-action-space) + 4px); }
+/* Spending and bank rows may lack the category button; always reserve both slots so amounts stay aligned. */
+.expense-record:has(> .detail-record-actions > button), .bank-record:has(> .detail-record-actions > button) { --record-action-space: 88px; }
+.detail-record-details { min-width: 0; }
+.detail-record-details > summary { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 24px; min-height: 44px; list-style: none; cursor: pointer; border-radius: 6px; }
+.detail-record:has(> .detail-record-actions > button) .detail-record-details > summary { padding-right: calc(var(--record-action-space) + 4px); }
+.detail-record-details > summary::-webkit-details-marker { display: none; }
+.detail-record-details > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.detail-record-heading { display: flex; align-items: center; min-width: 0; gap: 8px; }
+/* The full title of a row whose title is cut off, while the pointer is over the row or it has keyboard
+   focus (DetailRecord marks it data-clipped). An open row shows the whole description instead. */
+.detail-record-heading { position: relative; }
+@media (hover: hover) {
+  .detail-record-heading[data-clipped]::after { content: attr(data-full); position: absolute; z-index: 20; top: -6px; left: -10px; width: max-content; max-width: min(640px, calc(100vw - 48px)); padding: 5px 10px; border-radius: 8px; background: var(--ink); color: var(--surface); font-size: 13px; font-weight: 500; line-height: 20px; white-space: normal; overflow-wrap: anywhere; box-shadow: 0 6px 18px rgba(0, 0, 0, .25); opacity: 0; visibility: hidden; pointer-events: none; transition: opacity .12s, visibility 0s .12s; }
+  .detail-record-details > summary:is(:hover, :focus-visible) .detail-record-heading[data-clipped]::after { opacity: 1; visibility: visible; transition: opacity .12s .3s, visibility 0s .3s; }
+  .detail-record-details[open] .detail-record-heading::after { display: none; }
+}
+.detail-record-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; font-weight: 500; line-height: 20px; }
+.detail-record-heading .tag { flex-shrink: 0; font-size: 10px; padding: 2px 4px; }
+.detail-record-secondary { display: flex; align-items: center; min-width: 0; gap: 8px; }
+.detail-record-meta { min-width: 0; max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink-2); font-size: 11px; }
+.detail-record-value { flex-shrink: 0; text-align: right; font-size: 14px; line-height: 20px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.record-money { display: inline-flex; align-items: baseline; gap: 4px; }
+.record-money small { flex: 0 0 auto; min-width: 3.4em; color: var(--ink-2); font-size: 11px; text-align: left; }
+/* The currency code in a fixed slot and the figure right-aligned in a fixed width: the codes and
+   right edges of every row share columns unless an amount is unusually long. Each currency keeps
+   one number of decimals (format.ts amountParts), so its decimal points line up as well. */
+.record-money strong { display: inline-block; min-width: 11ch; text-align: right; font-weight: 600; font-variant-numeric: lining-nums tabular-nums; }
+.record-money[data-tone="credit"] { color: var(--good); }
+.record-unknown { color: var(--critical); font-size: 13px; }
+.detail-record-actions { position: absolute; top: 4px; right: 0; display: flex; justify-content: end; min-width: 0; }
+.detail-record-actions:empty { display: none; }
+.detail-record-actions > button, .liability-actions > button, .bank-rules li button, .expense-rules li button { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 44px; width: 44px; height: 44px; min-height: 44px; padding: 0; border-color: transparent; background: transparent; color: var(--ink-2); }
+.detail-record-actions > button:hover:not(:disabled), .liability-actions > button:hover:not(:disabled), .bank-rules li button:hover:not(:disabled), .expense-rules li button:hover:not(:disabled) { color: var(--accent); background: var(--accent-wash); }
+.detail-record-actions .add-category-rule, .detail-record-actions .bank-record-rule[data-pending="true"] { color: var(--accent); }
+.liability-actions > button.danger, .bank-rules li button.danger, .expense-rules li button.danger { color: var(--critical); }
+.detail-record-content { min-width: 0; padding: 8px 0 12px; font-size: 13px; overflow-wrap: anywhere; }
+.detail-record-content > p { margin: 0 0 12px; }
+.record-evidence, .position-day-evidence { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 8px 16px; margin: 12px 0; font-size: 13px; }
+.record-evidence dt, .position-day-evidence dt { color: var(--ink-2); }
+.record-evidence dd, .position-day-evidence dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.quantity-rows { gap: 0; }
+.statement-preview-records { min-width: 0; }
+.statement-preview-row { display: grid; grid-template-columns: 44px minmax(0, 1fr); min-width: 0; border-bottom: 1px solid var(--hairline); padding: 8px 0; }
+.statement-preview-select { display: flex; align-items: start; justify-content: center; cursor: pointer; min-height: 44px; padding-top: 12px; }
+.statement-preview-select input { width: 20px; height: 20px; min-height: 20px; margin: 0; }
+.statement-preview-body { min-width: 0; }
+.statement-preview-row .detail-record { border: 0; padding: 0; }
+.statement-preview-row .detail-record-actions { top: 0; }
+.statement-import .detail-record-details { margin: 0; }
+.statement-preview-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); margin: 8px 0; gap: 12px; }
+.statement-preview-fields .statement-merchant-field { grid-column: 1 / -1; }
+.statement-preview-fields .field { display: grid; gap: 4px; }
+.statement-preview-fields .preview-value { min-height: 44px; background: var(--surface-2); border-color: var(--hairline); }
+.statement-preview-fields .preview-input { min-height: 44px; font-size: 16px; }
+.statement-preview-fields input[type="date"] { display: block; max-width: 100%; }
+.statement-preview-fields input[type="date"]::-webkit-date-and-time-value { text-align: left; }
+.position-history-days { list-style: none; margin: 16px 0; padding: 0; }
+.position-day { min-width: 0; border-bottom: 1px solid var(--hairline); }
+.position-day > summary { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; min-height: 44px; padding: 8px 0; cursor: pointer; font-size: 13px; }
+.position-day-value { margin-left: auto; }
+.liability-record-details { margin-top: 16px; }
+.liability-record-details > summary { display: flex; align-items: center; min-height: 44px; cursor: pointer; color: var(--ink-2); font-size: 13px; }
+.liability-record-details > summary::before { content: '▸'; margin-right: 8px; }
+.liability-record-details[open] > summary::before { content: '▾'; }
+.liability-record-details > summary::-webkit-details-marker { display: none; }
+.liability-actions { justify-content: end; margin-top: 8px; }
+.liability-schedule-summary { overflow-wrap: anywhere; }
+.bank-rules ol { list-style: none; margin: 8px 0 0; padding: 0; }
+.bank-rules li { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--hairline); }
+.bank-rules li > span { min-width: 0; overflow-wrap: anywhere; }
+.bank-rules li > .row { flex-shrink: 0; flex-wrap: nowrap; }
+@media (max-width: 640px) {
+  .expenses-page > .panel, .history-page > .panel { padding: 16px; }
+  .detail-record-details > summary { grid-template-columns: minmax(0, 1fr); grid-template-rows: 20px 44px; gap: 0; min-height: 64px; }
+  .detail-record:has(> .detail-record-actions > button) .detail-record-details > summary { padding-right: 0; }
+  .detail-record-secondary { min-height: 44px; justify-content: space-between; padding-right: calc(var(--record-action-space) + 4px); }
+  .detail-record-value { text-align: left; }
+  .detail-record-actions { top: 24px; }
+  .statement-preview-select { padding-top: 32px; }
+  /* A row with a second line (category): the description takes the whole first line, the
+     category and the amount share the second, the amount at the right so the figures of all
+     rows stay in one column. */
+  .detail-record:not([data-swipe]):has(.detail-record-subtitle) .detail-record-details > summary { grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: auto auto; gap: 2px 8px; min-height: 52px; padding: 4px 0; }
+  .detail-record:not([data-swipe]):has(> .detail-record-actions > button):has(.detail-record-subtitle) .detail-record-details > summary { padding-right: calc(var(--record-action-space) + 4px); }
+  .detail-record:not([data-swipe]) .detail-record-main:has(> .detail-record-subtitle) { display: contents; }
+  .detail-record:not([data-swipe]):has(.detail-record-subtitle) .detail-record-heading { grid-column: 1 / -1; }
+  .detail-record:not([data-swipe]):has(.detail-record-subtitle) .detail-record-secondary { min-height: 0; padding-right: 0; }
+  .detail-record:not([data-swipe]):has(.detail-record-subtitle) .detail-record-value { text-align: right; }
+  .detail-record:not([data-swipe]):has(.detail-record-subtitle) > .detail-record-actions { top: 8px; }
+  .statement-preview-row .detail-record-actions { top: 20px; }
+  .statement-preview-row .detail-record .detail-record-details > summary { padding-right: 0; }
+  .liability-record .liability-details { grid-template-columns: auto minmax(0, 1fr); gap: 8px 16px; }
+  .liability-record .liability-details dd { margin: 0; }
+  section.daily tbody tr { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 12px; padding: 12px; }
+  section.daily td { display: flex; flex-direction: column; align-items: start; gap: 2px; padding: 0; font-size: 12px; text-align: left; }
+  section.daily td::before { font-size: 10px; }
+  section.daily td:nth-child(2) { align-items: end; text-align: right; }
+  section.daily td:nth-child(2)::before { content: none; }
+  section.daily td:nth-child(5) { flex-direction: row; align-items: center; gap: 6px; }
+  section.daily td.daily-actions { display: flex; grid-column: 1 / -1; margin: 0; padding: 8px 0 0; }
+  section.daily .daily-action-group { display: flex; justify-content: end; }
+  .daily-date { gap: 2px; }
+  .daily-source { font-size: 10px; }
+  .daily-action-group .daily-action { border-color: transparent; }
+  /* Narrower money slots leave the description room on a phone. */
+  .record-money small { min-width: 2.8em; }
+  .record-money strong { min-width: 9ch; }
+}
+@media (max-width: 360px) {
+  .detail-record-value { font-size: 12px; }
+  .record-money small { font-size: 10px; }
+  .statement-preview-row .detail-record-value { font-size: 11px; }
+}
+
+.file-input { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; position: relative; }
+.file-input-names { overflow-wrap: anywhere; }
+.file-input-native { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.record-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.bank-rules li button { margin-left: 0; }

@@ -1,0 +1,456 @@
+/* Phone layout (Claude Design "Wealthline Mobile", screens 2a–2h). Wide screens keep the layouts above. */
+.overview-title { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.overview-title p { flex-basis: 100%; }
+.overview-accounts-head { display: flex; justify-content: space-between; align-items: center; padding: 2px 4px; margin-bottom: 8px; font-size: 13px; }
+.overview-accounts-head strong { font-size: 14px; }
+.overview-accounts-head button.link { padding: 6px 0; min-height: 0; }
+.overview-month { text-align: left; align-items: stretch; gap: 8px; color: var(--ink); font-weight: 400; cursor: pointer; }
+.overview-month:hover:not(:disabled) { background: var(--surface); border-color: var(--accent); }
+.overview-month strong.up { color: var(--good); }
+.overview-month strong.down { color: var(--critical); }
+.month-bars { display: flex; align-items: flex-end; gap: 8px; height: 40px; }
+.month-bars i { flex: 1; border-radius: 6px 6px 2px 2px; }
+.month-labels { display: flex; justify-content: space-between; font-size: 11px; color: var(--ink-2); }
+.account-group-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding: 0 4px 8px; font-size: 12px; color: var(--ink-2); }
+.account-group-head .num-serif { font-size: 14px; color: var(--ink); }
+.holdings tr.unsaved { background: var(--accent-wash); }
+.unsaved-mark { color: var(--accent); font-weight: 700; }
+.detail-nav { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.detail-meta { margin: 6px 0 0; font-size: 12px; }
+.cashflow-phone-summary { display: flex; flex-direction: column; gap: 10px; }
+.cashflow-phone-summary > span { font-size: 13px; }
+.cashflow-phone-summary > strong { font-size: 36px; line-height: 1.1; }
+.cashflow-phone-summary > strong.up { color: var(--good); }
+.cashflow-phone-summary > strong.down { color: var(--critical); }
+.cashflow-hbar { display: grid; grid-template-columns: 32px minmax(0, 1fr) auto; gap: 10px; align-items: center; font-size: 13px; color: var(--ink-2); }
+.cashflow-hbar .num-serif { font-size: 15px; color: var(--ink); }
+.cashflow-hbar-track { height: 10px; border-radius: 5px; background: var(--surface-2); overflow: hidden; }
+.cashflow-hbar-track i { display: block; height: 100%; border-radius: 5px; }
+.cashflow-tabs { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; margin-bottom: 14px; }
+.cashflow-tabs button { position: relative; padding: 9px 0; min-height: 40px; }
+.cashflow-tabs .nav-badge { margin-left: 4px; }
+
+/* 更多: the pages the bottom bar leaves out, and the account and data menu. */
+.more-page { display: flex; flex-direction: column; gap: 12px; max-width: 560px; }
+.more-page .page-head { margin: 0; }
+.more-page .panel { margin: 0; border-radius: 18px; }
+.more-who { display: flex; align-items: center; gap: 12px; }
+.more-who > div { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+.more-who > div span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.more-who img, .more-who .avatar { flex: none; width: 44px; height: 44px; border-radius: 50%; font-size: 18px; }
+.more-links { list-style: none; padding: 4px 0; }
+.more-links li + li { border-top: 1px solid var(--hairline); }
+.more-links button { display: flex; justify-content: space-between; align-items: center; width: 100%; min-height: 52px; padding: 0 16px; border: 0; border-radius: 0; background: none; font-size: 15px; text-align: left; }
+.more-links button:hover:not(:disabled) { background: none; color: var(--accent); }
+.more-label { padding: 6px 4px 0; font-size: 12px; color: var(--ink-2); }
+.more-data { display: flex; flex-direction: column; gap: 10px; }
+.more-data > button { border-radius: 12px; padding: 11px; }
+.more-foot { padding: 4px 16px; }
+.more-foot .menu-foot { border-top: 0; padding: 12px 0; }
+
+@media (max-width: 899px) {
+  /* 2a 總覽 */
+  .overview-head { flex-wrap: nowrap; min-height: 44px; margin-bottom: 0; }
+  .overview-title .logo { flex: none; }
+  .overview .snapshot-timeline { display: flex; flex-direction: column; gap: 8px; padding: 18px 16px 12px; border-radius: 22px; }
+  .snapshot-timeline > * { order: 3; }
+  .snapshot-timeline .trend-head, .snapshot-timeline .trend-controls { display: contents; }
+  .snapshot-timeline .trend-head > div:first-child { order: 0; }
+  .snapshot-timeline > .trend { order: 1; }
+  .snapshot-timeline .trend-mode { display: none; }
+  .snapshot-timeline .trend-range { order: 2; display: grid; grid-template-columns: repeat(4, 1fr); }
+  .snapshot-timeline .trend-range button { padding: 8px 0; }
+  .overview-tiles { gap: 10px; }
+  .overview-tiles > .panel:not(.snapshot-timeline) { padding: 14px; border-radius: 20px; }
+  .overview-tiles .tile-stat > span:first-child { font-size: 12px; }
+  .overview-tiles .tile-stat small { font-size: 11px; }
+  .overview-tiles .overview-share { grid-column: auto; }
+  .overview-share .donut { width: 58px; height: 58px; }
+  .overview-share .donut::after { inset: 11px; }
+  .overview-donut-row { flex-direction: column; align-items: flex-start; gap: 10px; }
+  .overview-donut-row .share-legend { flex: none; width: 100%; }
+  .overview-share .share-legend { font-size: 11px; gap: 2px; }
+  .overview-share .share-legend li { grid-template-columns: 8px minmax(0, 1fr) auto; gap: 5px; }
+  .overview-share .share-legend i { width: 8px; height: 8px; }
+  .overview-tiles .overview-accounts { padding: 0; border: 0; background: none; }
+  .overview-accounts .account-strip { display: block; border: 1px solid var(--border); border-radius: 18px; background: var(--surface); }
+  .account-strip > li { padding: 0; border-right: 0; border-top: 1px solid var(--hairline); }
+  .account-strip > li:first-child { border-top: 0; }
+  .account-strip button, .account-strip > li.account-strip-rest { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 12px; align-items: center; padding: 12px 16px; min-height: 52px; }
+  .account-strip .label { grid-row: 1 / 3; font-size: 15px; font-weight: 500; color: var(--ink); }
+  .account-strip strong { font-size: 17px; text-align: right; }
+  .account-strip strong + span { text-align: right; font-size: 12px; }
+
+  /* 2b 帳戶 */
+  .add-account { width: 44px; height: 44px; padding: 0; font-size: 20px; }
+  .account-filter { display: grid; grid-template-columns: repeat(3, 1fr); margin-bottom: 14px; }
+  .account-filter button { padding: 9px 0; }
+  .account-table.filtered-out { display: none; }
+  .account-table { padding: 0; background: none; border: 0; }
+  .account-table .account-row.head { display: none; }
+  .account-table .account-list { border: 1px solid var(--border); border-radius: 18px; background: var(--surface); }
+  .account-table button.account-row { padding: 14px 16px; min-height: 52px; }
+  .account-table .account-row .name { font-size: 15px; }
+  .account-table .account-row .holdings-summary { display: none; }
+  .account-table .account-row .sub { grid-area: meta; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .account-table[data-kind='bank'] .account-row .change { display: none; }
+  .import-link { display: block; margin: 4px auto 0; padding: 12px; }
+
+  /* 2c 帳戶明細 */
+  .detail-head h2 { font-size: 24px; }
+  .account-facts { display: none; }
+  .detail-head > div { flex: 1; min-width: 0; }
+  table.data.holdings thead { display: none; }
+  table.data.holdings, table.data.holdings tbody { display: block; }
+  table.data.holdings tr { display: grid; grid-template-columns: auto minmax(0, 1fr) auto 32px; grid-template-areas: 'sym sym base del' 'qty price price del'; gap: 4px 8px; align-items: center; padding: 12px 0; border-top: 1px solid var(--hairline); }
+  table.data.holdings tr:first-child { border-top: 0; }
+  table.data.holdings td { display: block; padding: 0; border: 0; min-width: 0; }
+  table.data.holdings td:nth-child(1) { grid-area: sym; }
+  table.data.holdings td:nth-child(2) { grid-area: qty; display: flex; align-items: center; gap: 4px; }
+  table.data.holdings td:nth-child(3) { grid-area: price; text-align: left; }
+  table.data.holdings td:nth-child(4) { display: none; }
+  table.data.holdings td:nth-child(5) { grid-area: base; font-size: 17px; white-space: nowrap; }
+  table.data.holdings td:nth-child(6) { grid-area: del; }
+  table.data.holdings td:nth-child(2) .cell-input { width: 5.5em; field-sizing: content; min-width: 2.5em; max-width: 8em; padding-left: 0; text-align: left; }
+  table.data.holdings td:nth-child(2)::after { content: '×'; color: var(--muted); }
+  /* Name and added date each on their own line under the symbol, so they never run into the TWD value. */
+  table.data.holdings td:nth-child(1) > div { display: block; margin: 2px 0 0 18px; }
+  table.data.holdings td:nth-child(1) > .ellipsis { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .add-holding .row { flex-wrap: wrap; }
+  .add-holding .row > input { flex: 1 1 140px; min-width: 0; }
+
+  /* 2d 收支: the title with a month pill; the range choice moves into the picker. */
+  .cashflow-page-head { position: relative; flex-direction: row; flex-wrap: wrap; justify-content: space-between; align-items: center; }
+  .cashflow-page-head .cashflow-page-controls { position: static; }
+  .cashflow-page-controls .cashflow-picker { left: 0; right: 0; width: auto; }
+  .cashflow-page-head h2 { font-size: 22px; white-space: nowrap; }
+  .cashflow-page-controls > button { flex: none; min-height: 36px; padding: 6px 12px; font-size: 13px; white-space: nowrap; }
+  .cashflow-page-controls .cashflow-period, .cashflow-page-controls .cashflow-stepper { width: auto; }
+  .cashflow-page-controls .cashflow-step { display: none; }
+  .cashflow-page-controls .cashflow-period-trigger, .cashflow-all-trigger { flex: none; gap: 6px; min-height: 36px; padding: 6px 12px; font-size: 13px; font-weight: 700; border: 0 !important; }
+  .cashflow-all-trigger { display: inline-flex; align-items: center; border: 1px solid var(--border) !important; background: var(--surface); }
+  .cashflow-picker-range { display: grid; grid-template-columns: repeat(3, 1fr); margin: 10px 0; }
+  .cashflow-picker-range button { padding: 8px 0; }
+  .overview > .cashflow-summary { display: none; }
+  .holdings tr.unsaved { margin: 0 -10px; padding: 12px 10px; border-radius: 12px; border-top-color: transparent; }
+  table.data.holdings td:nth-child(1) > .unsaved-mark { display: block; margin: 2px 0 0; }
+  .cashflow-tiles .cashflow-phone-summary { order: 0; }
+  .cashflow-tiles .cashflow-pending-tile { order: 1; grid-column: 1 / -1; flex-direction: row; flex-wrap: wrap; align-items: center; gap: 4px 12px; padding: 12px 16px; border-radius: 16px; }
+  .cashflow-tiles .cashflow-pending-tile small { flex-basis: 100%; order: 2; }
+  .cashflow-tiles .cashflow-pending-tile .cashflow-pending-actions { order: 3; flex-basis: 100%; }
+  .cashflow-tiles .cashflow-categories-tile { order: 2; }
+  .cashflow-tiles .cashflow-bars-tile { order: 3; }
+  .cashflow-tiles .cashflow-records-tile { order: 4; }
+
+  /* 2e 儲存審查: a bottom sheet. */
+  dialog.review { width: 100%; max-width: 100%; margin: auto 0 0; padding: 12px 20px max(20px, env(safe-area-inset-bottom)); border-radius: 26px 26px 0 0; max-height: 88dvh; }
+  dialog.review::before { content: ''; display: block; width: 40px; height: 5px; margin: 0 auto 14px; border-radius: 3px; background: var(--hairline); }
+  dialog.review h3 { font-size: 21px; }
+  dialog.review .review-actions { flex-direction: column-reverse; align-items: stretch; gap: 6px; }
+  dialog.review .review-actions button { width: 100%; }
+  dialog.review .review-actions button:not(.primary) { border: 0; background: none; color: var(--ink-2); }
+  dialog.review .review-actions button.primary { padding: 14px; }
+
+  /* 2f 匯入帳單: steps as a progress bar, the import button at the bottom. */
+  .import-steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; width: 100%; margin: 4px 0 0; font-size: 12px; }
+  .import-steps li { padding: 8px 0 0; border-radius: 0; background: none; border-top: 4px solid var(--hairline); text-align: center; }
+  .import-steps li.on, .import-steps li.done { background: none; border-top-color: var(--accent); color: var(--ink); }
+  .import-steps li.on { font-weight: 700; }
+  .statement-preview-layout { gap: 12px; }
+  .statement-preview-summary { display: contents; }
+  .statement-preview-summary > * { order: 2; }
+  .statement-preview-summary > .statement-files { order: 0; }
+  .statement-preview-layout > .statement-preview-main { order: 1; }
+  .statement-preview-summary button.primary { position: sticky; bottom: calc(68px + env(safe-area-inset-bottom)); z-index: 5; order: 3; box-shadow: 0 12px 30px -12px rgba(0, 0, 0, 0.35); }
+  .statement-preview-summary > p { order: 4; }
+}
+
+.data-privacy {
+  width: min(640px, calc(100vw - 32px));
+  max-height: min(85vh, 800px);
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 20px;
+  background: var(--surface);
+  color: var(--ink);
+}
+
+.data-privacy::backdrop { background: rgba(0, 0, 0, 0.45); }
+.data-privacy .panel { margin-top: 16px; }
+.data-privacy .panel > button { margin-right: 8px; }
+.data-privacy .row { gap: 16px; flex-wrap: wrap; }
+
+/* Bank ledger page: rows listed by month, each with its day, account and category under the description. */
+.bank-filters { grid-template-columns: repeat(4, minmax(0, 1fr)); margin: 4px 0 8px; }
+.bank-swipe-hint { display: none; margin: 0 0 4px; }
+.swipe-icon { display: contents; }
+.bank-filter-summary { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 16px; margin: 0 0 4px; color: var(--ink-2); font-size: 13px; }
+.bank-filter-summary button.link { font-size: 13px; }
+/* Earlier quarters not loaded yet: what the list covers, and the end of the list that loads more. */
+.bank-scope { margin: 0 0 12px; color: var(--ink-2); font-size: 13px; }
+.bank-scope strong { color: var(--ink); font-weight: 600; }
+.bank-load-more { min-height: 1px; margin: 12px 0 0; text-align: center; font-size: 13px; }
+.bank-load-more.banner { text-align: left; }
+.bank-records { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; min-width: 0; margin-top: 12px; }
+/* Each month is one tinted block, so its rows read as one group. */
+.bank-month { --row-bg: var(--surface-2); min-width: 0; padding: 0 16px 4px; border-radius: 14px; background: var(--row-bg); }
+.bank-month-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; padding: 14px 0 10px; border-bottom: 1px solid var(--border); }
+.bank-month .detail-record { border-bottom-color: var(--border); }
+.bank-month-head h4 { margin: 0; font-size: 15px; }
+.bank-month-totals { display: flex; flex-wrap: wrap; gap: 4px 16px; margin-left: auto; color: var(--ink-2); font-size: 12px; font-variant-numeric: tabular-nums; }
+.bank-month-totals > span { display: inline-flex; align-items: baseline; gap: 6px; }
+.bank-month-totals small { font-size: 11px; }
+.bank-month-in { color: var(--good); }
+.detail-record-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.detail-record-subtitle { display: flex; align-items: center; gap: 8px; min-width: 0; color: var(--ink-2); font-size: 12px; line-height: 16px; }
+.detail-record-subtitle time { flex-shrink: 0; font-variant-numeric: tabular-nums; }
+.detail-record-subtitle .bank-record-account { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.detail-record-subtitle .tag { flex-shrink: 0; padding: 0 6px; font-size: 11px; line-height: 16px; }
+.detail-record.bank-record:has(.detail-record-subtitle) .detail-record-details > summary { min-height: 52px; }
+.detail-record.bank-record:has(.detail-record-subtitle) > .detail-record-actions { top: 8px; }
+.bank-settings { padding-top: 4px; padding-bottom: 4px; }
+.bank-setting { border-bottom: 1px solid var(--hairline); }
+.bank-setting:last-child { border-bottom: 0; }
+.bank-setting > summary, .bank-passwords { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 12px; min-height: 56px; font-weight: 600; }
+.bank-setting > summary { list-style: none; cursor: pointer; }
+.bank-setting > summary::-webkit-details-marker { display: none; }
+.bank-setting > summary::after { content: ''; width: 7px; height: 7px; margin: 0 6px 4px; border-right: 1.5px solid var(--ink-2); border-bottom: 1.5px solid var(--ink-2); transform: rotate(45deg); transition: transform .15s; }
+.bank-setting[open] > summary::after { margin-bottom: -2px; transform: rotate(225deg); }
+.bank-setting > summary .muted, .bank-passwords .muted { font-weight: 400; }
+.bank-setting[open] { padding-bottom: 16px; }
+.bank-setting > p { margin: 0 0 8px; }
+.bank-rules-head { display: flex; align-items: start; justify-content: space-between; gap: 12px; }
+.bank-rules-head p { margin: 0; }
+.bank-rules-head button { flex-shrink: 0; }
+.bank-accounts ul { margin: 0; padding: 0; list-style: none; }
+.bank-account { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 52px; padding: 4px 0; border-bottom: 1px solid var(--hairline); }
+.bank-account-name { display: grid; gap: 2px; min-width: 0; }
+.bank-account-name > strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+.bank-account > .row { flex-shrink: 0; flex-wrap: nowrap; }
+.bank-account > .row button { display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px; min-height: 44px; padding: 0; border-color: transparent; background: transparent; color: var(--ink-2); }
+.bank-account > .row button:hover:not(:disabled) { color: var(--accent); background: var(--accent-wash); }
+.bank-account-rename, .bank-account-add { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: end; gap: 12px; width: 100%; padding: 8px 0; }
+.bank-account-add { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto auto; margin-top: 8px; }
+.bank-account-rename .field, .bank-account-add .field { margin: 0; min-width: 0; }
+.bank-account-rename input, .bank-account-add input { width: 100%; box-sizing: border-box; }
+.bank-account-rename button, .bank-account-add button { min-height: 44px; }
+.bank-account-add-open { margin-top: 12px; }
+.bank-rules li:last-child { border-bottom: 0; }
+.bank-rules li, .bank-account { min-height: 56px; padding: 6px 0; box-sizing: border-box; font-size: 15px; }
+.bank-account-name .small { font-size: 12px; }
+.bank-passwords button { font-weight: 400; }
+@media (max-width: 640px) {
+  .bank-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .bank-rules-head { flex-direction: column; }
+  /* Clips rows while a swipe moves them. */
+  .bank-month { overflow: hidden; padding: 0 12px 4px; }
+  .bank-account-add { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .bank-account-add .field { grid-column: 1 / -1; }
+  .bank-account-rename { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .bank-account-rename .field { grid-column: 1 / -1; }
+  /* Description and amount on the first line, day, account and category on the second. The
+     buttons stay hidden until a left swipe (or keyboard focus) slides the row aside. */
+  .bank-swipe-hint { display: block; }
+  .detail-record.bank-record[data-swipe] { --record-action-space: 0px; padding: 0; touch-action: pan-y; }
+  .detail-record.bank-record[data-swipe][data-revealed] { --swipe-rest: -112px; --swipe-p-rest: 1; }
+  .detail-record.bank-record[data-swipe] .detail-record-details > summary { grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: auto; gap: 8px; min-height: 64px; padding: 4px 0; border-radius: 0; }
+  .detail-record.bank-record[data-swipe] .detail-record-secondary { min-height: 0; padding-right: 0; }
+  .detail-record.bank-record[data-swipe] .detail-record-value { text-align: right; }
+  /* The row slides over the buttons like a sheet: it keeps the month's tint, and its right edge
+     rounds and casts a soft shadow while it is moved aside. */
+  .detail-record.bank-record[data-swipe] > .detail-record-details { position: relative; z-index: 1; background: var(--row-bg, var(--surface)); border-radius: 0 12px 12px 0; transform: translateX(var(--swipe, var(--swipe-rest, 0px))); transition: transform .25s cubic-bezier(.2, .8, .2, 1), box-shadow .25s; }
+  .detail-record.bank-record[data-swipe]:is([data-revealed], [data-dragging]) > .detail-record-details { box-shadow: 8px 0 16px -10px rgba(0, 0, 0, .35); }
+  .detail-record.bank-record[data-swipe][data-dragging] > .detail-record-details { transition: none; }
+  /* The buttons fade and grow in with the swipe (--swipe-p: 0 closed, 1 open). */
+  .detail-record.bank-record[data-swipe] > .detail-record-actions { --p: var(--swipe-p, var(--swipe-p-rest, 0)); top: 0; bottom: 0; z-index: 0; align-items: center; gap: 0; }
+  .detail-record.bank-record[data-swipe] > .detail-record-actions > button, .detail-record.bank-record[data-swipe] > .detail-record-actions > button:hover:not(:disabled) { flex: 0 0 56px; width: 56px; height: auto; background: transparent; color: var(--ink-2); font-size: 11px; opacity: var(--p); transform: scale(calc(.7 + .3 * var(--p))); transition: opacity .25s, transform .25s cubic-bezier(.2, .8, .2, 1); }
+  .detail-record.bank-record[data-swipe][data-dragging] > .detail-record-actions > button { transition: none; }
+  .detail-record.bank-record[data-swipe] .swipe-icon { display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; border-radius: 50%; background: var(--surface); box-shadow: inset 0 0 0 1px var(--border); color: var(--ink); }
+  .detail-record.bank-record[data-swipe] .bank-record-rule .swipe-icon { background: var(--accent-wash); box-shadow: none; color: var(--accent); }
+  .detail-record.bank-record[data-swipe] .bank-record-rule[data-pending="true"] .swipe-icon { background: var(--accent); color: var(--surface); }
+}
+@media (max-width: 640px) and (prefers-reduced-motion: reduce) {
+  .detail-record.bank-record[data-swipe] > .detail-record-details, .detail-record.bank-record[data-swipe] > .detail-record-actions > button { transition: none; }
+}
+/* Query-backed cashflow evidence remains reachable on a narrow keyboard layout. */
+.cashflow-evidence > div { display: flex; flex-wrap: wrap; gap: .5rem; padding: .5rem 0; border-bottom: 1px solid var(--hairline); }
+.cashflow-records-tile h3:focus { outline: 2px solid var(--s2); outline-offset: 4px; }
+.cashflow-category-rows button { text-align: left; }
+
+.monthly-review { margin-block: 1rem; }
+.monthly-review fieldset { border: 1px solid var(--border); border-radius: 8px; padding: 1rem; }
+.review-source-choice { display: inline-flex; align-items: center; gap: .5rem; margin: .4rem 1rem .4rem 0; }
+.review-source-choice input { width: auto; flex-shrink: 0; }
+.monthly-review form { display: flex; flex-wrap: wrap; align-items: end; gap: .5rem; margin-block: .8rem; }
+.review-source-row { display: grid; gap: .6rem; border-top: 1px solid var(--border); padding-block: 1rem; margin-top: .8rem; }
+.review-source-row textarea { display: block; width: 100%; min-height: 5rem; }
+.review-source-row button { justify-self: start; }
+
+.monthly-report { display: grid; gap: 1rem; min-width: 0; }
+.monthly-report .row { flex-wrap: wrap; gap: .75rem; }
+.monthly-report p { overflow-wrap: anywhere; }
+.report-fingerprint { font-size: .75rem; color: var(--muted); }
+.report-entries article { border-top: 1px solid var(--line); padding: 1rem 0; }
+.report-entries h4 { margin: 0; overflow-wrap: anywhere; }
+.monthly-report input[type=file] { max-width: 100%; }
+
+/* 收支總覽: the numbers and category rows that open their records are plain text with a chevron, not pills. */
+.cashflow-panels { display: flex; margin: 0 0 14px; }
+.cashflow-panels button { flex: 1; min-height: 36px; white-space: nowrap; }
+@media (min-width: 900px) { .cashflow-panels { display: inline-flex; } .cashflow-panels button { flex: none; } }
+.cashflow-phone-summary button, .cashflow-tiles .tile-stat > button:not(.link), .cashflow-category-rows button { min-height: 32px; padding: 0; border: 0; border-radius: 6px; background: none; color: inherit; font: inherit; text-align: left; }
+.cashflow-phone-summary button:hover:not(:disabled), .cashflow-tiles .tile-stat > button:not(.link):hover:not(:disabled), .cashflow-category-rows button:hover:not(:disabled) { background: none; text-decoration: underline; text-underline-offset: 4px; }
+.cashflow-phone-summary button::after, .cashflow-category-rows button::after { content: '›' / ''; margin-left: 6px; color: var(--muted); font: 400 15px/1 system-ui, sans-serif; }
+.cashflow-phone-summary > strong button::after { font-size: 22px; }
+.cashflow-hbar { grid-template-columns: auto minmax(0, 1fr) 6.5em; }
+.cashflow-hbar button { white-space: nowrap; }
+.cashflow-hbar .num-serif { text-align: right; }
+.cashflow-category-rows li { padding: 4px 0; }
+.cashflow-category-rows button { width: 100%; min-height: 36px; }
+.cashflow-records-tile > h3 { order: -1; margin: 0; }
+.cashflow-filters button, .cashflow-filters select { min-height: 36px; padding: 5px 12px; font-size: 13px; }
+.cashflow-filters label { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--ink-2); white-space: nowrap; }
+.cashflow-filters button[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-wash); color: var(--accent); font-weight: 700; }
+.cashflow-records-tile p { margin: 0; }
+.cashflow-totals { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.cashflow-totals small { grid-column: 1 / -1; color: var(--muted); font-size: 12px; }
+.cashflow-totals span { display: flex; flex-direction: column; padding: 8px 10px; border-radius: 12px; background: var(--surface-2); color: var(--ink-2); font-size: 12px; }
+.cashflow-totals b { color: var(--ink); font-size: 15px; font-weight: 400; overflow-wrap: anywhere; }
+/* 自動判斷 batch: one tab per statement kind, each with its own import below. */
+.statement-batch-head { margin-bottom: 16px; }
+.statement-batch-head .notice { padding-left: 18px; }
+.statement-batch-tabs { display: inline-flex; flex-wrap: wrap; max-width: 100%; }
+
+/* CSV import guide: collapsed by default on the import screens and the accounts page. */
+.csv-guide { min-width: 0; margin: 16px 0; border: 1px solid var(--hairline); border-radius: 16px; background: var(--surface); }
+.csv-guide > summary { cursor: pointer; display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; padding: 12px 16px; }
+.csv-guide-title { font-weight: 600; color: var(--ink); }
+.csv-guide-body { min-width: 0; padding: 0 16px 16px; font-size: .88rem; color: var(--ink-2); }
+.csv-guide-body h4 { margin: 18px 0 8px; font-size: .9rem; color: var(--ink); }
+.csv-guide-steps { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin: 0; padding: 0; list-style: none; counter-reset: csv-step; }
+.csv-guide-steps li { counter-increment: csv-step; display: grid; align-content: start; gap: 4px; padding: 10px 12px; border-radius: 12px; background: var(--surface-2); }
+.csv-guide-steps strong { color: var(--ink); }
+.csv-guide-steps strong::before { content: counter(csv-step) '. '; color: var(--accent); }
+.csv-guide-privacy { margin: 12px 0; padding: 10px 12px; border-radius: 12px; background: var(--warn-wash); color: var(--ink); }
+.csv-guide-tabs { margin: 4px 0 0; }
+.csv-guide-fields { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.csv-guide-fields li { display: grid; grid-template-columns: 9.5rem 3.2rem minmax(0, 1fr); align-items: baseline; gap: 8px; }
+.csv-guide-fields code { font-size: .82rem; color: var(--ink); overflow-wrap: anywhere; }
+.csv-guide-fields .tag { justify-self: start; }
+.csv-guide-block { min-width: 0; margin-top: 14px; }
+.csv-guide-block-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
+.csv-guide-block-head strong { color: var(--ink); }
+.csv-guide-body pre { margin: 0; padding: 10px 12px; max-width: 100%; overflow: auto; border-radius: 12px; background: var(--surface-2); color: var(--ink); font-size: .78rem; line-height: 1.55; }
+.csv-guide-example { white-space: pre; }
+.csv-guide-prompt { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 16rem; }
+.csv-guide-errors { margin: 0; padding-left: 1.2em; display: grid; gap: 4px; }
+.csv-guide-block > p, .csv-guide-body > p:last-child { margin: 8px 0 0; }
+@media (max-width: 760px) {
+  .csv-guide-steps { grid-template-columns: minmax(0, 1fr); }
+  .csv-guide-fields li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; }
+  .csv-guide-fields li > span:last-child { flex-basis: 100%; }
+}
+.csv-guide-fields .csv-required { background: var(--accent-wash); border-color: transparent; color: var(--accent); }
+
+/* 快速分類 (QuickClassify.tsx): the records still to classify, one card at a time. */
+.quick-classify-callout { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; margin: 4px 0 12px; padding: 12px 16px; border-radius: 14px; background: var(--warn-wash); }
+.quick-classify-callout > span { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
+.quick-classify-callout strong { font-size: 14px; }
+.quick-classify-callout small { font-size: 12px; }
+.quick-classify-callout > button { min-height: 40px; padding: 8px 18px; border-color: var(--accent); background: var(--accent); color: var(--surface); font-weight: 700; }
+.quick-classify-callout > button:hover:not(:disabled) { background: var(--accent); filter: brightness(1.06); }
+dialog.quick-classify { width: min(560px, calc(100vw - 24px)); max-height: calc(100dvh - 32px); overflow: auto; padding: 20px 22px 18px; border: none; border-radius: 24px; background: var(--surface); color: var(--ink); box-shadow: 0 30px 80px -20px rgba(30, 20, 12, .5); box-sizing: border-box; }
+dialog.quick-classify::backdrop { background: rgba(30, 20, 12, .42); }
+.quick-classify-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.quick-classify-head h3 { margin: 0; font-family: var(--serif); font-size: 22px; }
+.quick-classify-head p { margin: 2px 0 0; }
+.quick-classify-close { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 40px; width: 40px; height: 40px; padding: 0; border-color: transparent; background: transparent; color: var(--ink-2); font-size: 16px; }
+.quick-classify-progress { height: 4px; margin: 12px 0 16px; overflow: hidden; border-radius: 99px; background: var(--surface-2); }
+.quick-classify-progress > i { display: block; height: 100%; border-radius: inherit; background: var(--accent); transition: width .25s ease; }
+.quick-card { margin: 0 0 16px; padding: 16px 18px; border: 1px solid var(--border); border-radius: 18px; background: var(--surface-2); box-shadow: 0 10px 24px -18px rgba(30, 20, 12, .45); animation: quick-card-in .22s cubic-bezier(.2, .8, .2, 1); }
+@keyframes quick-card-in { from { opacity: 0; transform: translateX(24px) scale(.98); } }
+@media (prefers-reduced-motion: reduce) { .quick-card { animation: none; } }
+.quick-card p { margin: 0; }
+.quick-card-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; color: var(--ink-2); font-size: 12px; font-variant-numeric: tabular-nums; }
+.quick-card-meta .tag { padding: 0 6px; font-size: 11px; line-height: 18px; }
+.quick-card-account { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.quick-card-title { margin-top: 10px !important; font-size: 16px; font-weight: 600; line-height: 1.45; overflow-wrap: anywhere; }
+.quick-card-amount { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-top: 12px !important; }
+.quick-card-amount .record-money strong { min-width: 0; font-size: 22px; }
+.quick-card-amount .record-money small { min-width: 0; font-size: 12px; }
+.quick-group { min-width: 0; margin: 0 0 12px; padding: 0; border: 0; }
+.quick-group > legend, .quick-group > summary { margin-bottom: 8px; padding: 0; color: var(--ink-2); font-size: 12px; font-weight: 600; }
+.quick-group-more > summary { cursor: pointer; }
+.quick-options { display: flex; flex-wrap: wrap; gap: 8px; }
+.quick-options .chip { display: inline-flex; align-items: center; gap: 6px; min-height: 40px; padding: 6px 14px; font-size: 14px; }
+.quick-options kbd { display: inline-flex; align-items: center; justify-content: center; min-width: 18px; height: 18px; padding: 0 4px; border-radius: 5px; background: var(--surface-2); color: var(--ink-2); font: 600 11px/1 inherit; font-variant-numeric: tabular-nums; }
+.quick-extras { display: grid; gap: 8px; margin: 4px 0 12px; padding-top: 12px; border-top: 1px solid var(--hairline); }
+.quick-check { display: flex; align-items: center; gap: 8px; min-height: 32px; font-size: 13px; }
+.quick-check input { width: 18px; height: 18px; margin: 0; accent-color: var(--accent); }
+.quick-keyword { margin: 0; }
+.quick-keyword small { display: block; margin-top: 4px; }
+.quick-notice { margin: 0 0 10px; padding: 6px 12px; border-radius: 10px; background: var(--accent-wash); color: var(--ink); font-size: 13px; }
+.quick-similar details { margin: 0 0 0 26px; font-size: 12px; }
+.quick-similar summary { color: var(--ink-2); cursor: pointer; }
+.quick-similar ul { margin: 6px 0 0; padding-left: 16px; color: var(--ink-2); overflow-wrap: anywhere; }
+.quick-keyword input { width: 100%; box-sizing: border-box; }
+.quick-error { margin: 0 0 12px; color: var(--critical); font-size: 13px; }
+.quick-classify-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+.quick-classify-actions > button { min-height: 44px; padding: 8px 20px; border-radius: 14px; }
+.quick-classify-done > p { margin: 8px 0; }
+.quick-classify-done .quick-classify-actions { justify-content: flex-end; margin-top: 16px; }
+@media (max-width: 640px) {
+  dialog.quick-classify { width: 100vw; max-width: 100vw; max-height: 92dvh; margin: auto 0 0; padding: 16px 16px calc(16px + env(safe-area-inset-bottom)); border-radius: 24px 24px 0 0; }
+  .quick-options .chip { min-height: 44px; }
+  .quick-classify-actions > button { flex: 1; }
+}
+
+/* Asset valuation explanations keep the existing palette and card structure. */
+.asset-change-overview-hero { min-width: 0; flex: 1 1 300px; }
+/* On the phone the timeline tile is a column: a 300px basis there would be 300px of height above the chart. */
+@media (max-width: 899px) { .snapshot-timeline .asset-change-overview-hero { flex: none; } }
+
+/* Cashflow evidence and chart controls. Existing palette and card surfaces stay shared. */
+.cashflow-data-status { display: flex; flex-wrap: wrap; align-items: start; gap: 18px 28px; margin-bottom: 16px; }
+.cashflow-status-evidence, .cashflow-savings-context { display: flex; flex: 1 1 240px; min-width: 0; flex-direction: column; align-items: start; gap: 6px; overflow-wrap: anywhere; }
+.cashflow-data-status h3 { margin: 0 0 2px; font-size: 14px; }
+.cashflow-status-evidence > strong { font-size: 14px; }
+.cashflow-status-evidence > span { font-size: 13px; }
+.cashflow-savings-context > strong { font-size: 17px; }
+.cashflow-savings-context button { margin-top: 2px; }
+.cashflow-summary > .cashflow-data-status { margin-top: 14px; background: var(--surface-2); }
+.cashflow-bars-controls { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px; margin-bottom: 12px; }
+.cashflow-bars-controls .segmented { flex-wrap: wrap; max-width: 100%; }
+.cashflow-bars-controls .segmented button { white-space: normal; }
+.cashflow-negative-note { margin: 0 0 8px; }
+.cashflow-bar-pair > span { min-height: 0; }
+.cashflow-bars[data-signed] .cashflow-bar-pair { position: relative; background: linear-gradient(to bottom, transparent calc(50% - .5px), var(--hairline) calc(50% - .5px), var(--hairline) calc(50% + .5px), transparent calc(50% + .5px)); }
+.cashflow-bars[data-signed] .cashflow-bar-pair > span { position: absolute; bottom: 50%; width: calc((100% - 4px) / 2); transform: scaleY(.5); transform-origin: center bottom; }
+.cashflow-bars[data-signed] .cashflow-bar-pair > span:first-child { left: 0; }
+.cashflow-bars[data-signed] .cashflow-bar-pair > span:last-child { right: 0; }
+.cashflow-bars[data-signed] .cashflow-bar-pair > span:only-child { width: 100%; }
+.cashflow-bars[data-signed] .cashflow-bar-pair > span[data-sign="-1"] { transform: scaleY(-.5); }
+@media (max-width: 899px) {
+  .cashflow-data-status { padding: 16px; border: 1px solid var(--border); border-radius: 16px; background: var(--surface); gap: 14px; }
+  .cashflow-status-evidence, .cashflow-savings-context { flex-basis: 100%; }
+  .cashflow-savings-context { padding-top: 12px; border-top: 1px solid var(--hairline); }
+  .cashflow-bars-controls { align-items: start; }
+  .cashflow-bars-legend { flex-wrap: wrap; }
+}
+
+/* Daily causes reuse the overview ring and shared chart tooltip. */
+.daily-asset-change { min-width: 0; }
+.daily-change-head .tile-label { margin: 0; font-size: 13px; font-weight: 400; }
+.overview-tiles .daily-change-head .daily-change-delta { white-space: normal; }
+.daily-change-chart { margin: 14px 0; }
+.daily-change-note { margin: 0; overflow-wrap: anywhere; }
+.donut-chart { position: relative; width: fit-content; }
+.donut-chart svg { display: block; width: 100%; height: 100%; overflow: visible; }
+.donut-chart .donut::after { pointer-events: none; }
+.donut-segment { cursor: pointer; pointer-events: visibleStroke; }
+.donut-segment:focus-visible { outline: none; filter: brightness(.7); }
+.donut-tip { position: fixed; z-index: 5; bottom: auto; transform: none; display: grid; gap: 3px; width: min(220px, calc(100vw - 60px)); white-space: normal; overflow-wrap: anywhere; }
+.donut-tip strong, .donut-tip span, .donut-tip small { font-size: 12px; }
+.donut-tip small { opacity: .85; }
+@media (max-width: 899px) { .daily-change-head .tile-label { font-size: 12px; } }
