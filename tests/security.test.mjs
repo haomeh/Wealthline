@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { after, before, beforeEach, test } from 'node:test'
 import { createServer } from 'vite'
+import { loadData } from './helpers/drive-data.mjs'
 
 let server, auth, worker, drive
 const profile = { sub: 'account-a', email: 'a@example.com', name: 'Alice' }
@@ -190,7 +191,7 @@ test('legacy plaintext Drive files remain readable', async () => {
   globalThis.fetch = async (url) => new URL(url).searchParams.has('alt')
     ? Response.json(data) : new URL(url).pathname.endsWith('/file-a')
       ? Response.json({ id: 'file-a', etag: '"v1"', headRevisionId: 'r1' }) : Response.json({ files: [{ id: 'file-a' }] })
-  assert.deepEqual(await drive.loadData(token, (raw) => raw), { fileId: 'file-a', etag: '"v1"', data })
+  assert.deepEqual(await loadData(drive, token, (raw) => raw), { fileId: 'file-a', etag: '"v1"', data })
 })
 
 test('invalid quote symbols cannot turn the proxy into an arbitrary URL fetcher', async () => {

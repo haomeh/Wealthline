@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { after, afterEach, before, test } from 'node:test'
 import { createServer } from 'vite'
+import { saveData } from './helpers/drive-data.mjs'
 
 // The size limit for one stored data file: Drive's simple and multipart uploads are
 // documented for files of 5 MB or less, so oversized writes stop before any request.
@@ -45,13 +46,13 @@ test('an oversized save is refused before any Drive request, on update and on fi
   const requests = []
   globalThis.fetch = async (url) => { requests.push(String(url)); throw new Error('no request expected') }
   const data = dataOfSize(limits.BLOCK_BYTES + 1024)
-  await assert.rejects(() => drive.saveData(token, data, { fileId: 'f', etag: '"v1"' }), (e) => {
+  await assert.rejects(() => saveData(drive, token, data, { fileId: 'f', etag: '"v1"' }), (e) => {
     assert.ok(e instanceof limits.DataTooLargeError)
     assert.match(e.message, /超過單一檔案 4\.5 MB 的上限/)
     assert.match(e.message, /原本的資料沒有變動/)
     return true
   })
-  await assert.rejects(() => drive.saveData(token, data), limits.DataTooLargeError)
+  await assert.rejects(() => saveData(drive, token, data), limits.DataTooLargeError)
   assert.deepEqual(requests, [])
 })
 
@@ -64,6 +65,6 @@ test('a file in the warning range still saves', async () => {
     return Response.json({ id: 'f', etag: '"v2"' })
   }
   const data = dataOfSize(limits.WARN_BYTES + 64 * 1024)
-  assert.deepEqual(await drive.saveData(token, data, { fileId: 'f', etag: '"v1"' }), { fileId: 'f', etag: '"v2"' })
+  assert.deepEqual(await saveData(drive, token, data, { fileId: 'f', etag: '"v1"' }), { fileId: 'f', etag: '"v2"' })
   assert.equal(limits.storageLevel(limits.byteSize(body)), 'warn')
 })

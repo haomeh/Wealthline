@@ -251,13 +251,6 @@ async function refreshSummary(token: AccessToken, state: DriveState): Promise<vo
   state.summary.rules = rules
 }
 
-// The overview's monthly cashflow from the summary; undefined when a transaction part has no entry.
-export function summaryCashflow(state: DriveState): CashflowMonthTotals[] | undefined {
-  const ledger = [...state.parts.keys()].filter((name) => partGroup(name) === 'ledger')
-  if (ledger.some((name) => !state.summary.parts[name]?.cashflow)) return undefined
-  return ledger.flatMap((name) => state.summary.parts[name].cashflow!)
-}
-
 // Returns null when the user has no data file yet. `parse` validates the data. A part the summary
 // names but Drive does not list stops opening (MissingPartError) unless it is in `skip`.
 export async function loadDrive(token: AccessToken, parse: (raw: unknown) => WealthData, skip: readonly string[] = []): Promise<{ data: WealthData; state: DriveState } | null> {

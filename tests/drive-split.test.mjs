@@ -248,7 +248,7 @@ test('opening reads only the main file; its summaries stand for the parts the ov
   assert.deepEqual(data.bankTransactions, [])
   assert.deepEqual(data.history.snapshots.map((s) => s.date), ['2026-06-01'])
   assert.deepEqual(store.missingParts(state, data, 'ledger').sort(), ['ledger-2025-Q4', 'ledger-2026-Q1', 'ledger-2026-Q3', 'ledger-2026-Q4'])
-  assert.deepEqual(cashflow.cashflowSummary({ months: store.summaryCashflow(state) }, '2026-10', 12), cashflow.cashflowSummary({ expenses: full.expenses, expenseRules: full.expenseCategoryRules, bankTransactions: full.bankTransactions, bankRules: full.bankCategoryRules }, '2026-10', 12))
+  assert.deepEqual(cashflow.cashflowSummary({ months: store.ledgerCashflow(state, model.emptyData()) }, '2026-10', 12), cashflow.cashflowSummary({ expenses: full.expenses, expenseRules: full.expenseCategoryRules, bankTransactions: full.bankTransactions, bankRules: full.bankCategoryRules }, '2026-10', 12))
   const archive = store.archiveSummary(state)
   assert.deepEqual(archive.points.map((s) => s.date), ['2025-06-01'])
   assert.deepEqual(archive.carried.map((c) => c.at), ['2025-03-01T00:00:00.000Z'])
@@ -336,7 +336,7 @@ test('a part written after its summary (a save that stopped before the main file
   const from = drive.log.length
   const opened = await store.loadDrive(token, model.parseWealthData)
   assert.deepEqual(partReads(from).filter((p) => p !== 'main').sort(), ['ledger-2025-Q4', 'ledger-2026-Q1', 'ledger-2026-Q3', 'ledger-2026-Q4'])
-  const january = store.summaryCashflow(opened.state).find((m) => m.month === '2026-01')
+  const january = store.ledgerCashflow(opened.state, model.emptyData()).find((m) => m.month === '2026-01')
   assert.equal(january.totals.consumption, 99)
 })
 
@@ -367,7 +367,7 @@ test('summaries counted the old way are counted again when the data is opened, a
   const from = drive.log.length
   const opened = await store.loadDrive(token, model.parseWealthData)
   assert.ok(partReads(from).includes('ledger-2026-Q3'))
-  const counted = store.summaryCashflow(opened.state).find((m) => m.month === '2026-07')
+  const counted = store.ledgerCashflow(opened.state, model.emptyData()).find((m) => m.month === '2026-07')
   assert.equal(counted.totals.consumption, 5)
   assert.deepEqual(counted.totals.consumptionCategories, [{ category: '未分類', count: 1, net: 5 }])
   await store.saveDrive(token, { ...opened.data, updatedAt: '2026-10-12T05:00:00.000Z' }, opened.state, NOW)

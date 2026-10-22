@@ -4,6 +4,7 @@ import { runInNewContext } from 'node:vm'
 import { after, afterEach, before, beforeEach, test } from 'node:test'
 import { createServer } from 'vite'
 import { createFakeDrive } from './helpers/fake-drive.mjs'
+import { saveData } from './helpers/drive-data.mjs'
 
 // The rename from "We Wealth" to Wealthline: data, sign-in and the reload script made before it
 // keep working, and the Drive names move over on the next save.
@@ -102,7 +103,7 @@ test('a folder rename that fails does not fail the save', async () => {
 
 test('a first save creates the folder and the main file under the new names', async () => {
   installDrive()
-  await (await server.ssrLoadModule('/src/google/drive.ts')).saveData(token, data())
+  await saveData(await server.ssrLoadModule('/src/google/drive.ts'), token, data())
   assert.equal(drive.folder().name, 'Wealthline')
   assert.equal(drive.dataFile().name, 'wealthline-data.json')
 })

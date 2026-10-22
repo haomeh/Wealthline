@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import { fmt, pct } from '../format'
 import type { ColoredSlice } from '../chartColors'
-import type { Slice } from '../model'
 
 // Part-to-whole as one horizontal stacked bar plus a legend that carries the numbers.
 export function Allocation({ slices }: { slices: ColoredSlice[] }) {
@@ -45,31 +44,5 @@ export function Allocation({ slices }: { slices: ColoredSlice[] }) {
         ))}
       </ul>
     </div>
-  )
-}
-
-// Magnitude ranking in a single hue; long tails fold into 其他.
-export function RankBars({ slices, limit = 8, onSelect }: { slices: Slice[]; limit?: number; onSelect?: (label: string) => void }) {
-  const head = slices.slice(0, limit)
-  const tail = slices.slice(limit)
-  const rows = tail.length
-    ? [...head, { label: `其他 ${tail.length} 個`, value: tail.reduce((s, x) => s + x.value, 0), share: tail.reduce((s, x) => s + x.share, 0) }]
-    : head
-  const max = Math.max(...rows.map((r) => r.value), 1)
-  return (
-    <ul className="rank">
-      {rows.map((r, i) => (
-        <li key={r.label}>
-          <button disabled={!onSelect || i >= head.length} onClick={() => onSelect?.(r.label)}>
-            <span className="label">{r.label}</span>
-            <span className="value">{fmt(r.value, 0)}</span>
-            <span className="share">{pct(r.share)}</span>
-            <span className="track">
-              <span style={{ width: `${(r.value / max) * 100}%` }} />
-            </span>
-          </button>
-        </li>
-      ))}
-    </ul>
   )
 }

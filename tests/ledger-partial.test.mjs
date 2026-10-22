@@ -103,7 +103,7 @@ test('a record moved into a quarter not loaded joins the records already there, 
   assert.deepEqual(store.missingParts(state, saved, 'ledger'), ['ledger-2025-Q1'])
   const all = await openAll()
   assert.deepEqual(sorted(all.data.bankTransactions), sorted([tx('a', '2025-02-01'), { ...tx('c', '2026-08-01'), date: '2025-03-01' }, tx('d', '2026-08-02')]))
-  assert.deepEqual(totals(store.summaryCashflow(all.state)), totals(cashflow.cashflowMonths({ bankTransactions: all.data.bankTransactions })))
+  assert.deepEqual(totals(store.ledgerCashflow(all.state, model.emptyData())), totals(cashflow.cashflowMonths({ bankTransactions: all.data.bankTransactions })))
 })
 
 test('a changed rule recounts the summary of the quarters not loaded', async () => {
@@ -111,7 +111,7 @@ test('a changed rule recounts the summary of the quarters not loaded', async () 
   const { data, state } = await openFrom('ledger-2026-Q3')
   await store.saveDrive(token, { ...data, updatedAt: LATER, bankCategoryRules: [{ keyword: 'Transfer', target: { kind: 'excluded', reason: '信用卡繳款' } }] }, state, LATER)
   const reopened = await store.loadDrive(token, model.parseWealthData)
-  const january = store.summaryCashflow(reopened.state).find((m) => m.month === '2025-02')
+  const january = store.ledgerCashflow(reopened.state, model.emptyData()).find((m) => m.month === '2025-02')
   assert.equal(january.totals.pending.count, 0)
   assert.equal(january.totals.excluded.count, 1)
 })
@@ -195,7 +195,7 @@ test('random edits saved from partly loaded data keep every record', async () =>
     assert.deepEqual(sorted(all.data.bankTransactions), sorted(expected.bankTransactions), `round ${round} from ${from}`)
     assert.deepEqual(sorted(all.data.expenses), sorted(expected.expenses), `round ${round} from ${from}`)
     const reopened = await store.loadDrive(token, model.parseWealthData)
-    assert.deepEqual(totals(store.summaryCashflow(reopened.state)), totals(cashflow.cashflowMonths({ expenses: expected.expenses, bankTransactions: expected.bankTransactions })), `round ${round} summary`)
+    assert.deepEqual(totals(store.ledgerCashflow(reopened.state, model.emptyData())), totals(cashflow.cashflowMonths({ expenses: expected.expenses, bankTransactions: expected.bankTransactions })), `round ${round} summary`)
   }
 })
 

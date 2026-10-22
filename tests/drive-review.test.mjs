@@ -102,7 +102,7 @@ test('two files of one part without a recorded file are both read; the next save
   const extra = addPartFile('ledger-2026-Q1', { expenses: [expense('e2', '2026-02-01', 20)] }, 0)
   const opened = await openAll()
   assert.deepEqual(opened.data.expenses.map((e) => e.id).sort(), ['e1', 'e2'], 'records of both files are shown')
-  assert.equal(store.summaryCashflow(opened.state).find((m) => m.month === '2026-02').totals.consumption, 20)
+  assert.equal(store.ledgerCashflow(opened.state, model.emptyData()).find((m) => m.month === '2026-02').totals.consumption, 20)
 
   await store.saveDrive(token, { ...opened.data, updatedAt: '2026-10-12T05:00:00.000Z' }, opened.state, NOW)
   const recorded = drive.main().summary.parts['ledger-2026-Q1'].fileId
@@ -262,7 +262,7 @@ test('the summary counts once a record an interrupted move left in two parts', a
   await assert.rejects(store.saveDrive(token, { ...data, updatedAt: '2026-10-12T05:00:00.000Z', expenses: data.expenses.map((e) => ({ ...e, date: '2026-07-15' })) }, state, NOW), /503/)
   assert.equal(JSON.parse(filesOf('ledger-2026-Q1')[0].text).expenses.length, 1)
   const opened = await store.loadDrive(token, model.parseWealthData)
-  const months = store.summaryCashflow(opened.state)
+  const months = store.ledgerCashflow(opened.state, model.emptyData())
   assert.deepEqual(months.filter((m) => m.totals.consumption).map((m) => [m.month, m.totals.consumption]), [['2026-07', 10]])
 })
 
