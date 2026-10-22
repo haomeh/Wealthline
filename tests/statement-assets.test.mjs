@@ -66,3 +66,37 @@ test('the ledger import creates accounts only when asked, and only for its own b
   const again = ledgerEdits.applyBankLedger(once, { balances: patch.balances, balanceRevision: statements.statementBalanceRevision(once), createAssets: true })
   assert.deepEqual(again.accounts.map((a) => a.id), [ledger.id])
 })
+
+test('a newer statement can update the current balance, unless the user changed it after the statement date', () => {
+  const created = statements.createStatementAssets(statements.importStatementBalances(empty(), [balance('2026-08-31', 650000, 'a')], now).data)
+  // Saved on 09/05, which records when the balance was added.
+  const first = { ...created, accounts: created.accounts.map((a) => ({ ...a, positions: a.positions.map((p) => ({ ...p, addedAt: '2026-09-05T03:00:00.000Z' })) })) }
+  const patch = (data, ...balances) => ({ balances, balanceRevision: statements.statementBalanceRevision(data) })
+  const sep = patch(first, balance('2026-09-30', 700000, 'b'), balance('2026-09-30', 300, 'b', 'USD'), balance('2026-08-31', 690000, 'e'))
+  const imported = statements.importStatementBalances(first, sep.balances, now).data
+  // The newest statement per currency; a currency the account lacks is added.
+  assert.deepEqual(statements.statementAssetUpdates(imported, sep.balances), [
+    { accountId: ledger.id, label: '台新銀行 (TW)', currency: 'TWD', date: '2026-09-30', before: 650000, after: 700000 },
+    { accountId: ledger.id, label: '台新銀行 (TW)', currency: 'USD', date: '2026-09-30', before: null, after: 300 },
+  ])
+  assert.deepEqual(ledgerEdits.applyBankLedger(first, sep).accounts[0].positions.map((p) => p.quantity), [650000], 'not asked: today is left alone')
+  const updated = ledgerEdits.applyBankLedger(first, { ...sep, updateAssets: true })
+  assert.deepEqual(updated.accounts[0].positions.map((p) => [p.currency, p.quantity]), [['TWD', 700000], ['USD', 300]])
+  assert.equal(updated.accounts[0].positions[0].id, first.accounts[0].positions[0].id, 'the same position, so the change log shows an edit')
+  assert.deepEqual(statements.statementAssetUpdates(statements.importStatementBalances(updated, sep.balances, now).data, sep.balances), [], 'nothing left to update')
+
+  // Edited by hand on 10/05: a September statement no longer updates it, an October one does.
+  const edited = { ...first, history: { ...first.history, changes: [{ at: '2026-10-05T03:00:00.000Z', accountId: ledger.id, account: '台新銀行', type: 'cash', symbol: 'TWD', currency: 'TWD', before: { quantity: 650000, price: 1 }, after: { quantity: 640000, price: 1 } }] }, accounts: first.accounts.map((a) => ({ ...a, positions: a.positions.map((p) => ({ ...p, quantity: 640000 })) })) }
+  const late = patch(edited, balance('2026-09-30', 700000, 'b'))
+  assert.deepEqual(statements.statementAssetUpdates(statements.importStatementBalances(edited, late.balances, now).data, late.balances), [])
+  const oct = patch(edited, balance('2026-10-10', 710000, 'c'))
+  assert.deepEqual(statements.statementAssetUpdates(statements.importStatementBalances(edited, oct.balances, now).data, oct.balances).map((u) => u.after), [710000])
+  // Two balances in one currency: which one is meant is the user's call.
+  const split = { ...first, accounts: first.accounts.map((a) => ({ ...a, positions: [...a.positions, { ...a.positions[0], id: 'second' }] })) }
+  assert.deepEqual(statements.statementAssetUpdates(statements.importStatementBalances(split, sep.balances, now).data, sep.balances).map((u) => u.currency), ['USD'])
+  // Saved before added dates were kept, with no change logged: when its balances were set is unknown, so nothing is offered.
+  assert.deepEqual(statements.statementAssetUpdates(statements.importStatementBalances(created, sep.balances, now).data, sep.balances), [])
+  // No asset account yet: that is createAssets' job.
+  const none = statements.importStatementBalances(empty(), sep.balances, now).data
+  assert.deepEqual(statements.statementAssetUpdates(none, sep.balances), [])
+})

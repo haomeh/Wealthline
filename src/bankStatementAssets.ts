@@ -1,5 +1,6 @@
 import { accountIdentity, accountLabel, newId, type Account, type WealthData } from './model'
 import type { BankTransactionAccount } from './bankTransactions'
+import { localDate } from './history'
 import { historyCatalog, instrumentKey, parseQuantityDays, validDate, validatePastDate, type QuantityEntry, type QuantityDay } from './quantityHistory'
 const CASH_CURRENCIES=new Set(['TWD','USD','SGD','JPY','EUR','GBP','AUD','CAD','HKD','CHF','NZD','CNY'])
 
@@ -129,4 +130,39 @@ export function createStatementAssets(data:WealthData,labels?:ReadonlySet<string
  const added=missingStatementAssets(data).filter(s=>!labels||labels.has(s.label)).map((s):Account=>{const identity=bankStatementIdentity(s.bank)!
   return {id:s.accountId,name:identity.name,kind:'bank',country:identity.country,category:'現金與外幣活存',positions:s.balances.map(b=>({id:newId(),type:'cash',currency:b.currency,symbol:'',quantity:b.quantity,price:1}))}})
  return added.length?{...data,accounts:[...data.accounts,...added]}:data
+}
+
+export interface StatementAssetUpdate { accountId:string; label:string; currency:string; date:string; before:number|null; after:number }
+/** Existing asset accounts whose current cash in a currency is older than the newest statement in `candidates`: it was added or
+ *  last changed on or before the statement date. A balance with neither date known (saved before they were kept) is left alone.
+ *  Run on the data with the candidates imported, so their history account is known. */
+export function statementAssetUpdates(data:WealthData,candidates:readonly StatementBalanceCandidate[]):StatementAssetUpdate[] {
+ const newest=new Map<string,StatementBalanceCandidate>()
+ for(const c of candidates){const key=JSON.stringify([statementAccountLabel(c.bank),c.currency]),prev=newest.get(key);if(!prev||c.date>prev.date)newest.set(key,c)}
+ return [...newest.values()].flatMap(c=>{
+  const label=statementAccountLabel(c.bank)
+  const accountId=(data.bankStatementBalances??[]).find(b=>statementAccountLabel(b.bank)===label)?.accountId
+  const account=data.accounts.find(a=>a.id===accountId)
+  if(!account)return []
+  const cash=account.positions.filter(p=>p.type==='cash'&&p.currency===c.currency)
+  // Several balances in one currency: which one the statement means is the user's call.
+  if(cash.length>1)return []
+  const before=cash[0]?.quantity??null
+  if(before===c.quantity||(before===null&&c.quantity<=0))return []
+  // A currency the account has no balance in: known to be absent since the account's first saved position.
+  const added=cash.length?cash[0].addedAt:account.positions.map(p=>p.addedAt).filter((at):at is string=>!!at).sort()[0]
+  const changed=data.history.changes.filter(e=>e.accountId===account.id&&e.type==='cash'&&e.currency===c.currency).map(e=>localDate(e.at)).sort().at(-1)??(added&&localDate(added))
+  if(!changed||changed>c.date)return []
+  return [{accountId:account.id,label:accountLabel(account),currency:c.currency,date:c.date,before,after:c.quantity}]
+ }).sort((a,b)=>a.label.localeCompare(b.label)||a.currency.localeCompare(b.currency))
+}
+/** `updates` written to the current cash balances; a currency the account has no balance in is added. */
+export function applyStatementAssetUpdates(data:WealthData,updates:readonly StatementAssetUpdate[]):WealthData {
+ if(!updates.length)return data
+ return {...data,accounts:data.accounts.map(a=>{
+  const mine=updates.filter(u=>u.accountId===a.id);if(!mine.length)return a
+  const positions=a.positions.map(p=>{const u=p.type==='cash'&&mine.find(u=>u.currency===p.currency);return u?{...p,quantity:u.after}:p})
+  const added=mine.filter(u=>!a.positions.some(p=>p.type==='cash'&&p.currency===u.currency)).map(u=>({id:newId(),type:'cash' as const,currency:u.currency,symbol:'',quantity:u.after,price:1}))
+  return {...a,positions:[...positions,...added]}
+ })}
 }
