@@ -3317,6 +3317,9 @@ dialog.expense-rule-dialog { max-width: 440px; }
   .statement-preview-row .detail-record-value { font-size: 11px; }
 }
 
+.file-input { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; position: relative; }
+.file-input-names { overflow-wrap: anywhere; }
+.file-input-native { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .record-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .bank-rules li button { margin-left: 0; }
 

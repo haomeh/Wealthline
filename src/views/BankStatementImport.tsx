@@ -16,6 +16,7 @@ import { BANK_SUMMARY_PENDING, BANK_TEXT_NOTICE, bankFileSummary, classification
 import { ImportSteps, type QueuedImport } from './ImportSteps'
 import { REPO_URL } from '../site'
 import { CsvGuide } from './CsvGuide'
+import { FileInput } from './FileInput'
 
 type PreviewRow={draft:BankTransaction;original:BankTransactionRow;provenance:BankRowProvenance;selected:boolean;manual?:boolean;narration?:{leading:string[];trailing:string[]}}
 type PreviewSection={csv?:boolean;automatic?:boolean;id:string;bank:string;currency:string;hash:string;rows:PreviewRow[];accountId:string;newId:string;label:string;noTransactions:boolean;partial:boolean;warnings:ReturnType<typeof summarizeBankWarnings>}
@@ -203,7 +204,7 @@ export function BankStatementImport({data,accounts,existing,rules,passwords,pass
   </details>
   <form onSubmit={parse} hidden={fromEntry && (parsing || !!sections.length || !!balances.length)}>
    <fieldset disabled={locked} className="bank-fields bank-upload-fields">
-    <label className="field"><span>銀行帳單 PDF 或 CSV（PDF 每份最多 20 MB）</span><input aria-label="銀行帳單 PDF" type="file" multiple accept=".pdf,application/pdf,.csv,text/csv" onChange={e=>{setFiles(Array.from(e.target.files??[]));setPassword('')}}/></label>
+    <label className="field"><span>銀行帳單 PDF 或 CSV（PDF 每份最多 20 MB）</span><FileInput aria-label="銀行帳單 PDF" multiple accept=".pdf,application/pdf,.csv,text/csv" onChange={e=>{setFiles(Array.from(e.target.files??[]));setPassword('')}}/></label>
     <label className="field"><span>PDF 密碼（選填，多組以逗號分隔）</span><input aria-label="銀行 PDF 密碼" type="password" autoComplete="off" value={password} onChange={e=>setPassword(e.target.value)}/><small className="muted">僅供本次解析，不會保存。</small></label>
    </fieldset>
    <div className="row bank-upload-actions"><button disabled={locked||!files.length} className="primary">{parsing?'正在本機處理…':'解析銀行帳單'}</button>{passwordScope && <button type="button" disabled={locked} onClick={onManagePasswords}>管理帳單密碼</button>}</div>
