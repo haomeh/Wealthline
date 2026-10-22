@@ -17,6 +17,7 @@ import { useRecordEditing } from './useRecordEditing'
 import { QuickClassify } from './QuickClassify'
 import { quickQueue } from '../quickClassify'
 import { CashflowDataStatus } from './CashflowDataStatus'
+import { CurrencyTotals } from './CurrencyTotals'
 
 interface Props {
   data: WealthData
@@ -137,7 +138,7 @@ function LiveCashflow({ data, onChange, busy = false, dirty, sessionIdentity, ca
       <div className="row center"><button className="primary" onClick={onImport}>匯入帳單</button></div>
     </section> : <>
       {converting && <p role="status" className="notice">正在換算每月匯率…</p>}
-      {failed && <div role="alert" className="notice"><p>無法完成 TWD 換算：{(!shown && needsFx && error) || bars.error}。未顯示部分合計。</p><button onClick={() => { retry(); bars.retry() }}>重試匯率</button></div>}
+      {failed && <div role="alert" className="notice"><p>無法完成 TWD 換算：{(!shown && needsFx && error) || bars.error}。未顯示部分合計。</p>{!shown && rawGroups.length > 0 && <CurrencyTotals groups={rawGroups} label={period.label} />}<button onClick={() => { retry(); bars.retry() }}>重試匯率</button></div>}
       {!rawGroups.length && <section className="panel cashflow-no-record"><p className="muted">{period.label}無紀錄，不代表收支為零。{shownBars ? '其他月份仍照常顯示。' : ''}</p>
         {period.latestMonth && <button onClick={() => period.showMonth(period.latestMonth!)}>查看 {Number(period.latestMonth.slice(0, 4))} 年 {Number(period.latestMonth.slice(5, 7))} 月</button>}
       </section>}
@@ -160,7 +161,7 @@ function LiveCashflow({ data, onChange, busy = false, dirty, sessionIdentity, ca
           <section className="panel tile-stat desktop-only" aria-label="收入">
             <span>收入</span>
             <button disabled={stale} onClick={()=>selectMetric('income')}><strong>{fmt(shown.income, 0)}</strong></button>
-            <small>銀行流水 {count(shown.incomeCategories)} 筆</small>
+            <small>銀行流水 {count(shown.incomeCategories)} 筆{passiveIncome(shown) > 0 && ` · 股利與利息 ${fmt(passiveIncome(shown), 0)}`}</small>
           </section>
           <section className="panel tile-stat desktop-only" aria-label="實際消費">
             <span>實際消費</span>
@@ -187,7 +188,7 @@ function LiveCashflow({ data, onChange, busy = false, dirty, sessionIdentity, ca
           <section className="panel cashflow-categories-tile" aria-label="消費分類">
             <h3>{period.label}消費分類</h3>
             <CategoryList categories={shown.consumptionCategories} onSelect={c=>{if(!stale)selectMetric('consumption',categoryToken(c))}} />
-            {shown.incomeCategories.length > 0 && <details className="cashflow-income-details"><summary>收入分類</summary><CategoryList categories={shown.incomeCategories} income onSelect={c=>{if(!stale)selectMetric('income',categoryToken(c))}} /></details>}
+            {shown.incomeCategories.length > 0 && <details className="cashflow-income-details"><summary>收入分類{passiveIncome(shown) > 0 && <span className="muted"> · 股利與利息 {fmt(passiveIncome(shown), 0)}</span>}</summary><CategoryList categories={shown.incomeCategories} income onSelect={c=>{if(!stale)selectMetric('income',categoryToken(c))}} /></details>}
           </section>
 
         </>}
@@ -206,6 +207,9 @@ function trendWindow(period: CashflowPeriodState): { end: string; period: Cashfl
   const year = period.selection.range === 'all' ? Number((period.latestMonth ?? period.endMonth).slice(0, 4)) : period.selection.year
   return { end: monthKey(year, 12), period: 12, title: `${year} 年每月` }
 }
+
+// Dividends and interest in the period: income that came from holdings rather than work.
+const passiveIncome = (group: CashflowCurrencySummary) => group.incomeCategories.filter(c => c.category === '股利' || c.category === '利息').reduce((n, c) => n + c.net, 0)
 
 // One month of an already converted year as a group of its own; undefined when the month has no records.
 function monthOf(year: CashflowCurrencySummary | undefined, month: string): CashflowCurrencySummary | undefined {

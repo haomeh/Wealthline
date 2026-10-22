@@ -159,6 +159,8 @@ test('missing FX automatically requests, hides partial totals, and retry bypasse
  await render(Summary,{expenses:[card,{...card,id:'usd',currency:'USD',amount:1}],now:'2026-01-25'})
  assert.equal(calls.length,1);assert.match(document.querySelector('[role="alert"]').textContent,/未顯示部分合計/)
  assert.equal(document.querySelector('[data-cashflow-metric]'),null)
+ // Each currency's own totals still show; only the TWD sum waits for the rate.
+ assert.match(document.querySelector('[aria-label="各幣別原幣合計"]').textContent,/TWD 收入 0(\.00)? · 實際消費 200(\.00)?.*USD 收入 0(\.00)? · 實際消費 1(\.00)?/)
  await click(button('重試匯率'))
  assert.equal(calls.length,2);assert.equal(calls[1][1],'no-cache')
  assert.equal(document.querySelector('[data-cashflow-metric="consumption"]').textContent,'232')

@@ -112,3 +112,21 @@ test('the page has one statement import entry, with records and without', async 
   await act(() => buttons('匯入帳單')[0].click())
   assert.equal(opened, 2)
 })
+
+test('dividends and interest show as their own total with income; a failed rate still lists each currency', async () => {
+  const realNow = Date.now; Date.now = () => new Date('2026-05-20T00:00:00Z').getTime()
+  try {
+    const twd = (id, category, amount) => ({ ...bank(id, '2026-05-12', amount), currency: 'TWD', classification: { kind: 'income', category } })
+    const withPassive = { ...data, bankTransactions: [twd('div', '股利', 1200), twd('int', '利息', 35), twd('pay', '薪資', 50000)] }
+    await open({ data: withPassive })
+    assert.match(document.querySelector('[aria-label="收入"] small').textContent, /股利與利息 1,235/)
+    assert.match(document.querySelector('.cashflow-income-details summary').textContent, /股利與利息 1,235/)
+    if (root) await act(() => root.unmount())
+
+    globalThis.fetch = async () => new Response('{}', { status: 502 })
+    const { clearHistoryCache } = await server.ssrLoadModule('/src/priceHistory.ts'); clearHistoryCache()
+    await open()
+    assert.match(document.querySelector('[role="alert"]').textContent, /無法完成 TWD 換算/)
+    assert.match(document.querySelector('[aria-label="各幣別原幣合計"]').textContent, /SGD 收入 300(\.00)?/)
+  } finally { Date.now = realNow }
+})
