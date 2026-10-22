@@ -3400,6 +3400,7 @@ dialog.expense-rule-dialog { max-width: 440px; }
 .recent-changes ul { list-style: none; margin: 0 0 10px; padding: 0; font-size: 13px; }
 .recent-changes li { display: flex; flex-direction: column; gap: 2px; padding: 8px 0; border-top: 1px solid var(--hairline); }
 .holdings .num-serif { font-size: 16px; }
+.holdings td.nowrap { white-space: nowrap; }
 @media (max-width: 899px) {
   .detail-grid { grid-template-columns: minmax(0, 1fr); }
   .detail-side { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; }
@@ -3425,6 +3426,8 @@ dialog.expense-rule-dialog { max-width: 440px; }
 .debt-detail { padding: 20px 22px; }
 .debt-detail .panel-head h3 { margin: 0; }
 .debt-columns { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 24px; }
+.debt-columns.balance-only { grid-template-columns: minmax(0, 1fr); }
+.debt-columns.balance-only .debt-result { padding: 0; border: none; }
 .debt-col-title { display: block; font-size: 15px; margin-bottom: 12px; }
 .debt-method { display: inline-flex; margin-bottom: 12px; }
 .debt-method span { padding: 6px 12px; border-radius: 999px; font-size: 13px; color: var(--ink-2); }
@@ -3457,6 +3460,12 @@ dialog.expense-rule-dialog { max-width: 440px; }
 .rates-table tr.pinned td:first-child { border-radius: 12px 0 0 12px; }
 .rates-table tr.pinned td:last-child { border-radius: 0 12px 12px 0; }
 .rates-table .cell-input { font-size: 18px; }
+/* On the phone the rate needs the room: the accounts using it and its source (also in the note below) step aside. */
+.rates-table .cell-input { min-width: 7ch; }
+.rates-table td:last-child, .rates-table th:last-child { white-space: nowrap; }
+@media (max-width: 560px) {
+  .rates-table .rates-used, .rates-table .rates-source { display: none; }
+}
 button.pin-chip { padding: 5px 12px; border: none; background: var(--ink); color: var(--page); font-size: 12px; font-weight: 700; }
 button.pin-chip:hover:not(:disabled) { background: var(--ink); opacity: 0.85; }
 
@@ -3526,6 +3535,8 @@ button.pin-chip:hover:not(:disabled) { background: var(--ink); opacity: 0.85; }
 .tile-label { display: block; font-size: 13px; color: var(--ink-2); margin-bottom: 10px; }
 .overview-share { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
 .overview-share .tile-label { margin: 0; }
+.overview-share-pair .tile-label + .tile-bar { margin-top: -2px; }
+.overview-share-pair .share-legend + .tile-label { margin-top: 6px; }
 .overview-donut-row { display: flex; flex-wrap: wrap; gap: 12px 16px; align-items: center; }
 .donut { position: relative; width: 84px; height: 84px; border-radius: 50%; flex: none; }
 .donut::after { content: ''; position: absolute; inset: 15px; border-radius: 50%; background: var(--surface); }
@@ -3678,9 +3689,11 @@ button.pin-chip:hover:not(:disabled) { background: var(--ink); opacity: 0.85; }
   table.data.holdings td:nth-child(4) { display: none; }
   table.data.holdings td:nth-child(5) { grid-area: base; font-size: 17px; white-space: nowrap; }
   table.data.holdings td:nth-child(6) { grid-area: del; }
-  table.data.holdings td:nth-child(2) .cell-input { width: 8em; padding-left: 0; text-align: left; }
+  table.data.holdings td:nth-child(2) .cell-input { width: 5.5em; field-sizing: content; min-width: 2.5em; max-width: 8em; padding-left: 0; text-align: left; }
   table.data.holdings td:nth-child(2)::after { content: '×'; color: var(--muted); }
-  table.data.holdings td:nth-child(1) > div { display: inline; margin-left: 6px; }
+  /* Name and added date each on their own line under the symbol, so they never run into the TWD value. */
+  table.data.holdings td:nth-child(1) > div { display: block; margin: 2px 0 0 18px; }
+  table.data.holdings td:nth-child(1) > .ellipsis { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .add-holding .row { flex-wrap: wrap; }
   .add-holding .row > input { flex: 1 1 140px; min-width: 0; }
 
@@ -3973,6 +3986,8 @@ dialog.quick-classify::backdrop { background: rgba(30, 20, 12, .42); }
 
 /* Asset valuation explanations keep the existing palette and card structure. */
 .asset-change-overview-hero { min-width: 0; flex: 1 1 300px; }
+/* On the phone the timeline tile is a column: a 300px basis there would be 300px of height above the chart. */
+@media (max-width: 899px) { .snapshot-timeline .asset-change-overview-hero { flex: none; } }
 .asset-change-since-last { min-width: 0; max-width: 100%; }
 .asset-attribution { margin-top: 4px; min-width: 0; }
 .asset-attribution > summary { cursor: pointer; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; min-height: 44px; font-size: 13px; color: var(--ink-2); }

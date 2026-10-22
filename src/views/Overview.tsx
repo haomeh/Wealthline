@@ -113,6 +113,8 @@ export function Overview({ data: loaded, onGoHistory, onGoRates, onGoLiabilities
   const byCategory = breakdown(data, (a) => a.category)
   const accounts = breakdown(data, accountLabel).slices
   const hasCountry = data.accounts.some((a) => a.country)
+  const currencyBar = <ShareBar slices={colorize(breakdown(data, (_, p) => p.currency).slices, COMMON_CURRENCIES)} />
+  const countryBar = <ShareBar slices={colorize(breakdown(data, (a) => (a.country ? countryLabel(a.country) : '')).slices, Object.values(COUNTRIES))} />
   const netChange = monthChange(allPoints, now)
   // One scheduled loan: show how much of it is repaid, as the phone design does.
   const loan = data.liabilities?.length === 1 && data.liabilities[0].schedule ? data.liabilities[0] : undefined
@@ -206,17 +208,24 @@ export function Overview({ data: loaded, onGoHistory, onGoRates, onGoLiabilities
           </section>
           {month && <MonthTile label={`${cashflowPeriod.selection.month} 月收支`} income={month.income} consumption={month.consumption} difference={month.difference} currency={month.currency} onClick={onGoCashflow} />}
           {data.accounts.length > 0 && <>
-            <section className={`panel ${hasCountry ? '' : 'span-2 '}overview-share`} aria-label="資產配置">
+            <section className="panel overview-share" aria-label="資產配置">
               <span className="tile-label">類別</span>
               <div className="overview-donut-row"><Donut slices={colorize(byCategory.slices, CATEGORIES)} /><ShareLegend slices={colorize(byCategory.slices, CATEGORIES)} /></div>
             </section>
-            <section className="panel overview-share" aria-label="幣別曝險">
+            {/* Wide screens keep the tile row to four: currency and country share one tile. The phone's two-column grid keeps them apart. */}
+            <section className={`panel overview-share${hasCountry ? ' mobile-only' : ''}`} aria-label="幣別曝險">
               <span className="tile-label">幣別曝險</span>
-              <ShareBar slices={colorize(breakdown(data, (_, p) => p.currency).slices, COMMON_CURRENCIES)} />
+              {currencyBar}
             </section>
-            {hasCountry && <section className="panel overview-share" aria-label="國家">
+            {hasCountry && <section className="panel overview-share mobile-only" aria-label="國家">
               <span className="tile-label">國家</span>
-              <ShareBar slices={colorize(breakdown(data, (a) => (a.country ? countryLabel(a.country) : '')).slices, Object.values(COUNTRIES))} />
+              {countryBar}
+            </section>}
+            {hasCountry && <section className="panel overview-share overview-share-pair desktop-only" aria-label="幣別與國家">
+              <span className="tile-label">幣別曝險</span>
+              {currencyBar}
+              <span className="tile-label">國家</span>
+              {countryBar}
             </section>}
             <section className="panel span-4 overview-accounts" aria-label="帳戶">
               <div className="overview-accounts-head mobile-only"><strong>帳戶</strong>{onGoAccounts && <button className="link" onClick={onGoAccounts}>全部 {data.accounts.length} 個 ›</button>}</div>
@@ -282,8 +291,10 @@ function MonthTile({ label, income, consumption, difference, currency, onClick }
 // The three largest parts and the rest as 其他.
 function topSlices(slices: ColoredSlice[]) {
   const shown = slices.filter((s) => s.share > 0)
-  const rest = shown.slice(3).reduce((n, x) => n + x.share, 0)
-  return { head: shown.slice(0, 3), rest }
+  // Three named rows and 其他; a fourth row is named rather than folded into 其他 alone.
+  const named = shown.length <= 4 ? shown.length : 3
+  const rest = shown.slice(named).reduce((n, x) => n + x.share, 0)
+  return { head: shown.slice(0, named), rest }
 }
 
 function ShareLegend({ slices }: { slices: ColoredSlice[] }) {

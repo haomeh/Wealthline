@@ -436,6 +436,22 @@ test('loan form defaults to annuity, switches to declining payments, and bounds 
   assert.equal(changed.liabilities[0].repaymentMethod, 'equalPrincipal')
   assert.equal(changed.liabilities[0].paymentAmount, undefined)
 })
+test('a credit card or a balance-only debt shows no repayment terms; a loan does', async () => {
+  const debts = [
+    { id: 'card', name: '合成卡', kind: 'credit', currency: 'TWD', balance: 38000 },
+    { id: 'misc', name: '合成借款', kind: 'other', currency: 'TWD', balance: 500 },
+    { id: 'loan', name: '合成信貸', kind: 'personal', currency: 'TWD', balance: 1200, repaymentMethod: 'annuity', annualRate: 3, remainingInstallments: 12 },
+  ]
+  await render(Liabilities, { data: { ...fixture(), liabilities: debts }, onChange: () => {} })
+  const record = (name) => [...document.querySelectorAll('.liability-record')].find((s) => s.getAttribute('aria-label') === name)
+  for (const d of debts) {
+    if (!record(d.name)) await click([...document.querySelectorAll('button')].find((b) => b.textContent.includes(d.name)))
+    const r = record(d.name)
+    assert.ok(r, d.name)
+    assert.equal(!!r.querySelector('.debt-terms'), d.kind === 'personal', d.name)
+    assert.match(r.textContent, /目前未償餘額|預估剩餘本金/)
+  }
+})
 test('credit and irregular debt can save balance only even after invalid projection input', async () => {
   let changed
   await render(Liabilities, { data: fixture(), onChange: next => { changed = next } })
