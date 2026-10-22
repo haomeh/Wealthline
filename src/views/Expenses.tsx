@@ -20,6 +20,7 @@ import { usePasswordSettings } from './usePasswordSettings'
 import { statementPasswordStatus, unlockStatementPasswords, type StatementPassword } from '../statementPasswords'
 import type { WealthData } from '../model'
 import { removeExpense, saveExpense, saveExpenseRule } from '../ledgerEdits'
+import { FileInput } from './FileInput'
 
 export function Expenses({data,onChange,busy,passwordScope,recordId,returnTo,importing:routed,onImporting,onOpenImport,queued,onImported}: {recordId?:string;returnTo?:string;passwordScope?:string;data:WealthData;onChange:(next:WealthData)=>void;busy:boolean;importing?:boolean;onImporting?:(open:boolean)=>void;onOpenImport?:()=>void;queued?:QueuedImport;onImported?:(message:string)=>boolean}) {
  const back = cashflowReturnTo(returnTo??null)
@@ -228,7 +229,7 @@ function StatementImport({existing,busy,onCancel,onImport,rules,onAddRule,passwo
     {!!reports.length && <ul className="notice" aria-label="各帳單解析結果">{reports.map((r,i)=><li key={i}><strong>{r.name}</strong>：{r.error || `${r.bank} · ${r.month}（${r.source}）· ${r.count} 筆待核對${r.ocr?' · OCR 商家請核對':''}${r.note?` · ${r.note}`:''}${r.warning?` · ${r.warning}`:''}`}</li>)}</ul>}
     {!drafts ? <form onSubmit={parse} hidden={parsing && fromEntry}>
       <fieldset className="statement-upload-fields" disabled={locked}>
-        <label className="field statement-upload"><span>帳單 PDF 或 CSV（可選多份）</span><small className="muted">選擇信用卡帳單 · PDF 每份最多 20 MB · CSV 格式見下方說明</small><input type="file" multiple accept=".pdf,application/pdf,.csv,text/csv" required onChange={e=>{setFiles(Array.from(e.target.files??[]));setPassword('');setError('');setReports([])}}/></label>
+        <label className="field statement-upload"><span>帳單 PDF 或 CSV（可選多份）</span><small className="muted">選擇信用卡帳單 · PDF 每份最多 20 MB · CSV 格式見下方說明</small><FileInput multiple accept=".pdf,application/pdf,.csv,text/csv" required onChange={e=>{setFiles(Array.from(e.target.files??[]));setPassword('');setError('');setReports([])}}/></label>
         <label className="field statement-password"><span>PDF 密碼（多組以逗號 , 分隔）</span><input type="password" autoComplete="off" placeholder="未加密的帳單可留空" value={password} onChange={e=>setPassword(e.target.value)}/><small className="muted">僅供本次解析，不會保存。不同帳單的密碼以逗號分隔。</small></label>
       </fieldset>
       <details className="statement-options"><summary>進階選項<span className="muted small">辨識不到時再填寫</span></summary>
