@@ -128,6 +128,38 @@ test('a part the main file records but Drive no longer lists stops loading inste
   await assert.rejects(store.loadDrive(token, model.parseWealthData), /找不到分檔 wealthline-ledger-2026-Q1\.json.*垃圾桶/)
 })
 
+test('the user may open without a part Drive no longer lists; nothing is removed and the part comes back once restored', async () => {
+  await splitOnDrive(base({ expenses: [expense('e1', '2026-01-05'), expense('e2', '2026-07-05')] }))
+  const lost = filesOf('ledger-2026-Q1')[0]
+  lost.trashed = true
+  const error = await store.loadDrive(token, model.parseWealthData).catch((e) => e)
+  assert.ok(error instanceof store.MissingPartError)
+  assert.deepEqual(error.names, ['ledger-2026-Q1'])
+
+  const opened = await store.loadDrive(token, model.parseWealthData, error.names)
+  assert.deepEqual(opened.state.skipped, ['ledger-2026-Q1'])
+  assert.match(store.skippedNotice(opened.state.skipped), /wealthline-ledger-2026-Q1\.json.*垃圾桶還原/)
+  let data = opened.data
+  for (const group of ['ledger', 'history']) data = store.mergeParts(data, await store.readGroup(token, opened.state, group), model.parseWealthData)
+  assert.deepEqual(data.expenses.map((e) => e.id), ['e2'])
+
+  // A save of other edits keeps the main file's record of the missing part, with its sequence.
+  const sequence = drive.main().summary.parts['ledger-2026-Q1'].sequence
+  await store.saveDrive(token, { ...data, updatedAt: '2026-10-12T05:00:00.000Z', expenses: [...data.expenses, expense('e3', '2026-07-06')] }, opened.state, NOW)
+  assert.equal(drive.main().summary.parts['ledger-2026-Q1'].sequence, sequence)
+  assert.equal(drive.main().summary.parts['ledger-2026-Q1'].fileId, lost.id)
+  // An edit dated in the missing part stops before writing anything, so its records are not overwritten.
+  const from = drive.log.length
+  await assert.rejects(store.saveDrive(token, { ...data, updatedAt: '2026-10-12T06:00:00.000Z', expenses: [...data.expenses, expense('e4', '2026-02-01')] }, opened.state, NOW), /找不到的分檔 wealthline-ledger-2026-Q1\.json/)
+  assert.deepEqual(writes(from), [])
+
+  // Restored from the trash: it loads as before, with every record.
+  lost.trashed = false
+  const restored = await openAll()
+  assert.equal(restored.state.skipped, undefined)
+  assert.deepEqual(restored.data.expenses.map((e) => e.id).sort(), ['e1', 'e2', 'e3'])
+})
+
 test('a file tagged as a part but with an unknown part name is left out', async () => {
   await splitOnDrive()
   const datasetId = drive.main().datasetId

@@ -63,6 +63,10 @@ export interface DriveState {
   // Set once parts were read after another device changed the main file: their records may not
   // match this session's main file, so no later read shows them until the page is reloaded.
   stale?: boolean
+  // Parts the summary names but Drive did not list, which the user chose to open without
+  // (MissingPartError). Their summary entries are kept, so the main file still names them and
+  // the parts show again once Drive lists them; a save that would write records to one stops.
+  skipped?: string[]
 }
 
 export const emptyDriveState = (): DriveState => ({ datasetId: newId(), split: false, parts: new Map(), summary: emptySummary(), rules: {} })
@@ -194,13 +198,28 @@ function byPartName(listed: ListedPart[]): Map<string, ListedPart[]> {
   return names
 }
 
-const missingPart = (name: string) => `Google Drive 中找不到分檔 ${partFileName(name)}，但主檔記錄了它。可能是其他裝置剛建立、還沒出現在 Drive 的清單中，或已被移到垃圾桶。為免少了這部分資料，已停止載入；請稍後重新載入，若檔案在 Drive 的垃圾桶中，請先還原。`
+const fileNames = (names: readonly string[]) => names.map(partFileName).join('、')
+
+// Parts the main file names that Drive does not list. Opening stops, so a save cannot make them
+// again without their records; the user may open without them (loadDrive `skip`).
+export class MissingPartError extends Error {
+  readonly names: string[]
+  constructor(names: string[]) {
+    super(`Google Drive 中找不到分檔 ${fileNames(names)}，但主檔記錄了它。可能是其他裝置剛建立、還沒出現在 Drive 的清單中，或已被移到垃圾桶。為免少了這部分資料，已停止載入；請稍後重新載入，若檔案在 Drive 的垃圾桶中，請先還原。`)
+    this.names = names
+  }
+}
+
+// What the app shows while parts are left out (DriveState.skipped).
+export const skippedNotice = (names: readonly string[]) => `Google Drive 中找不到分檔 ${fileNames(names)}，這次沒有載入其中的紀錄，相關的收支與歷史可能不完整。主檔仍記錄著這些分檔：從 Drive 的垃圾桶還原後重新載入，紀錄就會回來。`
+
+const chosenFile = (files: ListedPart[] | undefined, entry?: PartSummary) => (entry?.fileId ? files?.find((f) => f.id === entry.fileId) : files?.[0])
 
 // The file to use for part `name`: the one its summary entry names, else the only one. With
 // several files and no entry naming one, all of them are read (see StoredPart.others).
 function pick(name: string, files: ListedPart[] | undefined, entry?: PartSummary): StoredPart {
-  const chosen = entry?.fileId ? files?.find((f) => f.id === entry.fileId) : files?.[0]
-  if (!files || !chosen) throw new Error(missingPart(name))
+  const chosen = chosenFile(files, entry)
+  if (!files || !chosen) throw new MissingPartError([name])
   const others = entry?.fileId ? [] : files.slice(1).map((f) => f.id)
   return { fileId: chosen.id, size: chosen.size, md5: others.length ? null : chosen.md5, ...(others.length && { others }) }
 }
@@ -239,8 +258,9 @@ export function summaryCashflow(state: DriveState): CashflowMonthTotals[] | unde
   return ledger.flatMap((name) => state.summary.parts[name].cashflow!)
 }
 
-// Returns null when the user has no data file yet. `parse` validates the data.
-export async function loadDrive(token: AccessToken, parse: (raw: unknown) => WealthData): Promise<{ data: WealthData; state: DriveState } | null> {
+// Returns null when the user has no data file yet. `parse` validates the data. A part the summary
+// names but Drive does not list stops opening (MissingPartError) unless it is in `skip`.
+export async function loadDrive(token: AccessToken, parse: (raw: unknown) => WealthData, skip: readonly string[] = []): Promise<{ data: WealthData; state: DriveState } | null> {
   const fileId = await findDataFile(token)
   if (!fileId) return null
   const main = await readFile(token, fileId)
@@ -253,10 +273,12 @@ export async function loadDrive(token: AccessToken, parse: (raw: unknown) => Wea
   const summary = parseSummary(stored)
   // Every part the summary names must still be there, or a save would create it again without its records.
   const listed = byPartName(await listParts(token, datasetId))
+  const absent = Object.keys(summary.parts).filter((name) => !chosenFile(listed.get(name), summary.parts[name]))
+  if (absent.some((name) => !skip.includes(name))) throw new MissingPartError(absent)
   const parts = new Map<string, StoredPart>()
-  for (const name of new Set([...listed.keys(), ...Object.keys(summary.parts)])) parts.set(name, pick(name, listed.get(name), summary.parts[name]))
+  for (const name of new Set([...listed.keys(), ...Object.keys(summary.parts)])) if (!absent.includes(name)) parts.set(name, pick(name, listed.get(name), summary.parts[name]))
   const data = withParts(parse(joinData(rest, [])), new Set())
-  const state: DriveState = { datasetId, main, split: true, parts, summary, rules }
+  const state: DriveState = { datasetId, main, split: true, parts, summary, rules, ...(absent.length && { skipped: absent }) }
   await refreshSummary(token, state)
   return { data, state }
 }
@@ -339,6 +361,9 @@ export function mergeParts(data: WealthData, parts: Part[], parse: (raw: unknown
 export async function saveDrive(token: AccessToken, data: WealthData, state: DriveState, now = data.updatedAt): Promise<WealthData> {
   const held = partsOf(data)
   const { main, parts } = splitData(data, state.datasetId, now, [...state.parts.keys()].filter((name) => partGroup(name) === 'history'))
+  // A part left out at opening may still hold records: writing it now would hide them.
+  const blocked = state.skipped?.filter((name) => parts.has(name)) ?? []
+  if (blocked.length) throw new Error(`這次修改有紀錄落在找不到的分檔 ${fileNames(blocked)} 的期間，寫入會蓋過檔案中原有的紀錄，已停止儲存。請先從 Drive 的垃圾桶還原該檔案並重新載入，或移除這段期間的修改。`)
   const before = state.main ? (parseJson(state.main.text) as Record<string, unknown>) : {}
 
   // A part this save would create may already be in Drive: made by an earlier save whose reply

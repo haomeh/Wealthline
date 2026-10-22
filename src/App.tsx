@@ -16,7 +16,7 @@ import {
   type UserProfile,
 } from './google/auth'
 import { DATA_FILE_NAME, FOLDER_NAME, HISTORY_FOLDER_NAME, LEDGER_FOLDER_NAME } from './google/drive'
-import { archiveSummary, emptyDriveState, ledgerCashflow, ledgerScope, loadDrive, mergeParts, missingParts, readGroup, recentLedgerFrom, saveDrive, storedSizes, withHeldParts, type DriveState, type PartGroup } from './google/driveStore'
+import { MissingPartError, archiveSummary, emptyDriveState, ledgerCashflow, ledgerScope, loadDrive, mergeParts, missingParts, readGroup, recentLedgerFrom, saveDrive, skippedNotice, storedSizes, withHeldParts, type DriveState, type PartGroup } from './google/driveStore'
 import { ledgerPart } from './dataParts'
 import { applyFetchedRates, emptyData, missingRates, parseWealthData, ratesStale, usedCurrencies, type WealthData } from './model'
 import { finishSave } from './saveState'
@@ -174,7 +174,11 @@ export default function App() {
     try {
       p = await fetchProfile(t)
       setOpening({ step: 'drive', profile: p })
-      file = await loadDrive(t, parseWealthData)
+      file = await loadDrive(t, parseWealthData).catch((e) => {
+        // A part file Drive does not list: the user may open without it, nothing is removed.
+        if (!(e instanceof MissingPartError) || !confirm(`${e.message}\n\n要先開啟其他資料嗎？找不到的分檔中的紀錄這次不會顯示，主檔仍保留它的記錄，檔案還原後重新載入就會出現。`)) throw e
+        return loadDrive(t, parseWealthData, e.names)
+      })
     } finally {
       setOpening(null)
     }
@@ -326,6 +330,7 @@ export default function App() {
   async function completeData(from: WealthData, strict = false): Promise<WealthData | null> {
     const state = driveState.current
     if (localMode.current || !state) return from
+    if (state.skipped && !confirm(`${skippedNotice(state.skipped)}\n\n備份不會包含這些分檔中的紀錄。要下載嗎？`)) return null
     try {
       let full = from
       for (const group of ['ledger', 'history'] as const) full = mergeParts(full, await readGroup(await validToken(), state, group), parseWealthData)
@@ -879,6 +884,7 @@ export default function App() {
           <p>{status.text}</p>
           {data && <button onClick={() => void completeData(data).then((full) => full && downloadDataFile(full, 'wealthline-local-backup.json'))}>下載本機資料備份</button>}
         </div>}
+        {data && !local && driveState.current?.skipped && <div className="banner warn" role="status"><p>{skippedNotice(driveState.current.skipped)}</p></div>}
         {(tab === 'overview' || tab === 'cashflow' || tab === 'expenses' || tab === 'bank-transactions') && <StorageNotice bytes={storedBytes} browser={local ? browserStorage : undefined} />}
 
         {data && (tab === 'cashflow' || tab === 'expenses' || tab === 'bank-transactions') && <div className="segmented cashflow-tabs mobile-only" role="group" aria-label="收支分頁">

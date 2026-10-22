@@ -291,6 +291,11 @@ textarea {
   word-break: break-word;
 }
 
+.banner.warn {
+  background: var(--warn-wash);
+  word-break: break-word;
+}
+
 .storage-notice.warn {
   background: var(--warn-wash);
 }
