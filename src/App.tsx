@@ -1,5 +1,5 @@
 import { dataVersion } from './dataVersion'
-import { Fragment, Suspense, lazy, useEffect, useMemo, useReducer, useRef, useState } from 'react'
+import { Suspense, lazy, useEffect, useMemo, useReducer, useRef, useState } from 'react'
 import {
   clearSession,
   fetchProfile,
@@ -15,14 +15,12 @@ import {
   type AccessToken,
   type UserProfile,
 } from './google/auth'
-import { DATA_FILE_NAME, FOLDER_NAME, HISTORY_FOLDER_NAME, LEDGER_FOLDER_NAME } from './google/drive'
 import { clearHistoryCache } from './priceHistory'
-import { MissingPartError, archiveSummary, emptyDriveState, ledgerCashflow, ledgerScope, loadDrive, mergeParts, missingParts, readGroup, recentLedgerFrom, saveDrive, skippedNotice, storedSizes, withHeldParts, type DriveState, type PartGroup } from './google/driveStore'
+import { MissingPartError, emptyDriveState, loadDrive, mergeParts, missingParts, readGroup, saveDrive, skippedNotice, storedSizes, withHeldParts, type DriveState } from './google/driveStore'
 import { ledgerPart } from './dataParts'
 import { applyFetchedRates, emptyData, missingRates, parseWealthData, ratesStale, usedCurrencies, type WealthData } from './model'
 import { finishSave } from './saveState'
 import { classifyBankTransaction } from './bankTransactions'
-import type { LedgerReadiness } from './cashflowQuery'
 import { clearLocal, downloadDataFile, hasLocalData, loadLocal, opensLocal, readDataFile, readLocalPreview, replaceLocal, saveLocal, setLocalActive, storageEstimate, LocalConflictError, type LocalFile, type LocalPreview } from './localStore'
 import { localDate, pendingChanges, pendingLiabilityChanges, recordSave, revertChange, revertLiabilityChange } from './history'
 import { applyQuotes, fetchHoldingQuotes } from './quotes'
@@ -31,8 +29,6 @@ import { Accounts, type AccountsView } from './views/Accounts'
 import { Liabilities } from './views/Liabilities'
 import { Expenses } from './views/Expenses'
 import { BankTransactions } from './views/BankTransactions'
-import type { ImportPlan } from './views/StatementImportEntry'
-import type { BatchResults } from './views/StatementImportBatch'
 import { Overview } from './views/Overview'
 import { Cashflow } from './views/Cashflow'
 import { Rates } from './views/Rates'
@@ -41,11 +37,13 @@ import { More } from './views/More'
 import { Landing } from './views/Landing'
 import { Opening, type OpeningStep } from './views/Opening'
 import { LegalPage } from './views/Legal'
-import { PAGES, goBack, navigate, usePage, useRouteLocation } from './site'
-import { MOBILE_TABS, NAV_GROUPS, TABS, parseRoute, routePath, tabPath, type Route, type Tab } from './routes'
-import { Link, Logo, PrivacyNotice, SiteFooter } from './views/Site'
-import { DeviceIcon, UploadButton } from './views/LocalData'
-import { StorageMeter, StorageNotice } from './views/StorageMeter'
+import { goBack, navigate, usePage, useRouteLocation } from './site'
+import { parseRoute, routePath, tabPath, type Route } from './routes'
+import { PrivacyNotice, SiteFooter } from './views/Site'
+import { StorageNotice } from './views/StorageMeter'
+import { Avatar, CashflowTabs, DataMenu, MenuFoot, SaveBar, Sidebar, SyncPill, TabBar, type SyncState } from './views/AppFrame'
+import { usePartGroups } from './usePartGroups'
+import { useImportPlan } from './useImportPlan'
 import { DataPrivacy } from './views/DataPrivacy'
 import { summarizeBackup } from './backupPreview'
 import { BackupRestore } from './views/BackupRestore'
@@ -75,8 +73,6 @@ function savedLabel(iso: string) {
 }
 
 type Status = { kind: 'idle' } | { kind: 'busy'; text: string } | { kind: 'error'; text: string }
-
-const GROUP_NAMES: Record<PartGroup, string> = { ledger: '消費明細與銀行流水', history: '往年歷史' }
 
 // This page load is the return from Google's sign-in page with a token.
 function hasRedirectToken(): boolean {
@@ -109,15 +105,6 @@ export default function App() {
   const [storedBytes, setStoredBytes] = useState(0)
   // Drive: how many files the data takes and their total size.
   const [storedTotal, setStoredTotal] = useState({ files: 0, bytes: 0 })
-  // Drive: transactions and earlier years of history are read when a page needs them
-  // (driveStore.ts). A load in progress, or the message of a failed one.
-  const [groupLoad, setGroupLoad] = useState<Partial<Record<PartGroup, string>>>({})
-  // A detected statement batch (import entry): files by kind, the typed password and the detection report. Memory only.
-  const [importPlan, setImportPlan] = useState<(ImportPlan & { results: BatchResults }) | null>(null)
-  const groupLoads = useRef(new Map<PartGroup, Promise<void>>())
-  // Drive: the oldest transaction part the bank page asked for with 載入更早的 ('' for all);
-  // null until then, when it reads the last three months (recentLedgerFrom).
-  const [bankFrom, setBankFrom] = useState<string | null>(null)
   const [summaryVersion, setSummaryVersion] = useState(0)
   // Local mode: how much of this browser's storage the site uses, when the browser says.
   const [browserStorage, setBrowserStorage] = useState<{ usage: number; quota: number } | null>(null)
@@ -202,8 +189,7 @@ export default function App() {
     storeSession({ profile: p, token: t })
     setUser(p)
     driveState.current = file?.state ?? emptyDriveState()
-    setGroupLoad({})
-    setBankFrom(null)
+    resetGroups()
     startSession(file?.data ?? null)
   }
 
@@ -311,34 +297,6 @@ export default function App() {
     const sizes = storedSizes(driveState.current)
     setStoredBytes(Math.max(0, ...sizes))
     setStoredTotal({ files: sizes.length, bytes: sizes.reduce((a, b) => a + b, 0) })
-  }
-
-  // Reads the parts of `group` the data does not hold yet, or only the parts named in `only`, and
-  // adds their records. Edits not saved yet are kept over the records read (mergeParts).
-  function loadGroup(group: PartGroup, only?: readonly string[]): Promise<void> {
-    const state = driveState.current
-    const running = groupLoads.current.get(group)
-    if (running) return running.then(() => loadGroup(group, only))
-    if (localMode.current || !state || only?.length === 0) return Promise.resolve()
-    const session = sessionVersion.current
-    setGroupLoad((s) => ({ ...s, [group]: 'loading' }))
-    const task = (async () => {
-      try {
-        const parts = await readGroup(await validToken(), state, group, only)
-        if (session !== sessionVersion.current) return
-        const base = saved.current ?? undefined
-        if (saved.current) saved.current = mergeParts(saved.current, parts, parseWealthData)
-        setData((d) => d && mergeParts(d, parts, parseWealthData, base))
-        measureStored(saved.current)
-        setGroupLoad((s) => ({ ...s, [group]: undefined }))
-      } catch (e) {
-        if (session === sessionVersion.current) setGroupLoad((s) => ({ ...s, [group]: `無法載入${GROUP_NAMES[group]}：${e instanceof Error ? e.message : String(e)}` }))
-      } finally {
-        groupLoads.current.delete(group)
-      }
-    })()
-    groupLoads.current.set(group, task)
-    return task
   }
 
   // The data with every record, for a backup: parts not loaded yet are read first. When they
@@ -492,8 +450,7 @@ export default function App() {
       saved.current = null
       // The tickers asked for in the last minute are this account's holdings.
       clearHistoryCache()
-      setGroupLoad({})
-      setBankFrom(null)
+      resetGroups()
       setReturning(null)
       setRefreshing(false)
       setUser(null)
@@ -660,45 +617,9 @@ export default function App() {
 
   const busy = saving || status.kind === 'busy'
 
-  // Drive parts the current page needs. The overview uses the stored summaries and reads the
-  // parts only when a summary is missing.
-  const state = !local ? driveState.current : null
-  const missing = (group: PartGroup) => !!state && !!data && missingParts(state, data, group).length > 0
-  const archive = state && missing('history') ? archiveSummary(state) : null
-  // Transactions: the monthly totals while some parts are not loaded, from the records loaded
-  // and the summary of the rest (ledgerCashflow); undefined once all are loaded.
-  const ledgerMissing = state && data ? missingParts(state, data, 'ledger') : []
-  const ledgerReadiness: LedgerReadiness = !ledgerMissing.length ? 'ready' : groupLoad.ledger === 'loading' ? 'loading' : groupLoad.ledger ? 'error' : 'not-loaded'
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const ledgerMonths = useMemo(() => state && data && ledgerMissing.length ? ledgerCashflow(state, data) : undefined, [state, data, summaryVersion])
-  const ledger = state && data ? ledgerScope(state, data) : null
-  // The bank page shows once the parts of the last three months are loaded; earlier quarters
-  // load when it asks (bankFrom). The expense and cashflow pages read every part.
-  const recentFrom = state ? recentLedgerFrom(state, localDate(new Date().toISOString())) : ''
-  const bankFocused = route.tab === 'bank-transactions' && !!route.recordId
-  const bankShown = bankFocused ? !ledgerMissing.length : !ledgerMissing.some((name) => name >= recentFrom)
-  // A record dated in a part not loaded (an edit or a new record) loads that part, so every
-  // record shown belongs to a loaded part and a later save rewrites that part as a whole.
-  const recordParts = ledgerMissing.length && data ? new Set([...(data.bankTransactions ?? []), ...(data.expenses ?? [])].map((r) => ledgerPart(r.date))) : null
-  const ledgerWanted = !ledgerMissing.length ? []
-    : tab === 'expenses' || tab === 'cashflow' || bankFocused || (tab === 'overview' && !ledgerMonths) ? ledgerMissing
-      : ledgerMissing.filter((name) => (tab === 'bank-transactions' && name >= (bankFrom ?? recentFrom)) || recordParts?.has(name))
-  const needsHistory = missing('history') && (route.tab === 'history' || (route.tab === 'accounts' && route.page === 'detail') || (tab === 'overview' && !archive))
-  useEffect(() => {
-    if (ledgerWanted.length && !groupLoad.ledger) void loadGroup('ledger', ledgerWanted)
-    if (needsHistory && !groupLoad.history) void loadGroup('history')
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ledgerWanted.join(), needsHistory])
-  const loadEarlier = (from: string) => {
-    setBankFrom(from)
-    void loadGroup('ledger', ledgerMissing.filter((name) => name >= from))
-  }
-  const waiting = (group: PartGroup, only?: readonly string[]) => {
-    const failed = groupLoad[group] && groupLoad[group] !== 'loading' ? groupLoad[group] : ''
-    return <section className="panel" aria-busy={!failed}>{failed
-      ? <div className="banner error" role="alert"><p>{failed}</p><button onClick={() => void loadGroup(group, only)}>重試</button></div>
-      : <p className="muted">正在載入{GROUP_NAMES[group]}…</p>}</section>
-  }
+  const { groupLoad, resetGroups, loadGroup, missing, archive, ledgerReadiness, ledgerMonths, ledger, bankShown, ledgerWanted, loadEarlier, waiting } =
+    usePartGroups({ driveState, localMode, sessionVersion, saved, setData, measureStored, validToken }, data, local, route, summaryVersion)
+  const { importPlan, goImport, openImportFrom, cancelEntry, startPlan, finishPlan, importingStatements, goTab, importEntry, openImportEntry } = useImportPlan(route)
 
   // Bank rows still to classify, for the sidebar badge: from the rows, or with the stored monthly totals for parts not loaded.
   const bankRows = data?.bankTransactions, bankRules = data?.bankCategoryRules
@@ -708,73 +629,16 @@ export default function App() {
 
   const go = (r: Route, replace = false) => navigate(routePath(r), { replace })
   const goAccounts = (view: AccountsView, replace = false) => go({ tab: 'accounts', ...view }, replace)
-  // Card and bank statements share one import entry, /cashflow/import, which detects each file's kind.
-  // The card and bank pages open it too; cancelling returns to the page it was opened from.
-  // /expenses/import and /bank-transactions/import still open a kind's own screen, for old links.
   const passwordScope = local ? 'local' : user ? `google:${user.sub}` : undefined
-  const goImport = (kind: 'expenses' | 'bank-transactions', importing = true, replace = true) => go({ tab: kind, importing }, replace)
-  const importFrom = useRef<Tab>('cashflow')
-  const openImportFrom = (from: Tab) => { importFrom.current = from; go({ tab: 'cashflow', importing: true }) }
-  // A detected batch stays on the entry's URL: its card and bank statements import side by side, one tab each.
-  const startPlan = (plan: ImportPlan) => setImportPlan({ ...plan, results: {} })
-  const finishPlan = (kind: 'card' | 'bank' | 'securities', result: string) => setImportPlan((p) => p && { ...p, results: { ...p.results, [kind]: result } })
-  const importingStatements = (route.tab === 'expenses' || route.tab === 'bank-transactions') && !!route.importing
-  // Files and the typed password of a detected batch stay in memory only while one of its import screens is open.
-  const inImport = importingStatements || (route.tab === 'cashflow' && !!route.importing)
-  useEffect(() => { if (!inImport) { setImportPlan(null); importFrom.current = 'cashflow' } }, [inImport])
-  const goTab = (t: Tab) => { if (t !== tab || !importingStatements) navigate(tabPath(t)) }
-  // The one statement import entry (/cashflow/import), fixed in the sidebar and the phone's 收支 tabs.
-  // An import already open keeps its screen; its kind switch offers 自動判斷.
-  const importEntry = route.tab === 'cashflow' && !!route.importing
-  const openImportEntry = () => { if (!inImport) go({ tab: 'cashflow', importing: true }) }
 
   // The account menu's parts, shared by the sidebar menu and the phone's 更多 page.
-  const avatar = user
-    ? user.picture ? <img src={user.picture} alt="" referrerPolicy="no-referrer" /> : <span className="avatar">{user.email[0]}</span>
-    : <span className="avatar"><DeviceIcon /></span>
-  const dataMenu = user ? <>
-    <div className="menu-where">
-      <span>
-        我的雲端硬碟 / {FOLDER_NAME} / {DATA_FILE_NAME}<br />消費明細、銀行流水與往年歷史在「{LEDGER_FOLDER_NAME}」「{HISTORY_FOLDER_NAME}」子資料夾
-      </span>
-      {storedBytes > 0 && <StorageMeter bytes={storedBytes} total={storedTotal} />}
-    </div>
-    <button onClick={() => void downloadBackup()} disabled={busy || dirty || !saved.current}>
-      下載完整備份
-    </button>
-    {dirty ? <span className="muted small">請先儲存變更，再下載備份。</span> : <span className="muted small">一個檔案包含所有資料，可在本機模式上傳還原。</span>}
-  </> : <>
-    <div className="menu-where">
-      <span>資料只存在這個瀏覽器。清除網站資料、換瀏覽器或換裝置都看不到，請定期下載資料檔備份。</span>
-      {storedBytes > 0 && <StorageMeter bytes={storedBytes} browser={browserStorage} />}
-    </div>
-    <button onClick={() => saved.current && downloadDataFile(saved.current)} disabled={busy || dirty || !saved.current}>
-      下載資料檔
-    </button>
-    {dirty ? <span className="muted small">請先儲存變更，再下載資料檔。</span> : !saved.current && <span className="muted small">儲存過資料後就能下載。</span>}
-    <UploadButton onFile={upload} disabled={busy}>上傳資料檔</UploadButton>
-    <button onClick={() => leaveLocal()} disabled={saving}>
-      離開本機模式
-    </button>
-    <button className="danger" onClick={() => leaveLocal(true)} disabled={saving}>
-      刪除此瀏覽器中的資料
-    </button>
-  </>
-  const menuFoot = <div className="menu-foot">
-    <Link to={PAGES.privacy.path} className="small">
-      隱私權政策 Privacy Policy
-    </Link>
-    {user && <button className="link danger" onClick={signOut} disabled={busy}>
-      登出
-    </button>}
-  </div>
-  // The save state in one short line, for the phone's page headers.
-  const syncState = dirty ? 'dirty' : refreshing || saving ? 'busy' : status.kind === 'error' ? 'error' : 'ok'
-  const syncPill = <span className={`sync-pill ${syncState}`}>
-    {syncState === 'dirty' ? '● 有修改未儲存' : syncState === 'busy' ? (saving ? '儲存中…' : '更新報價…') : syncState === 'error' ? '同步未完成' : <><span aria-hidden>✓</span> {local ? '已存在此瀏覽器' : '已同步'}</>}
-  </span>
+  const avatar = <Avatar user={user} />
+  const dataMenu = <DataMenu google={!!user} storedBytes={storedBytes} storedTotal={storedTotal} browserStorage={browserStorage} busy={busy} saving={saving} dirty={dirty} hasSaved={!!saved.current}
+    onDownloadBackup={() => void downloadBackup()} onDownloadFile={() => saved.current && downloadDataFile(saved.current)} onUpload={upload} onLeaveLocal={() => leaveLocal()} onDeleteLocal={() => leaveLocal(true)} />
+  const menuFoot = <MenuFoot signedIn={!!user} busy={busy} onSignOut={signOut} />
+  const syncState: SyncState = dirty ? 'dirty' : refreshing || saving ? 'busy' : status.kind === 'error' ? 'error' : 'ok'
+  const syncPill = <SyncPill state={syncState} saving={saving} local={local} />
   const unsavedCount = dirty && data ? pendingChanges(saved.current, data).length + pendingLiabilityChanges(saved.current, data).length : 0
-  const mobileTab = MOBILE_TABS.find((t) => t.pages.includes(tab))?.tab
 
   if (page) return <LegalPage page={page} signedIn={!!user || local} />
 
@@ -797,68 +661,9 @@ export default function App() {
 
   return (
     <div className="app-enter shell">
-      <aside className="sidebar" aria-label="導覽">
-        <div className="brand">
-          <Logo size={32} />
-          <span className="brand-name">Wealthline</span>
-        </div>
-        <nav className="side-nav" aria-label="分頁">
-          {NAV_GROUPS.map((g) => (
-            <Fragment key={g.label}>
-              <span className="nav-group">{g.label}</span>
-              {g.tabs.map((t) => (
-                <button
-                  key={t}
-                  className={t === tab && !importEntry ? 'active' : ''}
-                  aria-current={t === tab && !importEntry ? 'page' : undefined}
-                  onClick={() => goTab(t)}
-                >
-                  {TABS[t]}
-                  {t === 'bank-transactions' && unclassified > 0 && <span className="nav-badge" title={`${unclassified} 筆銀行流水未分類`}>{unclassified}</span>}
-                </button>
-              ))}
-              {g.tabs.includes('cashflow') && <button className={importEntry ? 'active' : ''} aria-current={importEntry ? 'page' : undefined} disabled={importingStatements} title={importingStatements ? '正在匯入；可在匯入畫面切換為自動判斷' : undefined} onClick={openImportEntry}>匯入帳單</button>}
-            </Fragment>
-          ))}
-        </nav>
-        <div className="side-foot">
-          {dirty ? (
-            <div className="sync-card dirty" role="status">
-              <strong>● 有修改未儲存</strong>
-              <span>關閉分頁前會提醒你</span>
-              <button className="primary save" onClick={requestSave} disabled={busy}>
-                {busy ? '儲存中…' : '儲存變更'}
-              </button>
-            </div>
-          ) : refreshing || saving ? (
-            <div className="sync-card refreshing" role="status">
-              <strong><span className="spinner" aria-hidden /> {saving ? '儲存中…' : '更新報價'}</strong>
-            </div>
-          ) : status.kind === 'error' ? (
-            <div className="sync-card"><strong className="muted">同步未完成</strong></div>
-          ) : (
-            <div className="sync-card" title={local ? '資料存在這個瀏覽器的儲存空間（IndexedDB）' : `我的雲端硬碟 / ${FOLDER_NAME}`}>
-              <strong className="synced"><span aria-hidden>✓</span> {local ? '已存在此瀏覽器' : '已同步 Google Drive'}</strong>
-              {savedAt && <span>{savedAt} 儲存</span>}
-            </div>
-          )}
-          <details className="account-menu">
-            <summary aria-label={user ? '帳號選單' : '本機模式選單'}>
-              {avatar}
-              <span className="who"><span>{user ? user.name : '本機模式'}</span><small>{user ? '帳號與備份' : '資料與備份'}</small></span>
-            </summary>
-            <div className="menu">
-              {user ? <div className="menu-who">
-                {avatar}
-                <div><strong>{user.name}</strong><span className="muted small">{user.email}</span></div>
-              </div> : <strong>本機模式（未登入）</strong>}
-              <button onClick={openDataPrivacy}>資料與隱私</button>
-              {dataMenu}
-              {menuFoot}
-            </div>
-          </details>
-        </div>
-      </aside>
+      <Sidebar tab={tab} importEntry={importEntry} importingStatements={importingStatements} unclassified={unclassified} onTab={goTab} onImportEntry={openImportEntry}
+        dirty={dirty} busy={busy} refreshing={refreshing} saving={saving} syncError={status.kind === 'error'} local={local} savedAt={savedAt} user={user}
+        onRequestSave={requestSave} onDataPrivacy={openDataPrivacy} dataMenu={dataMenu} menuFoot={menuFoot} />
 
       {dataPrivacyOpen && (user || local) && <DataPrivacy
         mode={local ? 'local' : 'google'}
@@ -907,10 +712,7 @@ export default function App() {
         {data && !local && driveState.current?.skipped && <div className="banner warn" role="status"><p>{skippedNotice(driveState.current.skipped)}</p></div>}
         {(tab === 'overview' || tab === 'cashflow' || tab === 'expenses' || tab === 'bank-transactions') && <StorageNotice bytes={storedBytes} browser={local ? browserStorage : undefined} />}
 
-        {data && (tab === 'cashflow' || tab === 'expenses' || tab === 'bank-transactions') && <div className="segmented cashflow-tabs mobile-only" role="group" aria-label="收支分頁">
-          {([['cashflow', '總覽'], ['expenses', '信用卡'], ['bank-transactions', '銀行流水']] as const).map(([t, label]) => <button key={t} className={t === tab && !importEntry ? 'on' : ''} aria-pressed={t === tab && !importEntry} onClick={() => goTab(t)}>{label}{t === 'bank-transactions' && unclassified > 0 && <span className="nav-badge" title={`${unclassified} 筆銀行流水未分類`}>{unclassified}</span>}</button>)}
-          <button className={importEntry ? 'on' : ''} aria-pressed={importEntry} disabled={importingStatements} onClick={openImportEntry}>匯入</button>
-        </div>}
+        {data && (tab === 'cashflow' || tab === 'expenses' || tab === 'bank-transactions') && <CashflowTabs tab={tab} importEntry={importEntry} importingStatements={importingStatements} unclassified={unclassified} onTab={goTab} onImportEntry={openImportEntry} />}
         {data && tab === 'more' && <More
           who={<>{avatar}<div><strong>{user ? user.name : '本機模式'}</strong><span className="muted small">{user ? user.email : '資料只存在這個瀏覽器'}</span></div>{syncPill}</>}
           links={[
@@ -945,7 +747,7 @@ export default function App() {
         {/* The cashflow page shows the stored totals while the records load; a failed load still needs its 重試. */}
         {data && tab === 'cashflow' && missing('ledger') && groupLoad.ledger && groupLoad.ledger !== 'loading' && waiting('ledger')}
         {data && route.tab === 'cashflow' && route.importing && !importPlan && <StatementImportEntry passwords={data.statementPasswords ?? []} passwordScope={passwordScope} busy={busy}
-          onCancel={() => { const from = importFrom.current; importFrom.current = 'cashflow'; navigate(tabPath(from), { replace: true }) }} onContinue={startPlan} />}
+          onCancel={cancelEntry} onContinue={startPlan} />}
         {data && route.tab === 'cashflow' && route.importing && importPlan && (missing('ledger') ? (!groupLoad.ledger || groupLoad.ledger === 'loading') && waiting('ledger') : <StatementImportBatch
           plan={importPlan} dirty={dirty} onClose={() => go({ tab: 'cashflow' }, true)}
           card={<Expenses key="batch-card" passwordScope={passwordScope} data={data} onChange={update} busy={busy} importing queued={{ files: importPlan.card, password: importPlan.password, prepared: importPlan.prepared }}
@@ -1020,19 +822,8 @@ export default function App() {
       </main>
       <SiteFooter />
       </div>
-      {dirty && <div className="save-bar">
-        <span>{unsavedCount ? `${unsavedCount} 筆修改未儲存` : '有修改未儲存'}</span>
-        <button className="primary" onClick={requestSave} disabled={busy}>{saving ? '儲存中…' : '檢查並儲存'}</button>
-      </div>}
-      <nav className="tab-bar" aria-label="主要分頁">
-        {MOBILE_TABS.map((t) => (
-          <button key={t.tab} className={t.tab === mobileTab ? 'active' : ''} aria-current={t.tab === mobileTab ? 'page' : undefined} onClick={() => navigate(tabPath(t.tab))}>
-            <span className={`tab-icon ${t.tab}`} aria-hidden />
-            {t.label}
-            {t.tab === 'cashflow' && unclassified > 0 && <span className="nav-badge" title={`${unclassified} 筆銀行流水未分類`}>{unclassified}</span>}
-          </button>
-        ))}
-      </nav>
+      {dirty && <SaveBar unsavedCount={unsavedCount} busy={busy} saving={saving} onRequestSave={requestSave} />}
+      <TabBar tab={tab} unclassified={unclassified} onTab={(t) => navigate(tabPath(t))} />
     </div>
   )
 }
