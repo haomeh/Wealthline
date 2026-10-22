@@ -352,6 +352,11 @@ export function mergeParts(data: WealthData, parts: Part[], parse: (raw: unknown
 // session read it. When Drive refuses a write part way (another device saved meanwhile), the
 // files already written are put back as they were.
 export async function saveDrive(token: AccessToken, data: WealthData, state: DriveState, now = data.updatedAt): Promise<WealthData> {
+  const rules = rulesFrom(data as unknown as Record<string, unknown>)
+  // A missing ledger cannot be recounted. Keep its rules hash valid until it is restored.
+  if (state.skipped?.some((name) => partGroup(name) === 'ledger') && canonicalHash(rulesOf(rules)) !== canonicalHash(rulesOf(state.rules))) {
+    throw new Error('修改分類規則需要所有流水分檔，已停止儲存。請先從 Drive 的垃圾桶還原缺少的分檔並重新載入。')
+  }
   const held = partsOf(data)
   const { main, parts } = splitData(data, state.datasetId, now, [...state.parts.keys()].filter((name) => partGroup(name) === 'history'))
   // A part left out at opening may still hold records: writing it now would hide them.
@@ -404,7 +409,6 @@ export async function saveDrive(token: AccessToken, data: WealthData, state: Dri
 
   // Every file is made, and checked against the size limit, before the first write. The
   // sequence continues from every part, read or not (their summary entries record theirs).
-  const rules = rulesFrom(data as unknown as Record<string, unknown>)
   const first = Math.max(-1, ...[...state.parts.values()].map((p) => p.part?.sequence ?? -1), ...Object.values(state.summary.parts).map((e) => e.sequence)) + 1
   const writes = ordered.map((name, i) => {
     const part: Part = { name, sequence: first + i, content: parts.get(name) ?? {} }

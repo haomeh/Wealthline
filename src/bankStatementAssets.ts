@@ -1,8 +1,17 @@
-import { accountIdentity, accountLabel, newId, type Account, type WealthData } from './model'
+import { accountIdentity, accountLabel, newId, type Account, type Position, type WealthData } from './model'
 import type { BankTransactionAccount } from './bankTransactions'
 import { localDate } from './history'
 import { historyCatalog, instrumentKey, parseQuantityDays, validDate, validatePastDate, type QuantityEntry, type QuantityDay } from './quantityHistory'
 const CASH_CURRENCIES=new Set(['TWD','USD','SGD','JPY','EUR','GBP','AUD','CAD','HKD','CHF','NZD','CNY'])
+
+// Session-only provenance follows position spreads, but never enters the saved position schema.
+const statementSource=Symbol('statementSource')
+type StatementPosition=Position & {[statementSource]?:{date:string;quantity:number}}
+function fromStatement(p:Position,date:string):Position { return {...p,[statementSource]:{date,quantity:p.quantity}} as StatementPosition }
+export function statementChangeDate(before:Position|undefined,after:Position|undefined):string|undefined {
+ const source=(after as StatementPosition|undefined)?.[statementSource]
+ return source&&source!==(before as StatementPosition|undefined)?.[statementSource]&&source.quantity===after?.quantity?source.date:undefined
+}
 
 export interface StatementCashBalance { bank:string; date:string; currency:string; quantity:number }
 export interface BankStatementBalance extends StatementCashBalance { id:string; ledgerAccountId:string; accountId:string; fileHash:string }
@@ -128,7 +137,7 @@ export function missingStatementAssets(data:WealthData):StatementAsset[] {
 /** Asset accounts for the missing banks (only those labels when given), under the ids their history already uses. */
 export function createStatementAssets(data:WealthData,labels?:ReadonlySet<string>):WealthData {
  const added=missingStatementAssets(data).filter(s=>!labels||labels.has(s.label)).map((s):Account=>{const identity=bankStatementIdentity(s.bank)!
-  return {id:s.accountId,name:identity.name,kind:'bank',country:identity.country,category:'現金與外幣活存',positions:s.balances.map(b=>({id:newId(),type:'cash',currency:b.currency,symbol:'',quantity:b.quantity,price:1}))}})
+  return {id:s.accountId,name:identity.name,kind:'bank',country:identity.country,category:'現金與外幣活存',positions:s.balances.map(b=>fromStatement({id:newId(),type:'cash',currency:b.currency,symbol:'',quantity:b.quantity,price:1},b.date))}})
  return added.length?{...data,accounts:[...data.accounts,...added]}:data
 }
 
@@ -151,7 +160,12 @@ export function statementAssetUpdates(data:WealthData,candidates:readonly Statem
   if(before===c.quantity||(before===null&&c.quantity<=0))return []
   // A currency the account has no balance in: known to be absent since the account's first saved position.
   const added=cash.length?cash[0].addedAt:account.positions.map(p=>p.addedAt).filter((at):at is string=>!!at).sort()[0]
-  const changed=data.history.changes.filter(e=>e.accountId===account.id&&e.type==='cash'&&e.currency===c.currency).map(e=>localDate(e.at)).sort().at(-1)??(added&&localDate(added))
+  const changes=data.history.changes.filter(e=>e.accountId===account.id&&e.type==='cash'&&e.currency===c.currency)
+  const pending=cash[0]&&statementChangeDate(undefined,cash[0])
+  const last=changes.slice().sort((a,b)=>a.at.localeCompare(b.at)).at(-1)
+  // An unsaved manual edit is not safe to replace either.
+  if(last&&!pending&&(last.after?.quantity??null)!==before)return []
+  const changed=[...changes.map(e=>e.statementDate??localDate(e.at)),...(pending?[pending]:[])].sort().at(-1)??(added&&localDate(added))
   if(!changed||changed>c.date)return []
   return [{accountId:account.id,label:accountLabel(account),currency:c.currency,date:c.date,before,after:c.quantity}]
  }).sort((a,b)=>a.label.localeCompare(b.label)||a.currency.localeCompare(b.currency))
@@ -161,8 +175,8 @@ export function applyStatementAssetUpdates(data:WealthData,updates:readonly Stat
  if(!updates.length)return data
  return {...data,accounts:data.accounts.map(a=>{
   const mine=updates.filter(u=>u.accountId===a.id);if(!mine.length)return a
-  const positions=a.positions.map(p=>{const u=p.type==='cash'&&mine.find(u=>u.currency===p.currency);return u?{...p,quantity:u.after}:p})
-  const added=mine.filter(u=>!a.positions.some(p=>p.type==='cash'&&p.currency===u.currency)).map(u=>({id:newId(),type:'cash' as const,currency:u.currency,symbol:'',quantity:u.after,price:1}))
+  const positions=a.positions.map(p=>{const u=p.type==='cash'&&mine.find(u=>u.currency===p.currency);return u?fromStatement({...p,quantity:u.after},u.date):p})
+  const added=mine.filter(u=>!a.positions.some(p=>p.type==='cash'&&p.currency===u.currency)).map(u=>fromStatement({id:newId(),type:'cash',currency:u.currency,symbol:'',quantity:u.after,price:1},u.date))
   return {...a,positions:[...positions,...added]}
  })}
 }

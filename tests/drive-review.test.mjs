@@ -160,6 +160,23 @@ test('the user may open without a part Drive no longer lists; nothing is removed
   assert.deepEqual(restored.data.expenses.map((e) => e.id).sort(), ['e1', 'e2', 'e3'])
 })
 
+for (const field of ['expenseCategoryRules', 'bankCategoryRules']) test(`missing ledger parts block ${field} changes before any write`, async () => {
+  await splitOnDrive(base({ expenses: [expense('e1', '2026-01-05'), expense('e2', '2026-07-05')] }))
+  const lost = filesOf('ledger-2026-Q1')[0]
+  lost.trashed = true
+  const { data, state } = await store.loadDrive(token, model.parseWealthData, ['ledger-2026-Q1'])
+  const summary = structuredClone(drive.main().summary)
+  const from = drive.log.length
+  await assert.rejects(store.saveDrive(token, { ...data, [field]: [{ keyword: 'Shop', category: '交通' }] }, state, NOW), /分類規則.*分檔/)
+  assert.deepEqual(writes(from), [])
+  assert.deepEqual(drive.main().summary, summary)
+  assert.deepEqual(state.summary, summary)
+  lost.trashed = false
+  const restored = await openAll()
+  await store.saveDrive(token, { ...restored.data, [field]: [{ keyword: 'Shop', category: '交通' }] }, restored.state, NOW)
+  assert.notEqual(drive.main().summary.rules, summary.rules)
+})
+
 test('a file tagged as a part but with an unknown part name is left out', async () => {
   await splitOnDrive()
   const datasetId = drive.main().datasetId

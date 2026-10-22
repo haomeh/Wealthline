@@ -26,7 +26,7 @@ test('the missing account is created under the id its history uses, with each cu
   assert.deepEqual(statements.missingStatementAssets(imported), [{ accountId: ledger.id, bank: 'Taishin', label: '台新銀行 (TW)', balances: [{ currency: 'TWD', quantity: 700000, date: '2026-09-30' }, { currency: 'USD', quantity: 1200, date: '2026-08-31' }] }])
   const data = { ...statements.createStatementAssets(imported), fxRates: { USD: 32 } }
   assert.equal(data.accounts.length, 1)
-  const [account] = data.accounts
+  const [account] = JSON.parse(JSON.stringify(data.accounts))
   assert.deepEqual({ ...account, positions: account.positions.map(({ id: _id, ...p }) => p) }, { id: ledger.id, name: '台新銀行', kind: 'bank', country: 'TW', category: '現金與外幣活存', positions: [{ type: 'cash', currency: 'TWD', symbol: '', quantity: 700000, price: 1 }, { type: 'cash', currency: 'USD', symbol: '', quantity: 1200, price: 1 }] })
   assert.equal(history.snapshotOf(data, now).total, 700000 + 1200 * 32)
   assert.deepEqual(statements.missingStatementAssets(data), [])
@@ -95,8 +95,46 @@ test('a newer statement can update the current balance, unless the user changed 
   const split = { ...first, accounts: first.accounts.map((a) => ({ ...a, positions: [...a.positions, { ...a.positions[0], id: 'second' }] })) }
   assert.deepEqual(statements.statementAssetUpdates(statements.importStatementBalances(split, sep.balances, now).data, sep.balances).map((u) => u.currency), ['USD'])
   // Saved before added dates were kept, with no change logged: when its balances were set is unknown, so nothing is offered.
-  assert.deepEqual(statements.statementAssetUpdates(statements.importStatementBalances(created, sep.balances, now).data, sep.balances), [])
+  assert.deepEqual(statements.statementAssetUpdates(statements.importStatementBalances(JSON.parse(JSON.stringify(created)), sep.balances, now).data, sep.balances), [])
   // No asset account yet: that is createAssets' job.
   const none = statements.importStatementBalances(empty(), sep.balances, now).data
   assert.deepEqual(statements.statementAssetUpdates(none, sep.balances), [])
+})
+
+test('late successive statement updates retain their source date across saves and reloads', () => {
+  const roundtrip = (data) => model.parseWealthData(JSON.parse(JSON.stringify(data)))
+  const patch = (data, date, quantity, hash) => ({ balances: [balance(date, quantity, hash)], balanceRevision: statements.statementBalanceRevision(data), updateAssets: true })
+  const imported = statements.importStatementBalances(empty(), [balance('2026-07-31', 600000, 'a')], now).data
+  const created = statements.createStatementAssets(imported)
+  let saved = roundtrip(history.recordSave(null, { ...created, updatedAt: now }))
+  assert.equal(saved.history.changes.at(-1).statementDate, '2026-07-31')
+  const august = ledgerEdits.applyBankLedger(saved, patch(saved, '2026-08-31', 650000, 'b'))
+  saved = roundtrip(history.recordSave(saved, { ...august, updatedAt: now }))
+  assert.equal(saved.accounts[0].positions[0].quantity, 650000)
+  assert.equal(saved.history.changes.at(-1).statementDate, '2026-08-31')
+  const september = ledgerEdits.applyBankLedger(saved, patch(saved, '2026-09-30', 700000, 'c'))
+  assert.equal(september.accounts[0].positions[0].quantity, 700000)
+  assert.equal(ledgerEdits.applyBankLedger(september, patch(september, '2026-09-15', 660000, 'e')).accounts[0].positions[0].quantity, 700000, 'unsaved September update blocks an older statement')
+  const persisted = history.recordSave(saved, { ...september, updatedAt: '2026-10-15T12:00:00Z' })
+  // A manual edit retains ordinary save-time semantics, even before a reload drops session markers.
+  const manual = { ...persisted, updatedAt: '2026-10-16T12:00:00Z', accounts: persisted.accounts.map(a => ({ ...a, positions: a.positions.map(p => ({ ...p, quantity: 680000 })) })) }
+  assert.equal(ledgerEdits.applyBankLedger(manual, patch(manual, '2026-10-10', 710000, 'd')).accounts[0].positions[0].quantity, 680000, 'pending manual edits stay intact')
+  assert.equal(ledgerEdits.applyBankLedger(persisted, patch(persisted, '2026-08-15', 620000, 'e')).accounts[0].positions[0].quantity, 700000, 'older statements cannot roll back the balance')
+  const edited = roundtrip(history.recordSave(persisted, manual))
+  assert.equal(edited.history.changes.at(-1).statementDate, undefined)
+  const blocked = ledgerEdits.applyBankLedger(edited, patch(edited, '2026-10-10', 710000, 'd'))
+  assert.equal(blocked.accounts[0].positions[0].quantity, 680000)
+  const malformed = JSON.parse(JSON.stringify(edited))
+  malformed.history.changes.at(-1).statementDate = '2026-99-99'
+  assert.throws(() => model.parseWealthData(malformed), /帳單日期/)
+})
+
+test('saving a late August sync does not block the September statement', () => {
+  const july = statements.createStatementAssets(statements.importStatementBalances(empty(), [balance('2026-07-31', 600000, 'a')], now).data)
+  const start = { ...july, accounts: july.accounts.map(a => ({ ...a, positions: a.positions.map(p => ({ ...p, addedAt: '2026-07-31T12:00:00Z' })) })) }
+  const august = ledgerEdits.applyBankLedger(start, { balances: [balance('2026-08-31', 650000, 'b')], balanceRevision: statements.statementBalanceRevision(start), updateAssets: true })
+  assert.equal(august.accounts[0].positions[0].quantity, 650000)
+  const saved = model.parseWealthData(JSON.parse(JSON.stringify(history.recordSave(start, { ...august, updatedAt: now }))))
+  const september = ledgerEdits.applyBankLedger(saved, { balances: [balance('2026-09-30', 700000, 'c')], balanceRevision: statements.statementBalanceRevision(saved), updateAssets: true })
+  assert.equal(september.accounts[0].positions[0].quantity, 700000)
 })
