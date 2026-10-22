@@ -701,9 +701,9 @@ export default function App() {
   }
 
   // Bank rows still to classify, for the sidebar badge: from the rows, or with the stored monthly totals for parts not loaded.
-  const unclassified = !data ? 0 : ledgerMonths
-    ? ledgerMonths.reduce((n, m) => n + m.totals.pending.count, 0)
-    : (data.bankTransactions ?? []).filter((t) => classifyBankTransaction(t, data.bankCategoryRules ?? []).kind === 'pending').length
+  const bankRows = data?.bankTransactions, bankRules = data?.bankCategoryRules
+  const pendingRows = useMemo(() => (bankRows ?? []).filter((t) => classifyBankTransaction(t, bankRules ?? []).kind === 'pending').length, [bankRows, bankRules])
+  const unclassified = !data ? 0 : ledgerMonths ? ledgerMonths.reduce((n, m) => n + m.totals.pending.count, 0) : pendingRows
   const savedAt = saved.current?.updatedAt ? savedLabel(saved.current.updatedAt) : ''
 
   const go = (r: Route, replace = false) => navigate(routePath(r), { replace })
