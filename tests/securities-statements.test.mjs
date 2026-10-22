@@ -153,6 +153,9 @@ test('listed tickers are left to the quote update under the symbol the lookup un
   assert.equal(csv({ exchange: 'SGX', symbol: 'C6L', currency: 'SGD' }), 'position,x,investment,SG,SGD,C6L.SI,2,')
   assert.equal(csv({ exchange: 'US', symbol: 'BRK.B' }), 'position,x,investment,SG,USD,BRK-B,2,')
   assert.equal(csv({ exchange: 'HK', symbol: '700', currency: 'HKD' }), 'position,x,investment,SG,HKD,0700.HK,2,')
+  assert.equal(csv({ exchange: 'HK', symbol: '00700', currency: 'HKD' }), 'position,x,investment,SG,HKD,0700.HK,2,')
+  assert.equal(csv({ exchange: 'HK', symbol: '09988', currency: 'HKD' }), 'position,x,investment,SG,HKD,9988.HK,2,')
+  assert.equal(csv({ exchange: 'HK', symbol: '80700', currency: 'HKD' }), 'position,x,investment,SG,HKD,80700.HK,2,')
   assert.equal(csv({ exchange: 'FD', symbol: 'SGXZ40088619', currency: 'SGD' }), 'position,x,investment,SG,SGD,SGXZ40088619,2,30')
 })
 
@@ -167,4 +170,12 @@ test('every figure the statement states about itself is checked: trades, cash, e
   expect([summary('75.00', { transit: '20.00' }), positionPage(), endingPage({ transitBase: '25.00', transitTotal: '25.00' }), cashPage()], 'transit-amount-mismatch')
   // A statement that checks out raises none of them.
   assert.deepEqual(parse(withTransit()).warnings, [])
+})
+
+test('Hong Kong numeric codes are looked up with four digits below 10000', async () => {
+  const { candidates } = await server.ssrLoadModule('/src/quotes.ts')
+  assert.deepEqual(candidates('00700', 'HK', false), ['0700.HK'])
+  assert.deepEqual(candidates('700', 'HK', false), ['0700.HK'])
+  assert.deepEqual(candidates('80700', 'HK', false), ['80700.HK'])
+  assert.deepEqual(candidates('2330', 'TW', false), ['2330.TW', '2330.TWO'])
 })

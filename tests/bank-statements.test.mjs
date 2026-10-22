@@ -512,6 +512,21 @@ test('Taishin two-line summary around a row and the foreign table with printed z
  assert.equal(r.status,'recognized');assert.equal(r.sections[0].rows[0].description,'跨行轉帳手續費')
  assert.deepEqual(r.sections.map(s=>[s.currency,s.noTransactions,...s.rows.map(w=>w.direction+w.amount)]),[['TWD',false,'debit15'],['JPY',true],['USD',false,'credit0.12','debit20']])
 })
+test('Taishin never drops a row silently: a malformed amount beside a printed $0, or a next page whose continuation is not proven',()=>{
+ const fx=(y,text,currency,debit,credit)=>[...taishinRow(y,'2031/04/21',text,debit,credit,[317,377],[57,124,175]),item(currency,231,y)]
+ const fxHead=[...mast('台新銀行綜合對帳單'),item('外幣帳戶的往來明細',49,720),...taishinHeader(700,[135,185,272,331,396],'帳戶餘額',true)]
+ for(const bad of ['-5.00','(5.00)','US$5.00','5.000','$1,2345']){
+  const r=bank.parseBankStatement([page(1,[...fxHead,...fx(680,'REMIT','USD','$0',bad)])])
+  assert.notEqual(r.status,'recognized',bad);assert.equal(r.sections[0].noTransactions,false,bad);assert.ok(r.rejectedCount>0,bad)
+ }
+ const head=[...mast('台新銀行綜合對帳單'),item('新臺幣帳戶的往來明細',49,720),...taishinHeader(700,[135,185,272,331,396])]
+ const first=page(1,[...head,...taishinRow(680,'2031/04/08','轉帳支取','$1,200',''),...taishinRow(40,'2031/04/10','轉帳存入','','$70')])
+ for(const top of [[],[item('第 2 頁',30,840)],[item('台新銀行',30,840),item('綜合對帳單',300,836),item('第2頁',520,832)]]){
+  const rows=top.length?taishinRow(820,'2031/04/11','ATM','$90',''):taishinRow(820,'2031/04/11','ATM','$90','').map(i=>i.text==='100200****3456'?{...i,text:'100200****7777'}:i)
+  const r=bank.parseBankStatement([first,page(2,[...top,...rows])])
+  assert.equal(r.status,'partial',JSON.stringify(top));assert.ok([...r.warnings,...r.sections.flatMap(s=>s.warnings)].some(w=>w.code==='unproven-page-continuity'))
+ }
+})
 test('Taishin note column joins the summary: shared balance item, wrapped lines of the nearest row, empty note unchanged',()=>{
  const r=bank.parseBankStatement([page(1,[...mast('台新銀行綜合對帳單'),item('新臺幣帳戶的往來明細',49,720),...taishinHeader(700,[135,185,272,331,396]),
   ...taishinRow(680,'2031/04/08','轉帳支取','$1,200',''),item('$8,800 午餐費',414,680),

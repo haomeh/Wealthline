@@ -238,6 +238,9 @@ export function parseBankStatement(pages: readonly BankPage[], metadata: BankSta
         const promised = continuation && !closed;
         let resumed = false;
         table = carried;
+        // A table left open on the previous page whose continuation could not be proven: a dated row with an
+        // amount on this page before any new header may be one of its rows, so it must not pass unnoticed.
+        let unproven = open && !carried ? open : undefined;
         context = [];
         contextAccount = undefined;
         orphans = [];
@@ -274,6 +277,17 @@ export function parseBankStatement(pages: readonly BankPage[], metadata: BankSta
                 continue;
             }
             const candidate = tableHeaderOf(l, profile);
+            if (candidate)
+                unproven = undefined;
+            if (!table && unproven) {
+                const u = unproven;
+                const dated = isoDate(l.items.filter(i => i.x >= u.dateX - 10 * u.scale && i.x < u.descriptionX - 8 * u.scale).map(i => i.text).join(' '), layout.dateKind);
+                const amount = l.items.some(i => (Math.abs(i.x + i.width - u.debitEdge) < 18 * u.scale || Math.abs(i.x + i.width - u.creditEdge) < 18 * u.scale) && money(i.text) !== undefined);
+                if (dated && amount) {
+                    issue(p.page, 'unproven-page-continuity');
+                    unproven = undefined;
+                }
+            }
             if (candidate) {
                 let before = context.join(' ');
                 if (layout !== singapore && layout !== esun) {
@@ -576,7 +590,7 @@ export function parseBankStatement(pages: readonly BankPage[], metadata: BankSta
                 }
                 pending = undefined;
             }
-            else if (layout.zeroAmountBlank && [...debitItems, ...creditItems].some(i => money(i.text) === 0)) {
+            else if (layout.zeroAmountBlank && !malformed && [...debitItems, ...creditItems].length > 0 && [...debitItems, ...creditItems].every(i => money(i.text) === 0)) {
                 // A row whose amounts are all a printed 0 is not activity.
                 pending = undefined;
                 if (section && !section.rows.length && !section.warnings.length)

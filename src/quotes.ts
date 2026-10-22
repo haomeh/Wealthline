@@ -20,7 +20,8 @@ export function candidates(input: string, country: string, isCryptoAccount: bool
   if (CRYPTO.has(s) || isCryptoAccount) return [`${s}-USD`]
   if (/^\d{1,6}[A-Z]?$/.test(s)) {
     // Numeric codes are Asian listings: Taiwan (listed, then OTC), Hong Kong, Japan.
-    if (country === 'HK') return [`${s.padStart(4, '0')}.HK`]
+    // Yahoo lists Hong Kong codes below 10000 with exactly four digits (00700 -> 0700.HK).
+    if (country === 'HK') return [/^\d{1,5}$/.test(s) ? `${String(Number(s)).padStart(4, '0')}.HK` : `${s}.HK`]
     if (country === 'JP') return [`${s}.T`]
     return [`${s}.TW`, `${s}.TWO`]
   }

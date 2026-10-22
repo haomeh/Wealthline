@@ -614,12 +614,15 @@ export function securitiesCash(r: SecuritiesStatementResult): { currency: string
   return [...byCurrency].map(([currency, amount]) => ({ currency, amount: Math.round(amount * 1e8) / 1e8 })).filter(c => c.amount !== 0)
 }
 
+// Yahoo lists Hong Kong codes with exactly four digits below 10000 (00700 -> 0700.HK) and five above.
+const hkTicker = (code: string) => `${String(Number(code)).padStart(4, '0')}.HK`
+
 /** The symbol a holding is saved under, and the price to pin: a listed ticker is left to the quote update. */
 function savedHolding(p: SecuritiesPosition): { symbol: string; price?: number } {
   const symbol = p.symbol.toUpperCase()
   if (p.exchange === 'SGX' && /^[A-Z0-9]{2,6}$/.test(symbol)) return { symbol: `${symbol}.SI` }
   if (p.exchange === 'US' && /^[A-Z]{1,5}(?:[.-][A-Z])?$/.test(symbol)) return { symbol: symbol.replace('.', '-') }
-  if (p.exchange === 'HK' && /^\d{1,5}$/.test(symbol)) return { symbol: `${symbol.padStart(4, '0')}.HK` }
+  if (p.exchange === 'HK' && /^\d{1,5}$/.test(symbol)) return { symbol: hkTicker(symbol) }
   // Funds and anything else a quote lookup cannot find keep the statement's closing price.
   return { symbol: p.symbol, ...(p.price !== undefined && { price: p.price }) }
 }
