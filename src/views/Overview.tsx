@@ -3,7 +3,7 @@ import { useState, type CSSProperties, type ReactNode } from 'react'
 import { ActionIcon } from './ActionIcon'
 import { Logo } from './Site'
 import type { HistoricalPoint } from '../quantityHistory'
-import { snapshotOf, totalPoints } from '../history'
+import { localDate, snapshotOf, totalPoints } from '../history'
 import { seriesFor, MODES, type Mode } from './historySeries'
 import { SnapshotDetails } from './SnapshotDetails'
 import { TrendChart } from './TrendChart'
@@ -261,7 +261,7 @@ const RANGES: Record<Range, string> = { '1m': '1 個月', '3m': '3 個月', '1y'
 const monthsBack = (now: string, months: number) => {
   const d = new Date(now)
   d.setMonth(d.getMonth() - months)
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  return localDate(d.toISOString())
 }
 function rangeStart(range: Range, now: string) {
   return range === 'all' ? '' : monthsBack(now, range === '1m' ? 1 : range === '3m' ? 3 : 12)

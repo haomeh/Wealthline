@@ -16,7 +16,8 @@ import { CSV_MAX_BYTES, CsvError, csvErrorText, decodeCsv, isCsvFile, readCardCs
 import { assertCreditCardFile, parseStatement, statementMetadata } from '../statements'
 import { ExpenseCategoryRules, CategoryRuleButton, CategoryRuleDialog } from './ExpenseCategoryRules'
 import { StatementPasswordSettings } from './StatementPasswordSettings'
-import { mergeStatementPasswords, parseStatementPasswords, statementPasswordStatus, unlockStatementPasswords, type StatementPassword } from '../statementPasswords'
+import { usePasswordSettings } from './usePasswordSettings'
+import { statementPasswordStatus, unlockStatementPasswords, type StatementPassword } from '../statementPasswords'
 import type { WealthData } from '../model'
 import { removeExpense, saveExpense, saveExpenseRule } from '../ledgerEdits'
 
@@ -36,7 +37,8 @@ export function Expenses({data,onChange,busy,passwordScope,recordId,returnTo,imp
   const rules = data.expenseCategoryRules ?? []
   const passwords = data.statementPasswords ?? []
   const unclassified = useMemo(()=>(data.expenses ?? []).filter(e=>expenseCategory(e,data.expenseCategoryRules ?? [])==='未分類').length,[data.expenses,data.expenseCategoryRules])
-  const passwordDialog = managingPasswords && passwordScope && <StatementPasswordSettings scope={passwordScope} passwords={passwords} busy={busy} onClose={()=>setManagingPasswords(false)} onSave={rows=>onChange({...data,version:dataVersion(data, {minimumVersion:12}),statementPasswords:parseStatementPasswords(mergeStatementPasswords(passwords,rows))})} onRemove={id=>onChange({...data,version:dataVersion(data, {minimumVersion:12}),statementPasswords:passwords.filter(p=>p.id!==id)})} onRemoveAll={()=>{if(!busy)onChange({...data,version:dataVersion(data, {minimumVersion:12}),statementPasswords:[]})}}/>
+  const passwordSettings = usePasswordSettings({data,busy,onChange})
+  const passwordDialog = managingPasswords && passwordScope && <StatementPasswordSettings scope={passwordScope} passwords={passwords} busy={busy} onClose={()=>setManagingPasswords(false)} {...passwordSettings}/>
 
   const ruleDialog = ruleExpense && <CategoryRuleDialog expense={ruleExpense.expense} rule={ruleExpense.index===undefined?undefined:rules[ruleExpense.index]} busy={busy} onCancel={()=>setRuleExpense(null)} onSave={rule=>{
     onChange(saveExpenseRule(data,rule,ruleExpense.index))

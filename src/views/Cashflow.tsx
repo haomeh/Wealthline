@@ -11,6 +11,7 @@ import type { WealthData } from '../model'
 import { useCalendarNow } from '../useCalendarNow'
 import { cashflowColor } from '../cashflowColor'
 import { monthKey, useCashflowPeriod, useTwdCashflow, type CashflowPeriodState } from '../cashflowPeriod'
+import { localDate } from '../history'
 import { CashflowPeriodControls } from './CashflowPeriodControls'
 import { useRecordEditing } from './useRecordEditing'
 import { QuickClassify } from './QuickClassify'
@@ -42,7 +43,7 @@ const count = (categories: { count: number }[]) => categories.reduce((n, c) => n
 // Card spending and bank rows as one set of income and spending, one period at a time.
 export function Cashflow(props:Props) {
  const location=useRouteLocation(),now=useCalendarNow()
- const date=new Date(now),today=monthKey(date.getFullYear(),date.getMonth()+1)+'-'+String(date.getDate()).padStart(2,'0')
+ const today=localDate(now)
  const parsed=parseCashflowQuery(location.includes('?')?location.slice(location.indexOf('?')):'').query
  if(parsed.panel==='report'&&parsed.month)return <MonthlyReport key={`${parsed.month}:${props.sessionIdentity}`} data={props.data} month={parsed.month} today={today} readiness={props.readiness??(props.months?'loading':'ready')} dirty={props.dirty} busy={props.busy} sessionIdentity={props.sessionIdentity} captureReport={props.captureReport} onClose={()=>navigate('/cashflow'+cashflowQueryString({...parsed,panel:'records'}),{scroll:'preserve'})}/>
  return <LiveCashflow {...props}/>

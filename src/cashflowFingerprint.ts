@@ -1,3 +1,5 @@
+import { sha256 } from './expenses'
+
 // Canonical JSON for review/report identity. Callers sort semantically unordered arrays.
 // Reject values JSON would silently discard or change; never invoke user-provided toJSON.
 export async function cashflowFingerprint(value: unknown): Promise<string> {
@@ -18,7 +20,5 @@ export async function cashflowFingerprint(value: unknown): Promise<string> {
     parents.delete(item)
     return result
   }
-  const bytes = new TextEncoder().encode(canonical(value))
-  const digest = await crypto.subtle.digest('SHA-256', bytes)
-  return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('')
+  return sha256(new TextEncoder().encode(canonical(value)))
 }
