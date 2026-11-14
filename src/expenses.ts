@@ -139,6 +139,46 @@ export async function prepareExpenses(rows: StatementRow[], card: string, fileHa
   }))
 }
 
+// A row added by hand (the form, or an Apple Shortcut) carries no import keys.
+export const isManualExpense = (e: Expense) => !e.sourceKey && !e.importKey
+const MANUAL_MATCH_DAYS = 3
+const dayOf = (date: string) => Date.parse(`${date}T00:00:00Z`) / 86400_000
+
+// Statement rows that are probably a purchase already added by hand: same currency and amount,
+// at most MANUAL_MATCH_DAYS apart. Merchant and card names differ between Wallet and statements,
+// so they are not compared. Each manual row matches one statement row, the nearest date first.
+export function matchManualExpenses(existing: Expense[], rows: Expense[]): Map<string, Expense> {
+  const manual = existing.filter(isManualExpense)
+  const pairs: {row: Expense; manual: Expense; gap: number}[] = []
+  for (const row of rows) for (const m of manual) {
+    const gap = Math.abs(dayOf(row.date) - dayOf(m.date))
+    if (m.currency === row.currency && m.amount === row.amount && gap <= MANUAL_MATCH_DAYS) pairs.push({row, manual: m, gap})
+  }
+  pairs.sort((a, b) => a.gap - b.gap)
+  const matched = new Map<string, Expense>(), used = new Set<string>()
+  for (const p of pairs) {
+    if (matched.has(p.row.id) || used.has(p.manual.id)) continue
+    matched.set(p.row.id, p.manual)
+    used.add(p.manual.id)
+  }
+  return matched
+}
+
+// The merge, then each new statement row replaces the manual row it matches. A category the user
+// chose on the manual row stays when the statement row has none.
+export function mergeStatementExpenses(existing: Expense[], incoming: Expense[], statementRows: Expense[] = incoming): {expenses:Expense[]; added:number; duplicates:number; replaced:number} {
+  const result = mergeExpenses(existing, incoming, statementRows)
+  const added = result.expenses.slice(existing.length)
+  const matched = matchManualExpenses(existing, added)
+  if (!matched.size) return {...result, replaced: 0}
+  const removed = new Set([...matched.values()].map(m => m.id))
+  const rows = added.map(e => {
+    const category = matched.get(e.id)?.category
+    return e.category === undefined && category !== undefined ? {...e, category} : e
+  })
+  return {expenses: [...existing.filter(e => !removed.has(e.id)), ...rows], added: result.added, duplicates: result.duplicates, replaced: matched.size}
+}
+
 // Count matching occurrences rather than collapsing two genuine identical purchases.
 export function mergeExpenses(existing: Expense[], incoming: Expense[], statementRows: Expense[] = incoming): {expenses:Expense[]; added:number; duplicates:number} {
   const rows = incoming.map(parseExpense)

@@ -28,6 +28,9 @@ import { fetchRates } from './rates'
 import { Accounts, type AccountsView } from './views/Accounts'
 import { Liabilities } from './views/Liabilities'
 import { Expenses } from './views/Expenses'
+import { QuickAddExpense } from './views/QuickAddExpense'
+import { saveNewExpense } from './ledgerEdits'
+import { parseQuickAdd, rememberPendingPath, takePendingPath } from './quickAdd'
 import { BankTransactions } from './views/BankTransactions'
 import { Overview } from './views/Overview'
 import { Cashflow } from './views/Cashflow'
@@ -420,9 +423,18 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page])
 
+  // A shortcut link opened before signing in comes back to its form afterwards (quickAdd.ts).
+  const signedIn = !!user || local
+  const quickAdd = route.tab === 'expenses' ? route.add : undefined
   useEffect(() => {
-    if ((user || local) && path === '/') navigate('/app', { replace: true })
-  }, [user, local, path])
+    if (!signedIn && quickAdd !== undefined) rememberPendingPath(path)
+  }, [signedIn, quickAdd, path])
+  useEffect(() => {
+    if (!signedIn) return
+    const pending = takePendingPath()
+    if (pending) navigate(pending, { replace: true })
+    else if (path === '/') navigate('/app', { replace: true })
+  }, [signedIn, path])
 
   // Sign-in leaves for Google's page in this tab and comes back with the token (see the restore above).
   const signIn = () =>
@@ -809,7 +821,16 @@ export default function App() {
         {data && tab === 'liabilities' && <Liabilities data={data} onChange={update} />}
         {data && tab === 'expenses' && missing('ledger') && waiting('ledger')}
         {data && tab === 'bank-transactions' && !bankShown && waiting('ledger', ledgerWanted)}
-        {data && tab === 'expenses' && !missing('ledger') && <Expenses recordId={route.tab==='expenses'?route.recordId:undefined} returnTo={route.tab==='expenses'?route.returnTo:undefined} key={`${local?'local':user?.sub}:${route.recordId??''}`}  passwordScope={local?'local':user?`google:${user.sub}`:undefined} data={data} onChange={update} busy={busy}
+        {data && quickAdd !== undefined && !missing('ledger') && <QuickAddExpense key={quickAdd} initial={parseQuickAdd(quickAdd, localDate(new Date().toISOString()))} expenses={data.expenses ?? []} rules={data.expenseCategoryRules ?? []} busy={busy} canSave={!dirty}
+          onCancel={() => goBack(tabPath('expenses'))}
+          onAdd={(expense) => {
+            const next = saveNewExpense(data, expense)
+            const clean = !dirty
+            update(next)
+            go({ tab: 'expenses' }, true)
+            if (clean) void persist(next)
+          }} />}
+        {data && tab === 'expenses' && quickAdd === undefined && !missing('ledger') && <Expenses recordId={route.tab==='expenses'?route.recordId:undefined} returnTo={route.tab==='expenses'?route.returnTo:undefined} key={`${local?'local':user?.sub}:${route.recordId??''}`}  passwordScope={local?'local':user?`google:${user.sub}`:undefined} data={data} onChange={update} busy={busy}
           importing={route.tab === 'expenses' && !!route.importing} onImporting={(open) => goImport('expenses', open)} onOpenImport={() => openImportFrom('expenses')} />}
         {data && tab === 'bank-transactions' && bankShown && <BankTransactions recordId={route.tab==='bank-transactions'?route.recordId:undefined} returnTo={route.tab==='bank-transactions'?route.returnTo:undefined} key={`${local?'local':user?.sub}:${route.recordId??''}`}  passwordScope={local?'local':user?`google:${user.sub}`:undefined} data={data} onChange={update} busy={busy} historyReady={!missing('history')} historyStatus={groupLoad.history} onLoadHistory={()=>void loadGroup('history')}
           importing={route.tab === 'bank-transactions' && !!route.importing} onImporting={(open) => goImport('bank-transactions', open)} onOpenImport={() => openImportFrom('bank-transactions')}

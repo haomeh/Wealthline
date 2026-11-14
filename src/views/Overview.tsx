@@ -73,7 +73,7 @@ export function Overview({ data: loaded, onGoHistory, onGoRates, onGoLiabilities
   const historical = useHistoricalValuations(data, archive?.from)
   const [selected, setSelected] = useState('current')
   const [mode, setMode] = useState<Mode>('total')
-  const [range, setRange] = useState<Range>('all')
+  const [range, setRange] = useState<Range>('1m')
   const live = snapshotOf(data, now)
   const points: HistoricalPoint[] = [...totalPoints(historical.data, now).filter(p => p.date !== live.date || p.manual), live]
   const allPoints = totalPoints(historical.data, now)

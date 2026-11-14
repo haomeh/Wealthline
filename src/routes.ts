@@ -31,7 +31,8 @@ export type Route =
   | { tab: 'accounts'; page: 'detail'; id: string }
   | { tab: 'liabilities' }
   | { tab: 'cashflow'; query?: CashflowQuery; importing?: boolean }
-  | { tab: 'expenses'; importing?: boolean; recordId?: string; returnTo?: string }
+  // `add`: a prefilled purchase from a link (an Apple Shortcut), the URL's query (quickAdd.ts).
+  | { tab: 'expenses'; importing?: boolean; recordId?: string; returnTo?: string; add?: string }
   | { tab: 'bank-transactions'; importing?: boolean; recordId?: string; returnTo?: string }
   | { tab: 'history'; date?: string }
   | { tab: 'rates' }
@@ -52,6 +53,7 @@ export function parseRoute(path: string): Route {
     return {tab:first,...(recordId ? {recordId}:{}),...(returnTo ? {returnTo}:{})}
   }
   if ((first === 'expenses' || first === 'bank-transactions') && second === 'import' && !third) return { tab: first, importing: true }
+  if (first === 'expenses' && second === 'add' && !third) return { tab: 'expenses', add: url.search }
   if (first === 'history' && !third && !rest.length) {
     if (!second) return { tab: 'history' }
     if (validDate(second)) return { tab: 'history', date: second }
@@ -77,6 +79,7 @@ export function routePath(r: Route): string {
     case 'cashflow': return r.importing ? '/cashflow/import' : '/cashflow' + (r.query ? cashflowQueryString(r.query) : '')
     case 'expenses':
     case 'bank-transactions': {
+      if (r.tab === 'expenses' && r.add !== undefined) return `/expenses/add${r.add}`
       if (r.importing) return `/${r.tab}/import`
       const p = new URLSearchParams()
       if(r.recordId)p.set('recordId',r.recordId)

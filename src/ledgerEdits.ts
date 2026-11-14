@@ -65,5 +65,8 @@ export const saveExpenseRule = (data: WealthData, rule: ExpenseCategoryRule, ind
 export const saveExpense = (data: WealthData, expense: Expense): WealthData =>
   ({ ...data, version: dataVersion(data, { minimumVersion: 10 }), expenses: (data.expenses ?? []).map((e) => e.id === expense.id ? expense : e) })
 
+export const saveNewExpense = (data: WealthData, expense: Expense): WealthData =>
+  ({ ...data, version: dataVersion(data, { minimumVersion: 10 }), expenses: [...(data.expenses ?? []), expense] })
+
 export const removeExpense = (data: WealthData, id: string): WealthData =>
   ({ ...data, version: dataVersion(data, { minimumVersion: 10 }), expenses: (data.expenses ?? []).filter((e) => e.id !== id) })

@@ -239,11 +239,13 @@ test('cashflow page keeps the year chart while picking a month and lists that mo
  // 年度: one toggle per recorded month; opening one closes the other.
  await click(button('年度'))
  const toggles=()=>[...document.querySelectorAll('.cashflow-month-toggle')]
+ // Exact month: "11 月" also contains "1 月".
+ const monthToggle=m=>toggles().find(b=>b.textContent.startsWith(`${m} 月`))
  assert.equal(toggles().length,2)
  assert.doesNotMatch(document.body.textContent,/CurrentCard|OtherCard/)
- await click(toggles().find(b=>b.textContent.includes(`${other} 月`)))
+ await click(monthToggle(other))
  assert.match(document.body.textContent,/OtherCard/); assert.doesNotMatch(document.body.textContent,/CurrentCard/)
- await click(toggles().find(b=>b.textContent.includes(`${cur} 月`)))
+ await click(monthToggle(cur))
  assert.match(document.body.textContent,/CurrentCard/); assert.doesNotMatch(document.body.textContent,/OtherCard/)
  assert.equal(document.querySelectorAll('.cashflow-month-toggle[aria-expanded="true"]').length,1)
  // 全部期間: months grouped by year, the latest year open, another year opens on its own.
