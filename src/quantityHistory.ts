@@ -3,7 +3,7 @@ import type { WealthData, Position } from './model'
 import type { Snapshot } from './history'
 import { localDate } from './history'
 import { fetchHistory, fxSymbol, type PriceHistory } from './priceHistory'
-import { fetchHistoricalFx, historicalFxError, isCryptoCurrency, USD_TWD_HISTORY } from './historicalFx'
+import { fetchHistoricalFx, historicalFxError, historicalFxQuote, isCryptoCurrency, USD_TWD_HISTORY } from './historicalFx'
 import { candidates } from './quotes'
 import { isSupportedCurrency } from './currencies'
 
@@ -120,7 +120,7 @@ export function repriceEntry(e: QuantityEntry, date: string, prices: PriceHistor
   const { price: _price, fx: _fx, error: _error, ...entry } = e
   if (e.quantity === null || e.quantity === 0) return entry
   const price = e.type !== 'cash' && prices?.currency === e.currency ? quoteOn(prices, date) : undefined
-  const fx = e.currency !== 'TWD' && rates?.currency === 'TWD' ? quoteOn(rates, date) : undefined
+  const fx = historicalFxQuote(e.currency,date,rates)
   const error = [e.type !== 'cash' && !price && '缺少相符幣別的歷史收盤價', e.currency !== 'TWD' && !fx && historicalFxError(e.currency,date,rates)].filter(Boolean).join('；')
   return { ...entry, quantity:splitQuantity(entry,date,prices), ...(price && {price}), ...(fx && {fx}), ...(error && {error}) }
 }
@@ -153,7 +153,7 @@ export async function valueEntries(
     }
     if (entry.currency !== 'TWD') {
       rates = await fetchHistoricalFx(entry.currency,date,symbol=>get(symbol))
-      if (rates?.currency === 'TWD') fx = quoteOn(rates, date)
+      fx = historicalFxQuote(entry.currency,date,rates)
     }
     const error = [entry.type !== 'cash' && !price && '缺少相符幣別的歷史收盤價', entry.currency !== 'TWD' && !fx && historicalFxError(entry.currency,date,rates)].filter(Boolean).join('；')
     const result = { ...entry, quantity:splitQuantity(entry,date,priceHistory), ...(price && { price }), ...(fx && { fx }), ...(error && { error }) }
