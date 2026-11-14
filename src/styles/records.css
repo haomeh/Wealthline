@@ -334,7 +334,7 @@ button.tag-btn {
 
 dialog.review {
   width: min(620px, calc(100vw - 32px));
-  max-height: calc(100vh - 64px);
+  max-height: calc(100dvh - 64px);
   padding: 28px;
   border: none;
   border-radius: 28px;
@@ -388,7 +388,7 @@ dialog.review .notice {
 
 .review-list {
   margin-top: 12px;
-  max-height: 50vh;
+  max-height: 50dvh;
   overflow-y: auto;
 }
 
@@ -451,7 +451,7 @@ details.daily .hint {
 
 /* Signing in: the screen between Google's dialog and the app. */
 .opening {
-  min-height: 100vh;
+  min-height: 100dvh;
   display: grid;
   place-items: center;
   padding: 24px 16px;
@@ -810,6 +810,14 @@ dialog.expense-rule-dialog { max-width: 440px; }
 .cashflow-ring-center strong[data-sign="1"] { color: var(--good); }
 .cashflow-ring-center strong[data-sign="-1"] { color: var(--critical); }
 .cashflow-chart-stack figcaption { margin-top: 8px; }
+.cashflow-slice { cursor: pointer; pointer-events: visibleStroke; transition: opacity .15s; outline: none; }
+.cashflow-slice.dim { opacity: .3; }
+.cashflow-slice:focus-visible { filter: brightness(.75); }
+.cashflow-ring-center[data-cashflow-active] { gap: 1px; inset: 27%; }
+.cashflow-ring-center > * { flex: none; }
+.cashflow-ring-center b { font-size: 13px; line-height: 1.3; font-weight: 600; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cashflow-ring-center[data-cashflow-active] strong { line-height: 1.15; }
+.cashflow-summary .cashflow-ring-detail { pointer-events: auto; min-height: 28px; margin-top: 3px; padding: 2px 10px; font-size: 11px; }
 .cashflow-category-lists { min-width: 0; }
 .cashflow-ring-group + .cashflow-ring-group { margin-top: 24px; }
 .cashflow-ring-heading { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 8px; border-bottom: 1px solid var(--hairline); padding-bottom: 8px; }

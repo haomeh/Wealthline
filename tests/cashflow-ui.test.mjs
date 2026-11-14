@@ -24,7 +24,7 @@ beforeEach(async()=>{
 afterEach(async()=>{globalThis.fetch=originalFetch;if(root) await act(()=>root.unmount()); root=null})
 after(async()=>{await server?.close();dom?.window.close()})
 async function render(component,props){root=createRoot(document.getElementById('root'));await act(()=>root.render(createElement(component,props)))}
-async function click(el){assert.ok(el);await act(()=>el.click())}
+async function click(el){assert.ok(el);await act(()=>el.click?el.click():el.dispatchEvent(new window.MouseEvent('click',{bubbles:true})))}
 const button=text=>[...document.querySelectorAll('button')].find(el=>el.textContent===text)
 const bank=(id,direction,amount,classification)=>({id,accountId:'ledger',date:'2026-01-12',description:'Synthetic',currency:'TWD',direction,amount,classification})
 const card={id:'card',date:'2026-01-12',description:'Synthetic',card:'Card',currency:'TWD',amount:200}
@@ -56,6 +56,24 @@ test('nested rings normalize separately and preserve signed and zero categories'
  assert.equal(salary.getAttribute('stroke-dasharray'),'100 0')
  assert.equal(salary.getAttribute('stroke'),document.querySelector('[aria-label="TWD 收入分類"] i').style.background)
  assert.doesNotMatch(document.body.innerHTML,/NaN/)
+})
+test('a ring slice shows its category amount in the center and opens its records',async()=>{
+ await render(Summary,{expenses:[card,{...card,id:'food',amount:100,category:'餐飲'}],now:'2026-01-25'})
+ const slice=document.querySelector('[data-cashflow-ring="consumption"] [data-cashflow-slice="餐飲"]')
+ assert.match(slice.getAttribute('aria-label'),/實際消費 · 餐飲 TWD 100 · 33.3%/)
+ await click(slice)
+ const center=document.querySelector('[data-cashflow-active]')
+ assert.equal(center.dataset.cashflowActive,'餐飲')
+ assert.match(center.textContent,/餐飲100TWD · 33.3% · 1 筆/)
+ assert.ok(document.querySelector('[data-cashflow-slice="未分類"]').classList.contains('dim'))
+ await click(center.querySelector('button'))
+ assert.match(window.location.search,/metric=consumption/);assert.match(window.location.search,/category=/)
+ // A second tap on the same slice goes back to the difference.
+ await render(Summary,{expenses:[card,{...card,id:'food',amount:100,category:'餐飲'}],now:'2026-01-25'})
+ const again=document.querySelector('[data-cashflow-slice="餐飲"]')
+ await click(again);await click(again)
+ assert.equal(document.querySelector('[data-cashflow-active]'),null)
+ assert.ok(document.querySelector('[data-cashflow-metric="difference"]'))
 })
 test('refund-only and zero unclassified records never turn into positive arcs',async()=>{
  await render(Summary,{bankTransactions:[bank('negative','credit',80,{kind:'expense',category:'購物'})],now:'2026-01-25'})
@@ -239,11 +257,13 @@ test('cashflow page keeps the year chart while picking a month and lists that mo
  // 年度: one toggle per recorded month; opening one closes the other.
  await click(button('年度'))
  const toggles=()=>[...document.querySelectorAll('.cashflow-month-toggle')]
+ // Exact month: "11 月" also contains "1 月".
+ const monthToggle=m=>toggles().find(b=>b.textContent.startsWith(`${m} 月`))
  assert.equal(toggles().length,2)
  assert.doesNotMatch(document.body.textContent,/CurrentCard|OtherCard/)
- await click(toggles().find(b=>b.textContent.includes(`${other} 月`)))
+ await click(monthToggle(other))
  assert.match(document.body.textContent,/OtherCard/); assert.doesNotMatch(document.body.textContent,/CurrentCard/)
- await click(toggles().find(b=>b.textContent.includes(`${cur} 月`)))
+ await click(monthToggle(cur))
  assert.match(document.body.textContent,/CurrentCard/); assert.doesNotMatch(document.body.textContent,/OtherCard/)
  assert.equal(document.querySelectorAll('.cashflow-month-toggle[aria-expanded="true"]').length,1)
  // 全部期間: months grouped by year, the latest year open, another year opens on its own.
