@@ -10,7 +10,7 @@ import { CsvGuide } from './CsvGuide'
 import { fmt } from '../format'
 import { dataVersion } from '../dataVersion'
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
-import { mergeExpenses, prepareExpenses, sha256, expenseCategory, CARD_CATEGORIES, cardCategoryOption, type ExpenseCategoryRule, type CardCategory, type Expense } from '../expenses'
+import { mergeStatementExpenses, prepareExpenses, sha256, expenseCategory, CARD_CATEGORIES, cardCategoryOption, type ExpenseCategoryRule, type CardCategory, type Expense } from '../expenses'
 import { pdfFormatError } from '../bankStatementErrors'
 import { CSV_MAX_BYTES, CsvError, csvErrorText, decodeCsv, isCsvFile, readCardCsv } from '../csvImport'
 import { assertCreditCardFile, parseStatement, statementMetadata } from '../statements'
@@ -47,9 +47,9 @@ export function Expenses({data,onChange,busy,passwordScope,recordId,returnTo,imp
     setRuleExpense(null)
   }}/>
   if(importing) return <>{ruleDialog}{passwordDialog}<StatementImport queued={queued} passwords={passwords} passwordScope={passwordScope} onManagePasswords={()=>setManagingPasswords(true)} onAddRule={(expense,index)=>setRuleExpense({expense,index})} rules={rules} existing={expenses} busy={busy} onCancel={()=>setImporting(false)} onImport={(rows,context)=>{
-    const result = mergeExpenses(expenses,rows,context)
+    const result = mergeStatementExpenses(expenses,rows,context)
     if(result.added) onChange({...data,version:dataVersion(data, {minimumVersion:10}),expenses:result.expenses})
-    const done = `已加入 ${result.added} 筆，略過 ${result.duplicates} 筆重複。`
+    const done = `已加入 ${result.added} 筆，略過 ${result.duplicates} 筆重複${result.replaced?`，取代 ${result.replaced} 筆手動新增的消費`:''}。`
     setMessage(done)
     // In a detected batch the batch screen shows the result, so the import does not close.
     if(!onImported?.(done)) setImporting(false)
@@ -110,10 +110,10 @@ function StatementImport({existing,busy,onCancel,onImport,rules,onAddRule,passwo
   const selected = (drafts ?? []).filter(r=>r.selected)
   const existingSourceKeys = new Set(existing.map(e=>e.sourceKey))
   const existingImportKeys = new Set(existing.map(e=>e.importKey))
-  let result:ReturnType<typeof mergeExpenses>|null = null
+  let result:ReturnType<typeof mergeStatementExpenses>|null = null
   let validation = ''
   try {
-    result = mergeExpenses(existing,selected.map(r=>{
+    result = mergeStatementExpenses(existing,selected.map(r=>{
       if(!r.amountText.trim()) throw new Error('請填寫每筆金額')
       return {...r,amount:Number(r.amountText)}
     }),drafts ?? [])
@@ -261,7 +261,7 @@ function StatementImport({existing,busy,onCancel,onImport,rules,onAddRule,passwo
       {!!skipped.length && <details className="notice"><summary>未匯入的文字列（{skipped.length}）：含總計、繳款與無法辨識內容</summary><p className="small">只在本次預覽顯示，離開後不保存。未辨識商家及單獨的 I、l／分隔線不列為消費。請核對是否有漏掉的交易，確認後可用「補上一筆交易」手動補登。</p><ul>{skipped.map((line,i)=><li key={i}>{line}</li>)}</ul></details>}
     </div><aside className="statement-preview-summary" aria-label="匯入摘要">
       <section className="panel tile-stat statement-files"><span>檔案</span>{reports.filter(r=>!r.error).map((r,i)=><strong key={i}>{r.bank} · {r.month}</strong>)}<small>只在此瀏覽器讀取</small></section>
-      <section className="panel deep tile-stat"><span>將匯入</span><strong>{result?.added ?? 0} 筆</strong><small role="status">選取 {selected.length} 筆 · 可新增 {result?.added ?? 0} 筆 · 略過重複 {result?.duplicates ?? 0} 筆</small></section>
+      <section className="panel deep tile-stat"><span>將匯入</span><strong>{result?.added ?? 0} 筆</strong><small role="status">選取 {selected.length} 筆 · 可新增 {result?.added ?? 0} 筆 · 略過重複 {result?.duplicates ?? 0} 筆{result?.replaced ? ` · 取代手動新增 ${result.replaced} 筆` : ''}</small></section>
       {validation && <p role="alert" className="banner error">{validation}</p>}
       {selected.some(r=>r.needsReview) && <section className="panel warn">{selected.filter(r=>r.needsReview).length} 筆標示「核對」的交易已勾選（OCR 商家或 CSV 帳單總額不符），請核對商家、日期與金額。</section>}
       <button className="primary" disabled={busy || !!validation || !result?.added} onClick={()=>{try{onImport(selected.map(r=>({...r,amount:Number(r.amountText)})),drafts)}catch(e){setError(e instanceof Error?e.message:'匯入失敗')}}}>確認匯入 {result?.added ?? 0} 筆</button>

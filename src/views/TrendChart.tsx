@@ -92,7 +92,10 @@ export function TrendChart({ dates, series, area = false, label = '資產走勢�
     return best
   }
 
-  const showDots = dates.length <= 40
+  // Dots have a surface-colored ring; when they crowd (narrow screens) the rings cut the line.
+  let minGap = Infinity
+  for (let i = 1; i < dates.length; i++) minGap = Math.min(minGap, x(i) - x(i - 1))
+  const showDots = dates.length <= 40 && minGap >= 14
   const tipLeft = hover !== null && x(hover) > width / 2
 
   return (
