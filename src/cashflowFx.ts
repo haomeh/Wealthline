@@ -1,7 +1,7 @@
 import { cashflowSummary, type CashflowCurrencySummary, type CashflowMonthTotals, type CashflowReviewTotals } from './cashflow'
-import { fetchHistoricalFx, historicalFxError, type HistoryFetcher } from './historicalFx'
-import { fetchHistory, fxSymbol } from './priceHistory'
-import { quoteOn, validDate } from './quantityHistory'
+import { fetchHistoricalFx, historicalFxError, historicalFxQuote, matchesHistoricalFxSymbol, type HistoryFetcher } from './historicalFx'
+import { fetchHistory } from './priceHistory'
+import { validDate } from './quantityHistory'
 
 export interface CashflowFxEvidence {
   month: string
@@ -44,8 +44,8 @@ export async function cashflowWithFxEvidence(groups:readonly CashflowCurrencySum
       const date=targets[index]
       const error=historicalFxError(group.currency,date,history)
       if(error) throw new Error(`${point.month} ${group.currency}：${error}`)
-      if(group.currency!=='TWD' && history?.symbol!==fxSymbol(group.currency)) throw new Error(`${point.month} ${group.currency}：來源行情代號不符`)
-      const quote=group.currency==='TWD'?undefined:quoteOn(history,date)!
+      if(group.currency!=='TWD' && !matchesHistoricalFxSymbol(group.currency,history?.symbol)) throw new Error(`${point.month} ${group.currency}：來源行情代號不符`)
+      const quote=group.currency==='TWD'?undefined:historicalFxQuote(group.currency,date,history)!
       const rate=quote?.value ?? 1
       const fx:CashflowFxEvidence={month:point.month,currency:group.currency,targetDate:date,rate,
         legs:quote?(quote.legs ?? [quote]).map(leg=>({symbol:leg.symbol,date:leg.date,rate:leg.value})):[]}
