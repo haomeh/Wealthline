@@ -210,7 +210,7 @@ export function Overview({ data: loaded, onGoHistory, onGoRates, onGoLiabilities
           {data.accounts.length > 0 && <>
             <section className="panel overview-share" aria-label="資產配置">
               <span className="tile-label">類別</span>
-              <div className="overview-donut-row"><Donut slices={colorize(byCategory.slices, CATEGORIES)} /><ShareLegend slices={colorize(byCategory.slices, CATEGORIES)} /></div>
+              <div className="overview-donut-row"><Donut slices={colorize(byCategory.slices, CATEGORIES)} detail={(s) => `NT$ ${fmt(s.value, 0)} · ${(s.share * 100).toFixed(1)}%`} /><ShareLegend slices={colorize(byCategory.slices, CATEGORIES)} /></div>
             </section>
             {/* Wide screens keep the tile row to four: currency and country share one tile. The phone's two-column grid keeps them apart. */}
             <section className={`panel overview-share${hasCountry ? ' mobile-only' : ''}`} aria-label="幣別曝險">

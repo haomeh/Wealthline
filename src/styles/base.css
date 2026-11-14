@@ -365,3 +365,8 @@ button.google {
   padding: 11px 16px;
   font-weight: 500;
 }
+
+/* Modal dialogs: scroll gestures stay in the dialog and never move the page behind it.
+   ::backdrop needs overflow: hidden to become a scroll container, else overscroll-behavior has no effect. */
+dialog:modal { overscroll-behavior: contain; }
+dialog::backdrop { overflow: hidden; overscroll-behavior: contain; }

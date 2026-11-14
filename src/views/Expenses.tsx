@@ -302,7 +302,8 @@ function StatementPreviewRow({row:r,index:i,duplicate,rules,busy,onPatch,onRule}
 function PreviewField({label,value,type='text',maxLength,disabled,onChange}: {label:string;value:string;type?:string;maxLength?:number;disabled:boolean;onChange:(value:string)=>void}) {
   const [editing,setEditing] = useState<string|null>(null)
   if(editing!==null) return <input className="preview-input" aria-label={label} autoFocus disabled={disabled} type={type} step={type==='number'?'0.01':undefined} maxLength={maxLength} value={editing} onChange={e=>setEditing(e.target.value)} onBlur={()=>{onChange(editing);setEditing(null)}} onKeyDown={e=>{
-    if(e.key==='Enter') {e.preventDefault();e.currentTarget.blur()}
+    // Enter that confirms a Chinese/Japanese IME candidate must not commit the field (Safari reports keyCode 229).
+    if(e.key==='Enter') {e.preventDefault();if(!e.nativeEvent.isComposing&&e.keyCode!==229)e.currentTarget.blur()}
     if(e.key==='Escape') {e.preventDefault();setEditing(null)}
   }}/>
   return <button type="button" className="preview-value" disabled={disabled} aria-label={`編輯${label}`} title={value || '點擊填寫'} onClick={()=>setEditing(value)}>{value || <span className="muted">待填寫</span>}</button>

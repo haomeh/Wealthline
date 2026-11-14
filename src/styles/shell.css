@@ -19,7 +19,7 @@
 }
 
 #root {
-  min-height: 100vh;
+  min-height: 100dvh;
   display: flex;
   flex-direction: column;
 }
@@ -29,7 +29,7 @@
   flex: 1;
   display: grid;
   grid-template-columns: 232px minmax(0, 1fr);
-  min-height: 100vh;
+  min-height: 100dvh;
   /* The sidebar's column keeps its colour below the sticky sidebar on long pages. */
   background: linear-gradient(to right, var(--surface-2) 231px, var(--hairline) 231px 232px, transparent 232px);
 }
@@ -37,7 +37,7 @@
 .sidebar {
   position: sticky;
   top: 0;
-  height: 100vh;
+  height: 100dvh;
   overflow-y: auto;
   z-index: 10;
   display: flex;

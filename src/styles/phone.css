@@ -167,7 +167,7 @@
 
 .data-privacy {
   width: min(640px, calc(100vw - 32px));
-  max-height: min(85vh, 800px);
+  max-height: min(85dvh, 800px);
   overflow: auto;
   border: 1px solid var(--border);
   border-radius: 12px;
