@@ -39,6 +39,7 @@ export interface AccountCoverageCell {
   status: AccountNodeStatus
   carriedFrom?: string | null
   missingItems?: string[]
+  missingKeys?: string[]
   recordedValue?: number | null
 }
 
@@ -167,12 +168,15 @@ function collectAccounts(data: WealthData): { accounts: CoverageAccount[]; curre
   return { accounts: list, currentById }
 }
 
-function unvaluedSnapshotItems(snapshot: Snapshot, accountId: string): string[] {
-  if (!snapshot.valuation) return []
+function unvaluedSnapshotItems(snapshot: Snapshot, accountId: string): { labels: string[]; keys: string[] } {
+  if (!snapshot.valuation) return { labels: [], keys: [] }
   const bad = snapshot.valuation.entries.filter(
     (e) => e.accountId === accountId && e.quantity !== 0 && (e.quantity === null || e.price === null || e.rate === null),
   )
-  return dedupe(bad.map(itemLabel))
+  return {
+    labels: dedupe(bad.map(itemLabel)),
+    keys: dedupe(bad.map((e) => instrumentKey({ accountId: e.accountId, type: e.type, symbol: e.type === 'cash' ? '' : e.symbol.toUpperCase(), currency: e.currency }))),
+  }
 }
 
 function expandForCoverage(data: WealthData, now: string): { days: QuantityDay[]; error?: string } {
@@ -245,8 +249,8 @@ export function accountCoverage(data: WealthData, now: string): AccountCoverageR
           const unknown = entries.filter((e) => e.quantity === null)
           const errored = entries.filter((e) => e.quantity !== null && e.quantity !== 0 && !!e.error)
           if (unknown.length && unknown.length === entries.length) cells.push({ account: acc, status: 'missing-zero', carriedFrom: null })
-          else if (unknown.length) cells.push({ account: acc, status: 'partial', missingItems: dedupe(unknown.map(itemLabel)) })
-          else if (errored.length) cells.push({ account: acc, status: 'no-quote', missingItems: dedupe(errored.map(itemLabel)) })
+          else if (unknown.length) cells.push({ account: acc, status: 'partial', missingItems: dedupe(unknown.map(itemLabel)), missingKeys: dedupe(unknown.map(instrumentKey)) })
+          else if (errored.length) cells.push({ account: acc, status: 'no-quote', missingItems: dedupe(errored.map(itemLabel)), missingKeys: dedupe(errored.map(instrumentKey)) })
           else cells.push({ account: acc, status: 'recorded' })
           continue
         }
@@ -254,21 +258,24 @@ export function accountCoverage(data: WealthData, now: string): AccountCoverageR
         const entries = day.entries.filter((e) => e.accountId === acc.id)
         const seenKeys = new Set(entries.map(instrumentKey))
         const coveredByCompletion = !!day.completion && day.completion.accounts.some((a) => a.id === acc.id)
-        const extraMissing = coveredByCompletion
+        const extraPositions = coveredByCompletion
           ? []
-          : currentPositions.filter((p) => !seenKeys.has(positionInstrumentKey(currentAccount!, p))).map(positionLabel)
+          : currentPositions.filter((p) => !seenKeys.has(positionInstrumentKey(currentAccount!, p)))
+        const extraMissing = extraPositions.map(positionLabel)
+        const extraKeys = extraPositions.map((p) => positionInstrumentKey(currentAccount!, p))
 
         const known = entries.filter((e) => e.quantity !== null)
         const unknown = entries.filter((e) => e.quantity === null)
         const missingItems = dedupe([...unknown.map(itemLabel), ...extraMissing])
+        const missingKeys = dedupe([...unknown.map(instrumentKey), ...extraKeys])
         const snapAccount = snap?.accounts.find((a) => a.id === acc.id)
 
         if (known.length === 0) {
           if (snapAccount !== undefined) {
             const bad = unvaluedSnapshotItems(snap!, acc.id)
             cells.push(
-              bad.length
-                ? { account: acc, status: 'no-quote', missingItems: bad, recordedValue: snapAccount.value }
+              bad.labels.length
+                ? { account: acc, status: 'no-quote', missingItems: bad.labels, missingKeys: bad.keys, recordedValue: snapAccount.value }
                 : { account: acc, status: 'recorded', recordedValue: snapAccount.value },
             )
           } else if (source === 'period-omitted') {
@@ -278,10 +285,14 @@ export function accountCoverage(data: WealthData, now: string): AccountCoverageR
             cells.push(prior ? { account: acc, status: 'carried', carriedFrom: prior } : { account: acc, status: 'missing-zero', carriedFrom: null })
           }
         } else if (missingItems.length > 0) {
-          cells.push({ account: acc, status: 'partial', missingItems, carriedFrom: lastRecordedDate.get(acc.id) ?? null })
+          cells.push({ account: acc, status: 'partial', missingItems, missingKeys, carriedFrom: lastRecordedDate.get(acc.id) ?? null })
         } else {
           const errored = known.filter((e) => e.quantity !== 0 && !!e.error)
-          cells.push(errored.length ? { account: acc, status: 'no-quote', missingItems: dedupe(errored.map(itemLabel)) } : { account: acc, status: 'recorded' })
+          cells.push(
+            errored.length
+              ? { account: acc, status: 'no-quote', missingItems: dedupe(errored.map(itemLabel)), missingKeys: dedupe(errored.map(instrumentKey)) }
+              : { account: acc, status: 'recorded' },
+          )
         }
       } else if (snap) {
         const snapAccount = snap.accounts.find((a) => a.id === acc.id)
@@ -290,8 +301,8 @@ export function accountCoverage(data: WealthData, now: string): AccountCoverageR
         } else {
           const bad = unvaluedSnapshotItems(snap, acc.id)
           cells.push(
-            bad.length
-              ? { account: acc, status: 'no-quote', missingItems: bad, recordedValue: snapAccount.value }
+            bad.labels.length
+              ? { account: acc, status: 'no-quote', missingItems: bad.labels, missingKeys: bad.keys, recordedValue: snapAccount.value }
               : { account: acc, status: 'recorded', recordedValue: snapAccount.value },
           )
         }

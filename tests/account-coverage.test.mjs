@@ -14,6 +14,9 @@ before(async () => {
     observe() {}
     disconnect() {}
   }
+  dom.window.HTMLDialogElement.prototype.showModal = function () {
+    this.open = true
+  }
   ;({ createRoot } = await import('react-dom/client'))
   server = await createServer({ configFile: false, envDir: false, server: { middlewareMode: true, watch: null, hmr: false, ws: false } })
   ;[model, coverage, statements, { Accounts }] = await Promise.all([
@@ -201,15 +204,22 @@ test('respects confirmed-absent inventory, same-day snapshots, deleted historica
   )
 })
 
-test('Accounts view displays historical coverage, auto-opens the latest incomplete month, and links to account and history', async () => {
+test('Accounts view opens backfill modal prefilled for the missing account and date instead of navigating to account detail', async () => {
+  const accountsWithMulti = baseAccounts().map((a) =>
+    a.id === 'fubon'
+      ? { ...a, positions: [...a.positions, { id: 'p2b', type: 'cash', symbol: '', currency: 'TWD', quantity: 50000, price: 1 }] }
+      : a.id === 'dbs'
+        ? { ...a, positions: [...a.positions, { id: 'p3b', type: 'cash', symbol: '', currency: 'USD', quantity: 1000, price: 1 }] }
+        : a,
+  )
   const initial = {
     ...model.emptyData(),
-    accounts: baseAccounts(),
+    accounts: accountsWithMulti,
     fxRates: { USD: 32, SGD: 24 },
     bankTransactionAccounts: [ledgerDbs],
     history: {
       changes: [],
-      snapshots: [snapshot('2026-09-30', { schwab: 3200000, fubon: 1800000, dbs: 480000, hsbc: 300000 })],
+      snapshots: [snapshot('2026-09-30', { schwab: 3200000, fubon: 1850000, dbs: 512000, hsbc: 300000 })],
     },
   }
   const data = statements.importStatementBalances(
@@ -226,6 +236,7 @@ test('Accounts view displays historical coverage, auto-opens the latest incomple
       createElement(Accounts, {
         data,
         onChange() {},
+        onSaveHistory() {},
         view: { page: 'list' },
         setView(v) {
           if (v.page === 'detail') openedAccounts.push(v.id)
@@ -246,24 +257,51 @@ test('Accounts view displays historical coverage, auto-opens the latest incomple
   assert.match(panel.textContent, /齊全 · 4\/4 個帳戶/)
   assert.match(panel.textContent, /2026\/08/)
   assert.match(panel.textContent, /缺 3 個帳戶（以 0 計）/)
-  // Auto-expanded 2026-08 lists the exact missing accounts.
   assert.match(panel.textContent, /嘉信證券 \(US\)/)
   assert.match(panel.textContent, /富邦證券 \(TW\)/)
   assert.match(panel.textContent, /HSBC \(TW\)/)
-  assert.match(panel.textContent, /5,300,000/)
+  assert.match(panel.textContent, /5,350,000/)
 
-  // Clicking a missing account navigates to its detail view.
+  // Clicking single-holding missing account opens QuantityEditor directly at Step 2 (日期與數量), NOT AccountDetail.
   const schwabLink = [...panel.querySelectorAll('button.coverage-account-link')].find((b) => b.textContent === '嘉信證券 (US)')
   assert.ok(schwabLink)
   await act(() => schwabLink.click())
-  assert.deepEqual(openedAccounts, ['schwab'])
+  assert.deepEqual(openedAccounts, [])
+  let dialog = document.querySelector('dialog[aria-label="編輯歷史數量"]')
+  assert.ok(dialog && dialog.open, 'expected backfill dialog to open')
+  assert.match(dialog.textContent, /日期與數量/)
+  assert.match(dialog.textContent, /嘉信證券/)
+  assert.match(dialog.textContent, /VT · USD/)
+  assert.equal(dialog.querySelector('input[type="date"]').value, '2026-08-31')
+  await act(() => [...dialog.querySelectorAll('button')].find((b) => b.textContent === '取消歷史編輯').click())
+  assert.equal(document.querySelector('dialog[aria-label="編輯歷史數量"]'), null)
 
-  // Switching to per-date node view shows 2026/08/31 and clicking 前往補登 opens /history/2026-08-31.
+  // Clicking multi-position missing account opens QuantityEditor directly at Step 1 (選標的) with account preselected.
+  const fubonLink = [...panel.querySelectorAll('button.coverage-account-link')].find((b) => b.textContent === '富邦證券 (TW)')
+  await act(() => fubonLink.click())
+  dialog = document.querySelector('dialog[aria-label="編輯歷史數量"]')
+  assert.ok(dialog && dialog.open)
+  assert.match(dialog.textContent, /選標的/)
+  assert.match(dialog.textContent, /富邦證券/)
+  await act(() => [...dialog.querySelectorAll('button')].find((b) => b.textContent === '取消歷史編輯').click())
+
+  // Clicking partial account missing a single item (USD cash) jumps directly to Step 2 for that missing item.
+  const dbsLink = [...panel.querySelectorAll('button.coverage-account-link')].find((b) => b.textContent === 'DBS (SG)')
+  await act(() => dbsLink.click())
+  dialog = document.querySelector('dialog[aria-label="編輯歷史數量"]')
+  assert.ok(dialog && dialog.open)
+  assert.match(dialog.textContent, /日期與數量/)
+  assert.match(dialog.textContent, /DBS/)
+  assert.match(dialog.textContent, /現金餘額 · USD/)
+  assert.equal(dialog.querySelector('input[type="date"]').value, '2026-08-31')
+  await act(() => [...dialog.querySelectorAll('button')].find((b) => b.textContent === '取消歷史編輯').click())
+
+  // Switching to per-date node view shows 2026/08/31 and clicking 前往歷史頁 opens /history/2026-08-31.
   const nodeTab = [...panel.querySelectorAll('button')].find((b) => b.textContent === '依時間節點')
   await act(() => nodeTab.click())
   assert.match(panel.textContent, /2026\/08\/31/)
-  const backfillBtn = [...panel.querySelectorAll('button')].find((b) => b.textContent === '前往補登 →')
-  assert.ok(backfillBtn)
-  await act(() => backfillBtn.click())
+  const historyBtn = [...panel.querySelectorAll('button')].find((b) => b.textContent === '前往歷史頁 →')
+  assert.ok(historyBtn)
+  await act(() => historyBtn.click())
   assert.deepEqual(openedHistory, ['2026-08-31'])
 })
