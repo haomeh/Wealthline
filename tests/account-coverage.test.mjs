@@ -305,3 +305,79 @@ test('Accounts view opens backfill modal prefilled for the missing account and d
   await act(() => historyBtn.click())
   assert.deepEqual(openedHistory, ['2026-08-31'])
 })
+
+test('backfilling a missing account from /accounts saves only that single item without completion checkboxes', async () => {
+  const initial = {
+    ...model.emptyData(),
+    accounts: baseAccounts(),
+    fxRates: { USD: 32, SGD: 24 },
+    bankTransactionAccounts: [ledgerDbs],
+    history: {
+      changes: [],
+      snapshots: [snapshot('2026-09-30', { schwab: 3200000, fubon: 1800000, dbs: 480000, hsbc: 300000 })],
+    },
+  }
+  let current = statements.importStatementBalances(
+    initial,
+    [{ bank: 'DBS Singapore', date: '2026-08-31', currency: 'SGD', quantity: 21000, fileHash: 'e'.repeat(64), ledgerAccountId: ledgerDbs.id }],
+    now,
+  ).data
+
+  const renderAccounts = async () => {
+    await act(() =>
+      root.render(
+        createElement(Accounts, {
+          data: current,
+          onChange(next) {
+            current = next
+          },
+          onSaveHistory(next) {
+            current = next
+          },
+          view: { page: 'list' },
+          setView() {},
+          onBack() {},
+          onRefreshPrices: async () => {},
+          priceError: '',
+        }),
+      ),
+    )
+  }
+
+  root = createRoot(document.getElementById('root'))
+  await renderAccounts()
+
+  const panel = document.querySelector('#account-coverage')
+  const hsbcLink = [...panel.querySelectorAll('button.coverage-account-link')].find((b) => b.textContent === 'HSBC (TW)')
+  assert.ok(hsbcLink)
+  await act(() => hsbcLink.click())
+
+  const dialog = document.querySelector('dialog[aria-label="編輯歷史數量"]')
+  assert.ok(dialog && dialog.open)
+  const qtyInput = dialog.querySelector('input[inputmode="decimal"]')
+  assert.ok(qtyInput)
+  await act(() => {
+    Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, 'value').set.call(qtyInput, '280000')
+    qtyInput.dispatchEvent(new dom.window.Event('input', { bubbles: true }))
+  })
+  await act(async () => {
+    ;[...dialog.querySelectorAll('button')].find((b) => b.textContent === '取得歷史估值').click()
+  })
+
+  // Step 3 shows only the single item card with no completion checkboxes or unrelated accounts.
+  assert.equal(dialog.querySelectorAll('input[type="checkbox"]').length, 0)
+  assert.match(dialog.textContent, /NT\$ 280,000/)
+  assert.doesNotMatch(dialog.textContent, /確認當日補齊範圍|嘉信證券|富邦證券/)
+
+  // Saving succeeds directly in one click and records only HSBC without auto-filling other accounts.
+  await act(() => [...dialog.querySelectorAll('button')].find((b) => b.textContent === '儲存歷史數量').click())
+  assert.equal(document.querySelector('dialog[aria-label="編輯歷史數量"]'), null)
+  const augDay = current.history.quantityDays.find((d) => d.date === '2026-08-31')
+  assert.equal(augDay.completion, undefined)
+  assert.equal(augDay.sparse, true)
+  assert.equal(augDay.entries.find((e) => e.accountId === 'hsbc').quantity, 280000)
+
+  // Re-rendering reflects HSBC as recorded while schwab & fubon remain missing.
+  await renderAccounts()
+  assert.match(document.querySelector('#account-coverage').textContent, /缺 2 個帳戶（以 0 計）/)
+})

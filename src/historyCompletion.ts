@@ -44,6 +44,26 @@ export function applyCompletion(data:WealthData,day:QuantityDay,revision:string,
   if(day.completion && !confirmed) throw new Error('請確認當日補齊範圍與差異')
   return applyQuantityDay(data,day,data.history.quantityDays?.find(d=>d.date===day.date))
 }
+export function prepareSingleEntry(data:WealthData,date:string,entry:QuantityEntry,now=new Date().toISOString()):QuantityDay {
+  const original=data.history.quantityDays?.find(d=>d.date===date)
+  const key=instrumentKey(entry)
+  const oldEntries=original?.entries ?? []
+  const clean=quantityOnly(entry)
+  const entries=oldEntries.some(e=>instrumentKey(e)===key) ? oldEntries.map(e=>instrumentKey(e)===key?clean:e) : [...oldEntries,clean]
+  if(original?.inventory) return parseQuantityDays([{...original,updatedAt:now,entries}])[0]
+  if(original?.completion) {
+    const accounts=original.completion.accounts.some(a=>a.id===clean.accountId)
+      ? original.completion.accounts
+      : [...original.completion.accounts,{id:clean.accountId,name:clean.account}]
+    const supplements=original.completion.entries.filter(e=>instrumentKey(e)!==key)
+    return parseQuantityDays([{...original,updatedAt:now,entries,completion:{...original.completion,accounts,entries:supplements}}])[0]
+  }
+  return parseQuantityDays([{date,updatedAt:now,entries,sparse:true}])[0]
+}
+export function applySingleEntry(data:WealthData,day:QuantityDay,revision:string):WealthData {
+  if(completionRevision(data)!==revision) throw new Error('來源或目的日資料已變更，請重新預覽')
+  return applyQuantityDay(data,day,data.history.quantityDays?.find(d=>d.date===day.date))
+}
 export function removalMessage(data:WealthData,date:string):string {
   const day=data.history.quantityDays?.find(d=>d.date===date)
   const after={...data,history:{...data.history,quantityDays:data.history.quantityDays?.filter(d=>d.date!==date)}}

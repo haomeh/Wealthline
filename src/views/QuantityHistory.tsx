@@ -10,7 +10,7 @@ import { useHistoryExit } from '../useHistoryExit'
 import { HistoryBaseline } from './HistoryBaseline'
 import { HistoricalFxValue } from './HistoricalFxValue'
 import { quantityOnly } from '../historyBaseline'
-import { prepareCompletion, applyCompletion, completionRevision, resolveCompletion, removalMessage } from '../historyCompletion'
+import { prepareCompletion, applyCompletion, prepareSingleEntry, applySingleEntry, completionRevision, resolveCompletion, removalMessage } from '../historyCompletion'
 import { fmt } from '../format'
 import { RecordMoney } from './RecordMoney'
 
@@ -71,8 +71,8 @@ export function QuantityHistory({ data, busy = false, onChange, request: editing
   </section>
 }
 
-export function QuantityEditor({ data, busy = false, date: initialDate, expected, accountId: initialAccountId, entryKey, onCancel, onApply }: {
-  data: WealthData; busy?: boolean; date: string; expected?: QuantityDay; accountId?: string; entryKey?: string; onCancel: () => void; onApply: (data: WealthData) => void;
+export function QuantityEditor({ data, busy = false, date: initialDate, expected, accountId: initialAccountId, entryKey, singleItemOnly = false, onCancel, onApply }: {
+  data: WealthData; busy?: boolean; date: string; expected?: QuantityDay; accountId?: string; entryKey?: string; singleItemOnly?: boolean; onCancel: () => void; onApply: (data: WealthData) => void;
 }) {
   const catalog = historyCatalog(data)
   const editEntries = expected ? resolveCompletion(data,expected).entries : []
@@ -153,6 +153,18 @@ export function QuantityEditor({ data, busy = false, date: initialDate, expected
       if(baseline.current?.inventory && !baseline.current.inventory.accounts.some(a=>a.id===selected.accountId)) throw new Error('此帳戶不在這天的完整回補範圍。請取消編輯，使用「沿用持倉回補差異」重新回補此日期以擴大範圍；不必刪除原紀錄。')
       const entry: QuantityEntry = { ...selected, quantity:quantity.trim() ? Number(quantity) : null }
       const before=latest.current, fingerprint=completionRevision(before)
+      if (singleItemOnly) {
+        const candidate=prepareSingleEntry(before,date,entry)
+        setLoading(true)
+        const [valued]=await valueEntries([entry],date)
+        if (live.current && revision.current === request) {
+          setTotal(entryValue(valued))
+          setCompletionView({entries:[valued],filled:[],revision:fingerprint,zeros:[]})
+          setPreview({...candidate,entries:candidate.entries.map(row=>instrumentKey(row)===instrumentKey(entry) ? valued : row)})
+          setStep(3)
+        }
+        return
+      }
       const prepared=prepareCompletion(before,date,entry,zeros)
       const candidate=prepared.day
       setLoading(true)
@@ -210,22 +222,60 @@ export function QuantityEditor({ data, busy = false, date: initialDate, expected
       <p className="muted small">填該日的絕對總數量，不是增減量。0 為確定未持有；同帳戶、同標的、同幣別合計所有批次。{completeDay ? '完整清單須保留已知數量，不能留空。' : '空白為未知。'}</p>
       {mode==='day' && !completeDay && <button onClick={() => { resetPreview(); setQuantity('') }}>清除數量（未知）</button>}
     </>}
-    {step === 3 && active && <>
-      <p><strong>{date}</strong> · 數量 {active.quantity === null ? '未知' : fmt(active.quantity,8)}</p><Valuation entry={active} />
+    {step === 3 && active && (singleItemOnly ? (
+      <div className="quantity-preview-card">
+        <div className="quantity-preview-head">
+          <div>
+            <strong>{active.account} · {active.type === 'cash' ? `${active.currency} 現金餘額` : `${active.symbol} (${active.currency})`}</strong>
+            <div className="muted small">{date.replaceAll('-', '/')}</div>
+          </div>
+          <strong className="num-serif quantity-preview-total">
+            {entryValue(active) === null ? '估值未知' : `NT$ ${fmt(entryValue(active)!, 0)}`}
+          </strong>
+        </div>
+        <dl className="quantity-preview-dl">
+          <dt>{active.type === 'cash' ? '當日餘額' : '當日數量'}</dt>
+          <dd className="num">{active.quantity === null ? '未知' : `${fmt(active.quantity, 8)}${active.type === 'cash' ? ` ${active.currency}` : ''}`}</dd>
+          {active.quantity !== null && active.quantity !== 0 && active.type !== 'cash' && (
+            <>
+              <dt>歷史收盤價</dt>
+              <dd>{active.price?.source === 'Yahoo' ? `${fmt(active.price.value, 6)} ${active.currency}（${active.price.date}）` : '缺歷史收盤價'}</dd>
+            </>
+          )}
+          {active.quantity !== null && active.quantity !== 0 && active.currency !== 'TWD' && (
+            <>
+              <dt>歷史匯率</dt>
+              <dd>{active.fx ? <HistoricalFxValue quote={active.fx} /> : '缺歷史匯率'}</dd>
+            </>
+          )}
+        </dl>
+        {active.error && <p className="notice">{active.error}</p>}
+        <p className="muted small">只補登這一筆歷史紀錄，不影響其他帳戶與目前持倉。若這天尚未持有此項目，可填 0。</p>
+      </div>
+    ) : <>
+      <div className="quantity-preview-card">
+        <div className="quantity-preview-head">
+          <strong>{date.replaceAll('-', '/')} · 數量 {active.quantity === null ? '未知' : fmt(active.quantity,8)}</strong>
+        </div>
+        <Valuation entry={active} />
+      </div>
       <p className="notice" role="status">當日總資產：{total === null ? '資料不完整，圖表顯示缺口' : `NT$ ${fmt(total,2)}`}。本次修改與當日明確紀錄優先；原有 0 與未知保留，補齊僅作用於這天。</p>
       {preview?.completion && completionView ? <>
-        <p><strong>補齊來源：{completionView.source}</strong><br/>目的日：{date}；價格與匯率重新查詢目的日，不沿用來源日。</p>
-        <p className="muted small">最近完整清單按日曆距離選取；同距離取較早日期。來源可能晚於目的日，請把當時未持有的補入項目標為 0。</p>
+        <p className="small"><strong>補齊來源：{completionView.source}</strong><br/><span className="muted">目的日：{date}；價格與匯率重新查詢目的日，不沿用來源日。若當時未持有補入項目，可勾選標為 0。</span></p>
         {data.history.snapshots.find(s=>s.date===date)?.accounts.some(a=>a.value!==0 && !preview.completion?.accounts.some(known=>known.id===a.id)) && <p className="notice">原始快照另有未涵蓋的帳戶，無法從總額還原數量；總資產仍保持未知，原始快照保留。</p>}
         <ul className="period-preview">{completionView.entries.map(e=>{
           const key=instrumentKey(e), filled=completionView.filled.includes(key)
           const label=selected && key===instrumentKey(selected) ? '本次修改' : filled ? '來源補入' : e.quantity===null ? '保留未知' : '保留目的日數量'
-          return <li key={key}><strong>{nameOf(e)}</strong><p>{label}：{e.quantity===null?'未知':fmt(e.quantity,8)}</p><Valuation entry={e}/>{filled && <label><input type="checkbox" checked={completionView.zeros.includes(key)} onChange={event=>void prepare(event.target.checked ? [...completionView.zeros,key] : completionView.zeros.filter(k=>k!==key))}/> 目的日未持有（填 0）</label>}</li>
+          return <li key={key}>
+            <div className="completion-item-head"><strong>{nameOf(e)}</strong><span className="tag">{label}：{e.quantity===null?'未知':fmt(e.quantity,8)}</span></div>
+            <Valuation entry={e}/>
+            {filled && <label className="completion-zero-toggle"><input type="checkbox" checked={completionView.zeros.includes(key)} onChange={event=>void prepare(event.target.checked ? [...completionView.zeros,key] : completionView.zeros.filter(k=>k!==key))}/><span>目的日未持有（填 0）</span></label>}
+          </li>
         })}</ul>
-        <label><input type="checkbox" checked={confirmed} onChange={e=>setConfirmed(e.target.checked)}/> 我已核對來源與目的日差異，確認當日補齊範圍；既有未知不自動補成 0。</label>
+        <label className="completion-confirm"><input type="checkbox" checked={confirmed} onChange={e=>setConfirmed(e.target.checked)}/><span>我已核對來源與目的日差異，確認當日補齊範圍；既有未知不自動補成 0。</span></label>
       </> : !preview?.inventory && <p className="notice">沒有可用的完整基底；維持單項補登，其餘未記錄數量保持未知。</p>}
       <p className="muted small">價格與匯率只取市場來源；不使用手填歷史價。負債沿用當日紀錄，沒有紀錄時以 0 計，並標示為未記錄。</p>
-    </>}
+    </>)}
     {step===3 && periodPreview && <>
       <p><strong>{periodPreview.period.start} 至 {periodPreview.period.end ?? '持續持有'}</strong> · 基準數量 {fmt(periodPreview.period.quantity,8)}</p>
       <p className="notice" role="status">期間預覽：{periodPreview.days.length} 個日期；{periodPreview.days.filter(d=>quantityPoint(d).total===null).length} 日資料不完整。開始含、結束不含；只重建已結束日，今天仍顯示目前持倉。近十年逐日使用市場價格與匯率。已有原始快照保留原值；需要修正該日請使用單日補登。</p>
@@ -243,7 +293,7 @@ export function QuantityEditor({ data, busy = false, date: initialDate, expected
       {step === 0 && <button className="primary" disabled={!account} onClick={() => setStep(1)}>下一步：選標的</button>}
       {step === 1 && <button className="primary" disabled={!selected} onClick={goToQuantity}>下一步：填數量</button>}
       {step === 2 && <button className="primary" disabled={loading || busy} onClick={() => void prepare()}>{loading ? '取得歷史行情中…' : '取得歷史估值'}</button>}
-      {step === 3 && <button className="primary" disabled={loading || busy} onClick={() => { try { if (busy) throw new Error('背景作業中，請稍後再儲存'); if(periodPreview) onApply(applyHoldingPeriod(latest.current,periodPreview.period,periodPreview.revision,confirmed)); else if (preview && completionView) onApply(applyCompletion(latest.current,preview,completionView.revision,confirmed)) } catch (e) { setError(e instanceof Error ? e.message : '無法套用') } }}>儲存歷史數量</button>}
+      {step === 3 && <button className="primary" disabled={loading || busy} onClick={() => { try { if (busy) throw new Error('背景作業中，請稍後再儲存'); if(periodPreview) onApply(applyHoldingPeriod(latest.current,periodPreview.period,periodPreview.revision,confirmed)); else if (preview && completionView) onApply(singleItemOnly ? applySingleEntry(latest.current,preview,completionView.revision) : applyCompletion(latest.current,preview,completionView.revision,confirmed)) } catch (e) { setError(e instanceof Error ? e.message : '無法套用') } }}>儲存歷史數量</button>}
       {step > 0 && (!editingDay || step===3 || editEntries.length>1) && <button onClick={() => { resetPreview(); setStep(editingDay && step===2 ? -1 : step - 1) }}>{step === 3 ? '返回修改' : editingDay ? '改選其他項目' : '上一步'}</button>}
       <button onClick={exit.close}>取消歷史編輯</button>
     </div>
