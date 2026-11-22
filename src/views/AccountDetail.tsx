@@ -1,5 +1,8 @@
-import { useState, type FormEvent } from 'react'
+import { useMemo, useState, type FormEvent } from 'react'
+import { accountCoverage, type AccountCoverageCell, type TimeNodeSource } from '../accountCoverage'
 import { currencyDecimals, fmt, listAmount } from '../format'
+import { resolveCompletion } from '../holdingPeriods'
+import { localDate } from '../history'
 import {
   ACCOUNT_KINDS,
   BASE_CURRENCY,
@@ -17,6 +20,7 @@ import { displaySymbol, lookupQuote } from '../quotes'
 import { ChangeList } from './History'
 import { NumberInput } from './NumberInput'
 import { PositionHistory } from './PositionHistory'
+import { QuantityEditor } from './QuantityHistory'
 import { Sparkline } from './Sparkline'
 import { accountChange, accountSeries } from '../accountTrend'
 import { useCalendarNow } from '../useCalendarNow'
@@ -31,10 +35,14 @@ interface Props {
   priceError: string
   // The account as last saved: holdings whose quantity differs are marked as unsaved.
   saved?: Account
+  dirty?: boolean
+  busy?: boolean
+  onSaveHistory?: (next: WealthData) => void
+  onGoHistory?: (date?: string) => void
 }
 
 // Where the numbers go: balances per currency, and holdings for investment accounts.
-export function AccountDetail({ data, account: a, onChange, onEdit, onBack, onRefreshPrices, priceError, saved }: Props) {
+export function AccountDetail({ data, account: a, onChange, onEdit, onBack, onRefreshPrices, priceError, saved, dirty = false, busy = false, onSaveHistory, onGoHistory }: Props) {
   const [refreshing, setRefreshing] = useState(false)
   // The holding whose daily values are shown under its row.
   const [open, setOpen] = useState<string | null>(null)
@@ -197,6 +205,16 @@ export function AccountDetail({ data, account: a, onChange, onEdit, onBack, onRe
           )}
 
           {balances}
+
+          <AccountHistoryNodes
+            data={data}
+            account={a}
+            now={now}
+            dirty={dirty}
+            busy={busy}
+            onSaveHistory={onSaveHistory}
+            onGoHistory={onGoHistory}
+          />
 
           {allChanges && changes.length > 0 && (
             <section className="panel" id="account-changes">
@@ -378,5 +396,197 @@ function AddHolding({ account, onAdd }: { account: Account; onAdd: (p: Position)
           : '只要填代號和數量，價格與幣別會自動帶入。台股填數字代號即可。'}
       </p>
     </form>
+  )
+}
+
+const NODE_SOURCE_LABELS: Record<TimeNodeSource, string> = {
+  snapshot: '原始快照',
+  statement: '銀行帳單',
+  inventory: '完整回補',
+  completion: '當日補齊',
+  manual: '單日補登',
+  period: '期間推算',
+  'period-omitted': '期間推算（未顯示於總覽）',
+}
+
+const fmtDate = (date: string) => date.replaceAll('-', '/')
+
+function recordedSummary(data: WealthData, accountId: string, date: string, cell: AccountCoverageCell): string {
+  const rawDay = data.history.quantityDays?.find((d) => d.date === date)
+  if (rawDay) {
+    const resolved = resolveCompletion(data, rawDay)
+    const entries = resolved.entries.filter((e) => e.accountId === accountId && e.quantity !== null)
+    if (entries.length) {
+      const nonzero = entries.filter((e) => e.quantity !== 0)
+      if (!nonzero.length) return '數量皆為 0'
+      return nonzero
+        .map((e) => (e.type === 'cash' ? `${e.currency} ${fmt(e.quantity!, 2)}` : `${displaySymbol(e.symbol)} ${fmt(e.quantity!, 6)}`))
+        .join(' · ')
+    }
+  }
+  if (cell.recordedValue !== undefined && cell.recordedValue !== null) return `快照 NT$ ${fmt(cell.recordedValue, 0)}`
+  return ''
+}
+
+function AccountHistoryNodes({
+  data,
+  account,
+  now,
+  dirty,
+  busy,
+  onSaveHistory,
+  onGoHistory,
+}: {
+  data: WealthData
+  account: Account
+  now: string
+  dirty: boolean
+  busy: boolean
+  onSaveHistory?: (next: WealthData) => void
+  onGoHistory?: (date?: string) => void
+}) {
+  const [onlyGaps, setOnlyGaps] = useState(false)
+  const [visible, setVisible] = useState(20)
+  const [backfill, setBackfill] = useState<{ date: string; entryKey?: string } | null>(null)
+
+  const rows = useMemo(() => {
+    const report = accountCoverage(data, now)
+    return report.nodes.flatMap((node) => {
+      const cell = node.cells.find((c) => c.account.id === account.id)
+      return cell ? [{ node, cell }] : []
+    })
+  }, [data, now, account.id])
+
+  const gapCount = rows.filter(({ cell }) => cell.status !== 'recorded' && cell.status !== 'confirmed-absent').length
+  const shown = onlyGaps ? rows.filter(({ cell }) => cell.status !== 'recorded' && cell.status !== 'confirmed-absent') : rows
+  const editDisabled = busy || dirty || !onSaveHistory
+
+  return (
+    <section className="panel account-history-nodes" aria-label="歷史時間節點">
+      <div className="panel-head">
+        <div>
+          <h3>歷史時間節點</h3>
+          <p className="muted small">
+            {rows.length
+              ? `共 ${rows.length} 個歷史節點 · ${rows.length - gapCount} 個完整${gapCount ? ` · ${gapCount} 個缺漏或沿用` : ''}`
+              : '尚無歷史時間節點紀錄，可先補登過去任意日期的餘額或持倉。'}
+          </p>
+        </div>
+        <div className="row">
+          {rows.length > 0 && gapCount > 0 && (
+            <div className="segmented" role="group" aria-label="篩選此帳戶時間節點">
+              <button type="button" className={!onlyGaps ? 'on' : ''} aria-pressed={!onlyGaps} onClick={() => setOnlyGaps(false)}>
+                全部
+              </button>
+              <button type="button" className={onlyGaps ? 'on' : ''} aria-pressed={onlyGaps} onClick={() => setOnlyGaps(true)}>
+                只看缺漏 ({gapCount})
+              </button>
+            </div>
+          )}
+          <button
+            type="button"
+            className="small"
+            disabled={editDisabled}
+            onClick={() => setBackfill({ date: localDate(now) })}
+          >
+            ＋ 補登歷史日期
+          </button>
+        </div>
+      </div>
+
+      {dirty && <p className="notice">請先儲存或捨棄其他未儲存修改，再補登歷史數量。</p>}
+
+      {backfill && onSaveHistory && (
+        <QuantityEditor
+          key={`${backfill.date}:${account.id}:${backfill.entryKey ?? ''}`}
+          data={data}
+          busy={busy || dirty}
+          date={backfill.date}
+          accountId={account.id}
+          entryKey={backfill.entryKey}
+          singleItemOnly
+          onCancel={() => setBackfill(null)}
+          onApply={(next) => {
+            onSaveHistory(next)
+            setBackfill(null)
+          }}
+        />
+      )}
+
+      {shown.length > 0 ? (
+        <>
+          <ul className="account-node-list">
+            {shown.slice(0, visible).map(({ node, cell }) => {
+              const isGap = cell.status !== 'recorded' && cell.status !== 'confirmed-absent'
+              const isCritical = cell.status === 'missing-zero'
+              const detail =
+                cell.status === 'recorded'
+                  ? recordedSummary(data, account.id, node.date, cell)
+                  : cell.status === 'partial'
+                    ? `缺 ${cell.missingItems?.join('、') || '部分項目'}`
+                    : cell.status === 'carried'
+                      ? cell.carriedFrom
+                        ? `沿用 ${fmtDate(cell.carriedFrom)}`
+                        : '沿用更早紀錄'
+                      : cell.status === 'no-quote'
+                        ? cell.missingItems?.join('、') || '缺少歷史收盤價或匯率'
+                        : ''
+              const badge =
+                cell.status === 'recorded'
+                  ? { cls: 'good', text: '有紀錄' }
+                  : cell.status === 'confirmed-absent'
+                    ? { cls: '', text: '已確認未持有' }
+                    : cell.status === 'missing-zero'
+                      ? { cls: 'critical', text: '缺少紀錄（以 0 計）' }
+                      : cell.status === 'partial'
+                        ? { cls: 'warn', text: '部分缺少' }
+                        : cell.status === 'carried'
+                          ? { cls: 'warn', text: '沿用舊值' }
+                          : { cls: 'warn', text: '缺行情' }
+
+              return (
+                <li key={node.date} className={`account-node-row${isCritical ? ' is-critical' : ''}`}>
+                  <div className="account-node-main">
+                    <div className="account-node-head">
+                      <time dateTime={node.date}>{fmtDate(node.date)}</time>
+                      <span className="tag">{NODE_SOURCE_LABELS[node.source]}</span>
+                      <span className={`tag ${badge.cls}`.trim()}>{badge.text}</span>
+                    </div>
+                    {detail && <div className="muted small account-node-detail">{detail}</div>}
+                  </div>
+                  <div className="account-node-actions">
+                    <button
+                      type="button"
+                      className={isGap ? 'small' : 'ghost small'}
+                      disabled={editDisabled}
+                      onClick={() =>
+                        setBackfill({
+                          date: node.date,
+                          entryKey: cell.missingKeys?.length === 1 ? cell.missingKeys[0] : undefined,
+                        })
+                      }
+                    >
+                      {isGap ? '補登這天' : '修改數量'}
+                    </button>
+                    {onGoHistory && (
+                      <button type="button" className="link small" onClick={() => onGoHistory(node.date)}>
+                        明細 →
+                      </button>
+                    )}
+                  </div>
+                </li>
+              )
+            })}
+          </ul>
+          {shown.length > visible && (
+            <button type="button" className="ghost small coverage-more" onClick={() => setVisible((n) => n + 30)}>
+              顯示更早 30 個節點（尚有 {shown.length - visible} 個）
+            </button>
+          )}
+        </>
+      ) : (
+        rows.length > 0 && <p className="muted small">此帳戶目前沒有缺漏的時間節點。</p>
+      )}
+    </section>
   )
 }

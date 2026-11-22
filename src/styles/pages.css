@@ -299,3 +299,15 @@ button.pin-chip:hover:not(:disabled) { background: var(--ink); opacity: 0.85; }
   .coverage-month-body { padding-left: 8px; }
   .coverage-month-meta { margin-left: 0; flex-basis: 100%; }
 }
+
+/* Account detail historical time nodes */
+.account-history-nodes .panel-head { align-items: flex-start; gap: 10px 14px; }
+.account-history-nodes .segmented { margin: 0; }
+.account-node-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.account-node-row { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px 12px; padding: 10px 0; border-top: 1px solid var(--hairline); }
+.account-node-row:first-child { border-top: 0; }
+.account-node-main { display: flex; flex-direction: column; gap: 4px; min-width: 0; flex: 1 1 220px; }
+.account-node-head { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.account-node-head time { font-family: var(--num); font-variant-numeric: lining-nums tabular-nums; font-weight: 600; font-size: 14px; }
+.account-node-detail { overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.account-node-actions { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
