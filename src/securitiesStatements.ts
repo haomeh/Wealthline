@@ -1,4 +1,7 @@
 import type { BankPage, PositionedItem } from './bankStatements/common'
+import { localDate } from './history'
+import type { Account, WealthData } from './model'
+import { applyQuantityDay, historyCatalog, instrumentKey, parseQuantityDays, validDate, type QuantityDay, type QuantityEntry } from './quantityHistory'
 
 // Securities account statements (持倉、現金、成交、現金異動). Pure and synchronous over the same positioned pages
 // the bank reader builds; nothing is persisted. A table that does not look as expected is reported as a warning
@@ -625,6 +628,135 @@ function savedHolding(p: SecuritiesPosition): { symbol: string; price?: number }
   if (p.exchange === 'HK' && /^\d{1,5}$/.test(symbol)) return { symbol: hkTicker(symbol) }
   // Funds and anything else a quote lookup cannot find keep the statement's closing price.
   return { symbol: p.symbol, ...(p.price !== undefined && { price: p.price }) }
+}
+
+export interface NormalizedSecuritiesItem {
+  type: 'cash' | 'holding'
+  symbol: string
+  name?: string
+  currency: string
+  quantity: number
+  price?: number
+}
+
+/** Normalized cash (including in-transit) and holdings of a securities statement, merged by instrument. */
+export function securitiesStatementItems(r: SecuritiesStatementResult): NormalizedSecuritiesItem[] {
+  const byKey = new Map<string, NormalizedSecuritiesItem>()
+  const add = (item: NormalizedSecuritiesItem) => {
+    const key = `${item.type}:${item.symbol.toUpperCase()}:${item.currency}`
+    const prev = byKey.get(key)
+    if (prev) prev.quantity = Math.round((prev.quantity + item.quantity) * 1e8) / 1e8
+    else byKey.set(key, { ...item })
+  }
+  for (const c of securitiesCash(r)) add({ type: 'cash', symbol: '', currency: c.currency, quantity: c.amount })
+  for (const p of r.positions) {
+    const h = savedHolding(p)
+    add({ type: 'holding', symbol: h.symbol, ...(p.name && { name: p.name }), currency: p.currency, quantity: p.quantity, ...(h.price !== undefined && { price: h.price }) })
+  }
+  return [...byKey.values()]
+}
+
+/** The latest YYYY-MM-DD date this account already has recorded data for (snapshots, edits, history days or addedAt). */
+export function latestSecuritiesAccountDate(data: WealthData, account: Account): string | undefined {
+  const dates: string[] = []
+  for (const s of data.history.snapshots) {
+    if (s.accounts.some((a) => a.id === account.id)) dates.push(s.date)
+  }
+  for (const c of data.history.changes) {
+    if (c.accountId === account.id) dates.push(c.statementDate ?? localDate(c.at))
+  }
+  for (const d of data.history.quantityDays ?? []) {
+    if (d.entries.some((e) => e.accountId === account.id && e.quantity !== null)) dates.push(d.date)
+  }
+  for (const p of account.positions) {
+    if (p.addedAt) dates.push(localDate(p.addedAt))
+  }
+  return dates.sort().at(-1)
+}
+
+/**
+ * Records a securities statement's closing cash and holdings onto `statement.statementDate` in
+ * `data.history.quantityDays` without touching current positions in `data.accounts`.
+ * Other known instruments of this same account not listed on the statement are recorded as 0 on that date,
+ * because the broker statement is a complete closing inventory for that account.
+ */
+export function importSecuritiesHistory(
+  data: WealthData,
+  account: Pick<Account, 'id' | 'name' | 'category' | 'country' | 'positions'>,
+  statement: SecuritiesStatementResult,
+  now = new Date().toISOString(),
+): WealthData {
+  const date = statement.statementDate
+  if (!date || !validDate(date) || date > localDate(now)) return data
+  const items = securitiesStatementItems(statement)
+  if (!items.length) return data
+
+  const country = account.country || (statement.broker === '台新證券' ? 'TW' : 'SG')
+  const statementEntries: QuantityEntry[] = items.map((item) => ({
+    accountId: account.id,
+    account: account.name,
+    category: account.category,
+    country,
+    type: item.type,
+    symbol: item.type === 'cash' ? '' : item.symbol.toUpperCase(),
+    currency: item.currency,
+    quantity: item.quantity,
+  }))
+  const recordedKeys = new Set(statementEntries.map(instrumentKey))
+
+  // Known instruments of this account absent from the closing statement were not held on `date` (quantity 0).
+  const zeroEntries: QuantityEntry[] = []
+  const addZero = (entry: Omit<QuantityEntry, 'quantity'>) => {
+    const key = instrumentKey(entry)
+    if (recordedKeys.has(key)) return
+    recordedKeys.add(key)
+    zeroEntries.push({ ...entry, quantity: 0 })
+  }
+  for (const p of account.positions) {
+    addZero({
+      accountId: account.id,
+      account: account.name,
+      category: account.category,
+      country,
+      type: p.type,
+      symbol: p.type === 'cash' ? '' : p.symbol.toUpperCase(),
+      currency: p.currency,
+    })
+  }
+  for (const e of historyCatalog(data)) {
+    if (e.accountId === account.id) addZero(e)
+  }
+
+  const original = data.history.quantityDays?.find((d) => d.date === date)
+  const otherEntries = (original?.entries ?? []).filter((e) => e.accountId !== account.id)
+  const entries = [...otherEntries, ...statementEntries, ...zeroEntries]
+  const addAccount = (list: { id: string; name: string }[]) =>
+    list.some((a) => a.id === account.id) ? list : [...list, { id: account.id, name: account.name }]
+
+  let nextDay: QuantityDay
+  if (original?.inventory) {
+    nextDay = {
+      ...original,
+      updatedAt: now,
+      entries,
+      inventory: { ...original.inventory, accounts: addAccount(original.inventory.accounts) },
+    }
+  } else if (original?.completion) {
+    nextDay = {
+      ...original,
+      updatedAt: now,
+      entries,
+      completion: {
+        ...original.completion,
+        accounts: addAccount(original.completion.accounts),
+        entries: original.completion.entries.filter((e) => e.accountId !== account.id),
+      },
+    }
+  } else {
+    nextDay = { date, updatedAt: now, entries, sparse: true }
+  }
+  const validated = parseQuantityDays([nextDay])[0]
+  return applyQuantityDay(data, validated, original)
 }
 
 /**
