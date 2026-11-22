@@ -432,6 +432,7 @@ export function AccountCoverage({ data: loaded, now, dirty = false, busy = false
           date={backfill.date}
           accountId={backfill.accountId}
           entryKey={backfill.entryKey}
+          singleItemOnly
           onCancel={() => setBackfill(null)}
           onApply={(next) => {
             onSaveHistory(next)
