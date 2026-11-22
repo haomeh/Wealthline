@@ -266,6 +266,12 @@ textarea {
   border-color: transparent;
 }
 
+.tag.critical {
+  background: var(--critical-wash);
+  border-color: transparent;
+  color: var(--critical);
+}
+
 .ccy-badge {
   display: inline-block;
   min-width: 3.2em;

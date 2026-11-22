@@ -816,6 +816,10 @@ export default function App() {
             }}
             priceError={priceError}
             saved={saved.current}
+            onGoHistory={(date) => go(date ? { tab: 'history', date } : { tab: 'history' })}
+            historyArchive={archive ?? undefined}
+            onLoadHistory={() => void loadGroup('history')}
+            loadingHistory={groupLoad.history === 'loading'}
           />
         )}
         {data && tab === 'liabilities' && <Liabilities data={data} onChange={update} />}

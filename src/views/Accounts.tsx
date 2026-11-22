@@ -8,10 +8,12 @@ import { accountChange } from '../accountTrend'
 import { createStatementAssets, missingStatementAssets } from '../bankStatementAssets'
 import { displaySymbol } from '../quotes'
 import { useCalendarNow } from '../useCalendarNow'
+import { AccountCoverage } from './AccountCoverage'
 import { AccountDetail } from './AccountDetail'
 import { AccountForm } from './AccountForm'
 import { CsvGuide } from './CsvGuide'
 import { FileInput } from './FileInput'
+import type { ArchiveSummary } from './Overview'
 
 interface Props {
   data: WealthData
@@ -33,9 +35,13 @@ interface AccountsProps extends Props {
   priceError: string
   // The last saved data, to mark unsaved edits.
   saved?: WealthData | null
+  onGoHistory?: (date?: string) => void
+  historyArchive?: ArchiveSummary
+  onLoadHistory?: () => void
+  loadingHistory?: boolean
 }
 
-export function Accounts({ data, onChange, view, setView, onBack, onRefreshPrices, priceError, saved }: AccountsProps) {
+export function Accounts({ data, onChange, view, setView, onBack, onRefreshPrices, priceError, saved, onGoHistory, historyArchive, onLoadHistory, loadingHistory }: AccountsProps) {
   const now = useCalendarNow()
   const showImport = view.page === 'list' && !!view.importing
   // Phone only: which kind of account the list shows. Wide screens show both tables.
@@ -158,6 +164,17 @@ export function Accounts({ data, onChange, view, setView, onBack, onRefreshPrice
           </ul>
         </section>
       ))}
+      {!showImport && (
+        <AccountCoverage
+          data={data}
+          now={now}
+          onOpenAccount={(id) => setView({ page: 'detail', id })}
+          onGoHistory={onGoHistory}
+          archive={historyArchive}
+          onLoadHistory={onLoadHistory}
+          loadingHistory={loadingHistory}
+        />
+      )}
       {data.accounts.length > 0 && !showImport && <button className="link import-link mobile-only" onClick={() => setShowImport(true)}>從試算表或 CSV 匯入</button>}
     </>
   )

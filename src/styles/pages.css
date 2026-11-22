@@ -253,3 +253,49 @@ button.pin-chip:hover:not(:disabled) { background: var(--ink); opacity: 0.85; }
 .overview-tiles .overview-net strong { font-size: clamp(1.45rem, 5.6vw, 2.25rem); }
 @media (max-width: 899px) and (min-width: 561px) { .overview-tiles .overview-net strong { font-size: clamp(1.45rem, 3.4vw, 2.25rem); } }
 .overview-snapshot .hero-figure, .overview-snapshot .stat strong { font-family: var(--num); font-weight: 500; font-variant-numeric: lining-nums tabular-nums; }
+
+/* Account historical coverage on /accounts */
+.account-coverage .coverage-head { align-items: flex-start; gap: 12px 16px; }
+.account-coverage .coverage-head h3 { margin-bottom: 4px; }
+.coverage-controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.coverage-controls .segmented { margin: 0; }
+.coverage-note { margin-bottom: 12px; }
+.coverage-month-list { display: flex; flex-direction: column; }
+.coverage-month { border-top: 1px solid var(--hairline); }
+.coverage-month:first-child { border-top: 0; }
+.coverage-month-toggle { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; width: 100%; padding: 12px 4px; border: 0; border-radius: 10px; background: none; color: var(--ink); text-align: left; }
+.coverage-month-toggle:hover:not(:disabled) { background: var(--surface-2); }
+.coverage-month-toggle::before { content: '▸'; color: var(--ink-2); font-size: 12px; }
+.coverage-month-toggle[aria-expanded="true"]::before { content: '▾'; }
+.coverage-month-label { font-family: var(--num); font-variant-numeric: lining-nums tabular-nums; font-size: 15px; }
+.coverage-missing-total { color: var(--critical); font-variant-numeric: tabular-nums; }
+.coverage-month-meta { margin-left: auto; }
+.coverage-month-body { padding: 4px 0 16px 20px; display: flex; flex-direction: column; gap: 14px; }
+.coverage-groups { display: grid; gap: 10px; }
+.coverage-group { padding: 10px 12px; border-radius: 12px; border: 1px solid var(--hairline); background: var(--surface-2); }
+.coverage-group-critical { background: var(--critical-wash); border-color: transparent; }
+.coverage-group-warn { background: var(--warn-wash); border-color: transparent; }
+.coverage-group h4 { margin: 0 0 8px; font-size: 13px; font-weight: 700; }
+.coverage-group-critical h4 { color: var(--critical); }
+.coverage-group ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.coverage-group li { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 4px 12px; font-size: 14px; }
+.coverage-account-main { display: inline-flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; }
+.coverage-account-link { padding: 0; font-weight: 600; }
+.coverage-account-meta { font-variant-numeric: tabular-nums; color: var(--ink-2); }
+.coverage-nodes-section { display: flex; flex-direction: column; gap: 8px; }
+.coverage-nodes-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px; }
+.coverage-node-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.coverage-node { padding: 10px 12px; border: 1px solid var(--hairline); border-radius: 12px; background: var(--surface); display: flex; flex-direction: column; gap: 6px; }
+.coverage-node.has-zero { border-color: color-mix(in srgb, var(--critical) 35%, var(--hairline)); }
+.coverage-node-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 6px 12px; }
+.coverage-node-title { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.coverage-node-title time { font-family: var(--num); font-variant-numeric: lining-nums tabular-nums; font-weight: 600; font-size: 14px; }
+.coverage-node-actions { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
+.coverage-node-details { display: flex; flex-direction: column; gap: 4px; padding-top: 6px; border-top: 1px solid var(--hairline); line-height: 1.6; }
+.coverage-label-critical { color: var(--critical); }
+.coverage-label-warn { color: var(--ink); }
+.coverage-more { margin-top: 10px; }
+@media (max-width: 640px) {
+  .coverage-month-body { padding-left: 8px; }
+  .coverage-month-meta { margin-left: 0; flex-basis: 100%; }
+}
