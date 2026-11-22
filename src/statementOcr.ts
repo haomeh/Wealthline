@@ -1,6 +1,9 @@
 const assets = '/ocr/7.0.0'
 
-export async function createStatementOcr(signal:AbortSignal) {
+export type StatementOcrLang = 'chi_tra+eng' | 'eng'
+export type StatementOcrLayout = boolean | 'block'
+
+export async function createStatementOcr(signal:AbortSignal, langs:StatementOcrLang='chi_tra+eng') {
   // Use the pinned worker protocol to also terminate during language-model initialization.
   const worker = new Worker(`${assets}/worker.min.js`)
   let serial = 0
@@ -30,17 +33,18 @@ export async function createStatementOcr(signal:AbortSignal) {
   })
   try {
     await run('load',{options:{lstmOnly:true,corePath:`${assets}/core`,logging:false}})
-    await run('loadLanguage',{langs:'chi_tra+eng',options:{langPath:`${assets}/lang`,gzip:true,lstmOnly:true,cacheMethod:'none'}})
-    await run('initialize',{langs:'chi_tra+eng',oem:1,config:{}})
+    await run('loadLanguage',{langs,options:{langPath:`${assets}/lang`,gzip:true,lstmOnly:true,cacheMethod:'none'}})
+    await run('initialize',{langs,oem:1,config:{}})
     await run('setParameters',{params:{tessedit_pageseg_mode:'7',preserve_interword_spaces:'1'}})
-    return {close,recognize:async(image:Uint8Array,layout=false)=>{
-      await run('setParameters',{params:{tessedit_pageseg_mode:layout?'3':'7'}})
-      return run('recognize',{image,options:{},output:{text:true,tsv:layout}})
+    return {close,recognize:async(image:Uint8Array,layout:StatementOcrLayout=false)=>{
+      const psm = layout === 'block' ? '6' : layout ? '3' : '7'
+      await run('setParameters',{params:{tessedit_pageseg_mode:psm}})
+      return run('recognize',{image,options:{},output:{text:true,tsv:!!layout}})
     }}
   } catch(e) {close();throw e}
 }
 
-type StatementOcr = Awaited<ReturnType<typeof createStatementOcr>>
+export type StatementOcr = Awaited<ReturnType<typeof createStatementOcr>>
 // Loading the language models takes longer than reading a statement's merchants, so the files of
 // one import run (one AbortSignal) pass finished OCR workers on to the next files. One file uses a
 // worker at a time; aborting the run terminates them, and an unused worker closes after a short wait.
@@ -54,13 +58,14 @@ export function statementOcrWorkers() {
   const cores = globalThis.navigator?.hardwareConcurrency || 2
   return Math.max(1,Math.min(6,cores-(cores > 4 ? 2 : 1)))
 }
-const parked = new WeakMap<AbortSignal, {ocr:StatementOcr;drop:()=>void}[]>()
-export async function takeStatementOcr(signal:AbortSignal): Promise<StatementOcr> {
-  const idle = parked.get(signal)?.at(-1)
+const parked = new WeakMap<AbortSignal, {ocr:StatementOcr;langs:StatementOcrLang;drop:()=>void}[]>()
+export async function takeStatementOcr(signal:AbortSignal, langs:StatementOcrLang='chi_tra+eng'): Promise<StatementOcr> {
+  const list = parked.get(signal)
+  const idle = list ? [...list].reverse().find(p=>p.langs === langs) : undefined
   if(idle && !signal.aborted) {idle.drop();return idle.ocr}
-  return createStatementOcr(signal)
+  return createStatementOcr(signal, langs)
 }
-export function releaseStatementOcr(signal:AbortSignal, ocr:StatementOcr) {
+export function releaseStatementOcr(signal:AbortSignal, ocr:StatementOcr, langs:StatementOcrLang='chi_tra+eng') {
   const idle = parked.get(signal) ?? []
   if(signal.aborted || idle.length >= statementOcrWorkers() || idle.some(p=>p.ocr === ocr)) {ocr.close();return}
   const close = () => {drop();ocr.close()}
@@ -72,5 +77,5 @@ export function releaseStatementOcr(signal:AbortSignal, ocr:StatementOcr) {
     if(!list.length) parked.delete(signal)
   }
   signal.addEventListener('abort',close,{once:true})
-  parked.set(signal,[...idle,{ocr,drop}])
+  parked.set(signal,[...idle,{ocr,langs,drop}])
 }
