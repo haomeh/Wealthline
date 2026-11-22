@@ -92,6 +92,10 @@ export function Accounts({ data, onChange, view, setView, onBack, onRefreshPrice
         onRefreshPrices={onRefreshPrices}
         priceError={priceError}
         saved={saved?.accounts.find((x) => x.id === current.id)}
+        dirty={dirty}
+        busy={busy}
+        onSaveHistory={onSaveHistory ?? onChange}
+        onGoHistory={onGoHistory}
       />
     )
   }
