@@ -44,12 +44,12 @@ const setName = async (label, value) => {
   })
 }
 
-test('the latest statement of an account is previewed with its cash, holdings and in-transit money, then imported into the accounts', async () => {
+test('the latest statement of an account is previewed with its cash, holdings and in-transit money, then imported into accounts and history', async () => {
   const calls = {}
   const latest = await render([statement('older.pdf', '2026-01-02'), statement('newer.pdf', '2026-02-27')], model.emptyData(), calls)
   const text = document.body.textContent
   assert.match(text, /moomoo \(1234\) · 2026-02-27/)
-  assert.match(text, /來源：newer\.pdf（另有 1 份較舊的對帳單不匯入）/)
+  assert.match(text, /來源：newer\.pdf（同批另含 1 份較早對帳單，將一併寫入對應日期的歷史紀錄）/)
   // The 20 in transit is part of the SGD cash, so the account adds up to the statement's net assets.
   assert.match(text, /在途的申購／贖回 1 筆（申購 SGD 20.*）已併入對應幣別的現金/)
   assert.match(text, /現金 · SGD 120/)
@@ -59,7 +59,58 @@ test('the latest statement of an account is previewed with its cash, holdings an
   const [account] = latest().accounts
   assert.deepEqual([account.name, account.kind, account.country, account.category], ['moomoo (1234)', 'investment', 'SG', '海外股票 (新股)'])
   assert.deepEqual(account.positions.map((p) => [p.type, p.currency, p.symbol, p.quantity]), [['cash', 'SGD', '', 120], ['cash', 'USD', '', 8], ['holding', 'USD', 'EXMP', 2]])
+  // Both dated statements in the batch are recorded in history.quantityDays.
+  assert.deepEqual(latest().history.quantityDays.map((d) => d.date), ['2026-01-02', '2026-02-27'])
   assert.match(calls.message, /已匯入 1 個證券帳戶（moomoo \(1234\)）.*儲存變更/)
+})
+
+test('importing an older moomoo statement (e.g. 2026-05) writes only history and never overwrites or deletes newer MOOMOO holdings', async () => {
+  const existing = {
+    id: 'moomoo-1',
+    name: 'MOOMOO',
+    kind: 'investment',
+    country: 'SG',
+    category: '海外股票 (美股)',
+    positions: [
+      { id: 'p1', type: 'holding', currency: 'USD', symbol: 'NVDA', quantity: 50, price: 140, addedAt: '2026-09-01T00:00:00Z' },
+      { id: 'p2', type: 'holding', currency: 'USD', symbol: 'AAPL', quantity: 20, price: 220, addedAt: '2026-09-01T00:00:00Z' },
+      { id: 'p3', type: 'cash', currency: 'USD', symbol: '', quantity: 500, price: 1, addedAt: '2026-09-01T00:00:00Z' },
+      { id: 'p4', type: 'cash', currency: 'SGD', symbol: '', quantity: 1000, price: 1, addedAt: '2026-09-01T00:00:00Z' },
+    ],
+  }
+  const data = {
+    ...model.emptyData(),
+    accounts: [existing],
+    history: {
+      changes: [],
+      snapshots: [{ date: '2026-09-30', at: '2026-09-30T12:00:00Z', total: 500000, accounts: [{ id: 'moomoo-1', name: 'MOOMOO', value: 500000 }], categories: {} }],
+    },
+  }
+  const calls = {}
+  const latest = await render([statement('moomoo-2026-05.pdf', '2026-05-31', { plain: true })], data, calls)
+  const text = document.body.textContent
+  assert.match(text, /此為歷史對帳單（2026\/05\/31），早於「MOOMOO」目前紀錄（最新至 2026\/09\/30）/)
+  assert.match(text, /預設只寫入該日期的歷史持倉紀錄，不會取代或刪除目前持倉/)
+  assert.doesNotMatch(text, /將取代「MOOMOO」，刪除以下/)
+  assert.ok(button('確認匯入歷史紀錄'))
+
+  await act(() => button('確認匯入歷史紀錄').click())
+  // Current MOOMOO positions are completely untouched!
+  assert.deepEqual(
+    latest().accounts[0].positions.map((p) => [p.symbol, p.currency, p.quantity]),
+    [['NVDA', 'USD', 50], ['AAPL', 'USD', 20], ['', 'USD', 500], ['', 'SGD', 1000]],
+  )
+  // 2026-05-31 history records the statement holdings/cash AND explicitly marks unlisted current holdings (NVDA, AAPL) as 0.
+  const may = latest().history.quantityDays.find((d) => d.date === '2026-05-31')
+  assert.ok(may)
+  assert.equal(may.sparse, true)
+  const byKey = Object.fromEntries(may.entries.map((e) => [`${e.type}:${e.symbol}:${e.currency}`, e.quantity]))
+  assert.equal(byKey['cash::SGD'], 100)
+  assert.equal(byKey['cash::USD'], 8)
+  assert.equal(byKey['holding:EXMP:USD'], 2)
+  assert.equal(byKey['holding:NVDA:USD'], 0)
+  assert.equal(byKey['holding:AAPL:USD'], 0)
+  assert.match(calls.message, /歷史持倉紀錄（目前持倉未變動）/)
 })
 
 test('an existing account named like the broker is updated by default instead of a second one being created', async () => {
