@@ -35,13 +35,16 @@ interface AccountsProps extends Props {
   priceError: string
   // The last saved data, to mark unsaved edits.
   saved?: WealthData | null
+  dirty?: boolean
+  busy?: boolean
+  onSaveHistory?: (next: WealthData) => void
   onGoHistory?: (date?: string) => void
   historyArchive?: ArchiveSummary
   onLoadHistory?: () => void
   loadingHistory?: boolean
 }
 
-export function Accounts({ data, onChange, view, setView, onBack, onRefreshPrices, priceError, saved, onGoHistory, historyArchive, onLoadHistory, loadingHistory }: AccountsProps) {
+export function Accounts({ data, onChange, view, setView, onBack, onRefreshPrices, priceError, saved, dirty, busy, onSaveHistory, onGoHistory, historyArchive, onLoadHistory, loadingHistory }: AccountsProps) {
   const now = useCalendarNow()
   const showImport = view.page === 'list' && !!view.importing
   // Phone only: which kind of account the list shows. Wide screens show both tables.
@@ -168,7 +171,9 @@ export function Accounts({ data, onChange, view, setView, onBack, onRefreshPrice
         <AccountCoverage
           data={data}
           now={now}
-          onOpenAccount={(id) => setView({ page: 'detail', id })}
+          dirty={dirty}
+          busy={busy}
+          onSaveHistory={onSaveHistory ?? onChange}
           onGoHistory={onGoHistory}
           archive={historyArchive}
           onLoadHistory={onLoadHistory}

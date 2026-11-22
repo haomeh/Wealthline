@@ -71,21 +71,23 @@ export function QuantityHistory({ data, busy = false, onChange, request: editing
   </section>
 }
 
-export function QuantityEditor({ data, busy = false, date: initialDate, expected, entryKey, onCancel, onApply }: {
-  data: WealthData; busy?: boolean; date: string; expected?: QuantityDay; entryKey?: string; onCancel: () => void; onApply: (data: WealthData) => void;
+export function QuantityEditor({ data, busy = false, date: initialDate, expected, accountId: initialAccountId, entryKey, onCancel, onApply }: {
+  data: WealthData; busy?: boolean; date: string; expected?: QuantityDay; accountId?: string; entryKey?: string; onCancel: () => void; onApply: (data: WealthData) => void;
 }) {
   const catalog = historyCatalog(data)
   const editEntries = expected ? resolveCompletion(data,expected).entries : []
   const editingDay = !!expected
-  const initialKey = entryKey ?? (editEntries.length === 1 ? instrumentKey(editEntries[0]) : '')
+  const accountChoices = !editingDay && initialAccountId ? catalog.filter(e => e.accountId === initialAccountId) : []
+  const initialKey = entryKey ?? (editingDay && editEntries.length === 1 ? instrumentKey(editEntries[0]) : accountChoices.length === 1 ? instrumentKey(accountChoices[0]) : '')
   const initial = editingDay ? editEntries.find(e => instrumentKey(e) === initialKey) : catalog.find(e => instrumentKey(e) === initialKey)
-  const [step, setStep] = useState(initial ? 2 : editingDay ? -1 : 0)
-  const [accountId, setAccountId] = useState(initial?.accountId ?? '')
+  const resolvedAccountId = initial?.accountId ?? initialAccountId ?? ''
+  const [step, setStep] = useState(initial ? 2 : resolvedAccountId ? 1 : editingDay ? -1 : 0)
+  const [accountId, setAccountId] = useState(resolvedAccountId)
   const [selectedKey, setSelectedKey] = useState(initialKey)
   const [date, setDate] = useState(initialDate)
   const [mode,setMode] = useState<'day'|'period'>('day')
   const [end,setEnd] = useState('')
-  const [timeZone,setTimeZone] = useState(Intl.DateTimeFormat().resolvedOptions().timeZone)
+  const [timeZone,setTimeZone] = useState(() => (initialKey && data.history.holdingPeriods?.find(p => instrumentKey(p) === initialKey)?.timeZone) || Intl.DateTimeFormat().resolvedOptions().timeZone)
   const [periodPreview,setPeriodPreview] = useState<{period:HoldingPeriod;revision:string;conflicts:string[];days:QuantityDay[];before:WealthData}|null>(null)
   const [confirmed,setConfirmed] = useState(false)
   const [quantity, setQuantity] = useState(() => initial ? (expected ? resolveCompletion(data,expected).entries : entriesForDate(data,initialDate)).find(e => instrumentKey(e) === initialKey)?.quantity?.toString() ?? '' : '')

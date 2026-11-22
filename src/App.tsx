@@ -641,6 +641,12 @@ export default function App() {
 
   const go = (r: Route, replace = false) => navigate(routePath(r), { replace })
   const goAccounts = (view: AccountsView, replace = false) => go({ tab: 'accounts', ...view }, replace)
+  const saveHistory = (next: WealthData) => {
+    if (savingRef.current) throw new Error('背景儲存中，請稍後再儲存歷史修改。')
+    if (dirtyRef.current) throw new Error('請先儲存或捨棄其他未儲存修改，再儲存歷史。')
+    update(next)
+    void persist(next)
+  }
   const passwordScope = local ? 'local' : user ? `google:${user.sub}` : undefined
 
   // The account menu's parts, shared by the sidebar menu and the phone's 更多 page.
@@ -797,11 +803,7 @@ export default function App() {
         )}
         {data && route.tab === 'history' && missing('history') && waiting('history')}
         {data && route.tab === 'history' && !missing('history') && <HistoryView key={route.date ?? 'history'} initialDate={route.date} data={data} dirty={dirty} busy={busy || dirty} onSave={requestSave}
-          onChange={(next) => {
-            if (savingRef.current) throw new Error('背景儲存中，請稍後再儲存歷史修改。')
-            if (dirtyRef.current) throw new Error('請先儲存或捨棄其他未儲存修改，再儲存歷史。')
-            update(next); void persist(next)
-          }} onOpenAccount={(id) => goAccounts({ page: 'detail', id })} onNewAccount={() => goAccounts({ page: 'new' })} />}
+          onChange={saveHistory} onOpenAccount={(id) => goAccounts({ page: 'detail', id })} onNewAccount={() => goAccounts({ page: 'new' })} />}
         {data && route.tab === 'accounts' && route.page === 'detail' && missing('history') && waiting('history')}
         {data && route.tab === 'accounts' && !(route.page === 'detail' && missing('history')) && (
           <Accounts
@@ -816,6 +818,9 @@ export default function App() {
             }}
             priceError={priceError}
             saved={saved.current}
+            dirty={dirty}
+            busy={busy}
+            onSaveHistory={saveHistory}
             onGoHistory={(date) => go(date ? { tab: 'history', date } : { tab: 'history' })}
             historyArchive={archive ?? undefined}
             onLoadHistory={() => void loadGroup('history')}

@@ -3,15 +3,24 @@ import { accountCoverage, type AccountCoverageCell, type MonthCoverage, type Tim
 import { fmt } from '../format'
 import type { WealthData } from '../model'
 import type { ArchiveSummary } from './Overview'
+import { QuantityEditor } from './QuantityHistory'
 
 interface Props {
   data: WealthData
   now: string
-  onOpenAccount: (id: string) => void
+  dirty?: boolean
+  busy?: boolean
+  onSaveHistory?: (next: WealthData) => void
   onGoHistory?: (date?: string) => void
   archive?: ArchiveSummary
   onLoadHistory?: () => void
   loadingHistory?: boolean
+}
+
+interface BackfillRequest {
+  date: string
+  accountId: string
+  entryKey?: string
 }
 
 const SOURCE_LABELS: Record<TimeNodeSource, string> = {
@@ -27,11 +36,27 @@ const SOURCE_LABELS: Record<TimeNodeSource, string> = {
 const fmtDate = (date: string) => date.replaceAll('-', '/')
 const fmtMonth = (month: string) => month.replace('-', '/')
 
-function AccountName({ cell, onOpenAccount }: { cell: AccountCoverageCell; onOpenAccount: (id: string) => void }) {
-  if (!cell.account.isCurrent) return <strong>{cell.account.label}（歷史帳戶）</strong>
+function AccountBackfillButton({
+  cell,
+  date,
+  disabled,
+  onBackfill,
+}: {
+  cell: AccountCoverageCell
+  date: string
+  disabled?: boolean
+  onBackfill: (date: string, cell: AccountCoverageCell) => void
+}) {
+  const label = cell.account.isCurrent ? cell.account.label : `${cell.account.label}（歷史帳戶）`
   return (
-    <button type="button" className="link coverage-account-link" onClick={() => onOpenAccount(cell.account.id)}>
-      {cell.account.label}
+    <button
+      type="button"
+      className="link coverage-account-link"
+      disabled={disabled}
+      title={`補登 ${fmtDate(date)} ${label}`}
+      onClick={() => onBackfill(date, cell)}
+    >
+      {label}
     </button>
   )
 }
@@ -39,15 +64,19 @@ function AccountName({ cell, onOpenAccount }: { cell: AccountCoverageCell; onOpe
 function GapGroup({
   title,
   tone,
+  date,
   cells,
   describe,
-  onOpenAccount,
+  disabled,
+  onBackfill,
 }: {
   title: string
   tone: 'critical' | 'warn' | 'muted'
+  date: string
   cells: AccountCoverageCell[]
   describe: (cell: AccountCoverageCell) => string
-  onOpenAccount: (id: string) => void
+  disabled?: boolean
+  onBackfill: (date: string, cell: AccountCoverageCell) => void
 }) {
   if (!cells.length) return null
   return (
@@ -57,7 +86,7 @@ function GapGroup({
         {cells.map((cell) => (
           <li key={cell.account.id}>
             <span className="coverage-account-main">
-              <AccountName cell={cell} onOpenAccount={onOpenAccount} />
+              <AccountBackfillButton cell={cell} date={date} disabled={disabled} onBackfill={onBackfill} />
               <span className="muted small">{cell.account.category}</span>
             </span>
             <span className="coverage-account-meta small">{describe(cell)}</span>
@@ -70,11 +99,13 @@ function GapGroup({
 
 function NodeCard({
   node,
-  onOpenAccount,
+  disabled,
+  onBackfill,
   onGoHistory,
 }: {
   node: TimeNodeCoverage
-  onOpenAccount: (id: string) => void
+  disabled?: boolean
+  onBackfill: (date: string, cell: AccountCoverageCell) => void
   onGoHistory?: (date?: string) => void
 }) {
   const gapSummary = [
@@ -103,7 +134,7 @@ function NodeCard({
           </span>
           {onGoHistory && (
             <button type="button" className="link small" onClick={() => onGoHistory(node.date)}>
-              {node.hasGaps ? '前往補登 →' : '查看明細 →'}
+              {node.hasGaps ? '前往歷史頁 →' : '查看明細 →'}
             </button>
           )}
         </div>
@@ -116,7 +147,7 @@ function NodeCard({
               {node.missingZero.map((c, i) => (
                 <span key={c.account.id}>
                   {i > 0 && '、'}
-                  <AccountName cell={c} onOpenAccount={onOpenAccount} />
+                  <AccountBackfillButton cell={c} date={node.date} disabled={disabled} onBackfill={onBackfill} />
                   {c.account.referenceValue ? <span className="muted">（目前約 NT$ {fmt(c.account.referenceValue, 0)}）</span> : null}
                 </span>
               ))}
@@ -128,7 +159,7 @@ function NodeCard({
               {node.partial.map((c, i) => (
                 <span key={c.account.id}>
                   {i > 0 && '、'}
-                  <AccountName cell={c} onOpenAccount={onOpenAccount} />
+                  <AccountBackfillButton cell={c} date={node.date} disabled={disabled} onBackfill={onBackfill} />
                   {c.missingItems?.length ? <span className="muted">（缺 {c.missingItems.join('、')}）</span> : null}
                 </span>
               ))}
@@ -140,7 +171,7 @@ function NodeCard({
               {node.carried.map((c, i) => (
                 <span key={c.account.id}>
                   {i > 0 && '、'}
-                  <AccountName cell={c} onOpenAccount={onOpenAccount} />
+                  <AccountBackfillButton cell={c} date={node.date} disabled={disabled} onBackfill={onBackfill} />
                   {c.carriedFrom ? <span className="muted">（沿用 {fmtDate(c.carriedFrom)}）</span> : null}
                 </span>
               ))}
@@ -152,7 +183,7 @@ function NodeCard({
               {node.noQuote.map((c, i) => (
                 <span key={c.account.id}>
                   {i > 0 && '、'}
-                  <AccountName cell={c} onOpenAccount={onOpenAccount} />
+                  <AccountBackfillButton cell={c} date={node.date} disabled={disabled} onBackfill={onBackfill} />
                   {c.missingItems?.length ? <span className="muted">（{c.missingItems.join('、')}）</span> : null}
                 </span>
               ))}
@@ -167,14 +198,16 @@ function NodeCard({
 function MonthRow({
   month,
   open,
+  disabled,
   onToggle,
-  onOpenAccount,
+  onBackfill,
   onGoHistory,
 }: {
   month: MonthCoverage
   open: boolean
+  disabled?: boolean
   onToggle: () => void
-  onOpenAccount: (id: string) => void
+  onBackfill: (date: string, cell: AccountCoverageCell) => void
   onGoHistory?: (date?: string) => void
 }) {
   const [showAllNodes, setShowAllNodes] = useState(false)
@@ -215,34 +248,42 @@ function MonthRow({
               <GapGroup
                 title="缺少紀錄（無更早紀錄或快照未涵蓋，以 0 計）"
                 tone="critical"
+                date={month.latest.date}
                 cells={month.missingZero}
                 describe={(c) =>
                   c.account.referenceValue !== null
                     ? `${c.account.isCurrent ? '目前約' : '最近紀錄'} NT$ ${fmt(c.account.referenceValue, 0)}`
                     : '尚無參考估值'
                 }
-                onOpenAccount={onOpenAccount}
+                disabled={disabled}
+                onBackfill={onBackfill}
               />
               <GapGroup
                 title="部分項目缺少紀錄"
                 tone="warn"
+                date={month.latest.date}
                 cells={month.partial}
                 describe={(c) => `缺 ${c.missingItems?.join('、') || '部分項目'}`}
-                onOpenAccount={onOpenAccount}
+                disabled={disabled}
+                onBackfill={onBackfill}
               />
               <GapGroup
                 title="整月未更新（沿用更早月份）"
                 tone="muted"
+                date={month.latest.date}
                 cells={month.carried}
                 describe={(c) => (c.carriedFrom ? `沿用 ${fmtDate(c.carriedFrom)}` : '沿用更早紀錄')}
-                onOpenAccount={onOpenAccount}
+                disabled={disabled}
+                onBackfill={onBackfill}
               />
               <GapGroup
                 title="缺少歷史行情／匯率"
                 tone="warn"
+                date={month.latest.date}
                 cells={month.noQuote}
                 describe={(c) => c.missingItems?.join('、') || '缺行情'}
-                onOpenAccount={onOpenAccount}
+                disabled={disabled}
+                onBackfill={onBackfill}
               />
             </div>
           ) : (
@@ -254,7 +295,7 @@ function MonthRow({
 
           <div className="coverage-nodes-section">
             <div className="coverage-nodes-head">
-              <span className="muted small">本月時間節點（最新優先）</span>
+              <span className="muted small">本月時間節點（最新優先；點選缺漏帳戶可直接補登）</span>
               {onGoHistory && (
                 <button type="button" className="link small" onClick={() => onGoHistory(month.latest.date)}>
                   到歷史頁檢視 {fmtDate(month.latest.date)} →
@@ -263,7 +304,7 @@ function MonthRow({
             </div>
             <ul className="coverage-node-list">
               {visibleNodes.map((node) => (
-                <NodeCard key={node.date} node={node} onOpenAccount={onOpenAccount} onGoHistory={onGoHistory} />
+                <NodeCard key={node.date} node={node} disabled={disabled} onBackfill={onBackfill} onGoHistory={onGoHistory} />
               ))}
             </ul>
             {month.nodes.length > visibleNodes.length && (
@@ -278,7 +319,7 @@ function MonthRow({
   )
 }
 
-export function AccountCoverage({ data: loaded, now, onOpenAccount, onGoHistory, archive, onLoadHistory, loadingHistory }: Props) {
+export function AccountCoverage({ data: loaded, now, dirty = false, busy = false, onSaveHistory, onGoHistory, archive, onLoadHistory, loadingHistory }: Props) {
   const data = useMemo(
     () =>
       archive
@@ -299,6 +340,8 @@ export function AccountCoverage({ data: loaded, now, onOpenAccount, onGoHistory,
   const [visibleNodes, setVisibleNodes] = useState(30)
   // Auto-open the newest month with gaps until the user explicitly toggles months.
   const [toggledMonths, setToggledMonths] = useState<Record<string, boolean>>({})
+  const [backfill, setBackfill] = useState<BackfillRequest | null>(null)
+  const [backfillNotice, setBackfillNotice] = useState('')
 
   if (!report.nodes.length) return null
 
@@ -306,9 +349,27 @@ export function AccountCoverage({ data: loaded, now, onOpenAccount, onGoHistory,
   const isMonthOpen = (month: string) => toggledMonths[month] ?? month === defaultOpenMonth
   const toggleMonth = (month: string) => setToggledMonths((prev) => ({ ...prev, [month]: !(prev[month] ?? month === defaultOpenMonth) }))
 
+  const openBackfill = (date: string, cell: AccountCoverageCell) => {
+    setBackfillNotice('')
+    if (dirty) {
+      setBackfillNotice('請先儲存或捨棄其他未儲存修改，再補登歷史數量。')
+      return
+    }
+    if (archive && date < archive.from) {
+      setBackfillNotice(`${date.slice(0, 4)} 年的完整歷史尚未載入，請先按上方「載入完整歷史」再補登此日期。`)
+      return
+    }
+    setBackfill({
+      date,
+      accountId: cell.account.id,
+      entryKey: cell.missingKeys?.length === 1 ? cell.missingKeys[0] : undefined,
+    })
+  }
+
   const activeOnlyGaps = onlyGaps[mode]
   const shownMonths = activeOnlyGaps ? report.months.filter((m) => m.hasMonthGaps || m.nodeGapCount > 0) : report.months
   const filteredNodes = activeOnlyGaps ? report.nodes.filter((n) => n.hasGaps) : report.nodes
+  const editDisabled = busy || dirty || !onSaveHistory
 
   return (
     <section className="panel account-coverage" id="account-coverage" aria-label="歷史帳戶覆蓋與缺漏">
@@ -317,7 +378,7 @@ export function AccountCoverage({ data: loaded, now, onOpenAccount, onGoHistory,
           <h3>歷史帳戶覆蓋與缺漏</h3>
           <p className="muted small">
             {report.gapNodeCount > 0
-              ? `共 ${report.months.length} 個月、${report.nodes.length} 個歷史時間節點；其中 ${report.gapMonthCount} 個月（${report.gapNodeCount} 個節點）有帳戶缺少紀錄、部分未填或沿用舊值。`
+              ? `共 ${report.months.length} 個月、${report.nodes.length} 個歷史時間節點；其中 ${report.gapMonthCount} 個月（${report.gapNodeCount} 個節點）有帳戶缺漏。點選缺漏帳戶可直接補登該日數量。`
               : `共 ${report.months.length} 個月、${report.nodes.length} 個歷史時間節點，所有節點皆已涵蓋全部帳戶。`}
           </p>
         </div>
@@ -351,6 +412,8 @@ export function AccountCoverage({ data: loaded, now, onOpenAccount, onGoHistory,
         </div>
       </div>
 
+      {dirty && <p className="notice">請先儲存或捨棄其他未儲存修改，再補登歷史數量。</p>}
+      {backfillNotice && <p className="notice">{backfillNotice}</p>}
       {archive && onLoadHistory && (
         <p className="muted small coverage-note">
           {archive.from.slice(0, 4)} 年以前目前只依每月最後一筆原始快照檢查，不含往年補登與期間推算。
@@ -361,6 +424,22 @@ export function AccountCoverage({ data: loaded, now, onOpenAccount, onGoHistory,
       )}
       {report.periodError && <p className="notice">{report.periodError}</p>}
 
+      {backfill && onSaveHistory && (
+        <QuantityEditor
+          key={`${backfill.date}:${backfill.accountId}:${backfill.entryKey ?? ''}`}
+          data={loaded}
+          busy={busy || dirty}
+          date={backfill.date}
+          accountId={backfill.accountId}
+          entryKey={backfill.entryKey}
+          onCancel={() => setBackfill(null)}
+          onApply={(next) => {
+            onSaveHistory(next)
+            setBackfill(null)
+          }}
+        />
+      )}
+
       {mode === 'month' ? (
         shownMonths.length > 0 ? (
           <div className="coverage-month-list">
@@ -369,8 +448,9 @@ export function AccountCoverage({ data: loaded, now, onOpenAccount, onGoHistory,
                 key={month.month}
                 month={month}
                 open={isMonthOpen(month.month)}
+                disabled={editDisabled}
                 onToggle={() => toggleMonth(month.month)}
-                onOpenAccount={onOpenAccount}
+                onBackfill={openBackfill}
                 onGoHistory={onGoHistory}
               />
             ))}
@@ -382,7 +462,7 @@ export function AccountCoverage({ data: loaded, now, onOpenAccount, onGoHistory,
         <>
           <ul className="coverage-node-list">
             {filteredNodes.slice(0, visibleNodes).map((node) => (
-              <NodeCard key={node.date} node={node} onOpenAccount={onOpenAccount} onGoHistory={onGoHistory} />
+              <NodeCard key={node.date} node={node} disabled={editDisabled} onBackfill={openBackfill} onGoHistory={onGoHistory} />
             ))}
           </ul>
           {filteredNodes.length > visibleNodes && (
@@ -397,3 +477,4 @@ export function AccountCoverage({ data: loaded, now, onOpenAccount, onGoHistory,
     </section>
   )
 }
+
