@@ -140,7 +140,12 @@ export async function readStatementPages(pdf:StatementPdf, signal:AbortSignal, f
       page.cleanup()
       if(lines.join('').length > 500_000) throw new Error('帳單文字過多，請拆分後再匯入')
     }
-    if(!lines.length) throw new Error('此 PDF 沒有可讀取的文字。第一版暫不支援掃描／圖片帳單。')
+    if(!lines.length) {
+      const { readHsbcSgGlyphPdf } = await import('./hsbcSgOcr')
+      const glyphRead = await readHsbcSgGlyphPdf(pdf, signal, onProgress)
+      if(glyphRead) return { ...glyphRead, title: glyphRead.title || title }
+      throw new Error('此 PDF 沒有可讀取的文字。第一版暫不支援掃描／圖片帳單。')
+    }
     return {lines,title,ocrUsed,ocrError,...(scoped && {transactionIndexes})}
   } finally {
     // A working OCR worker goes on to the next file of this import run.

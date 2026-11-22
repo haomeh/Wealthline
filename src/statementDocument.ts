@@ -110,7 +110,7 @@ export type StatementPageText = Awaited<ReturnType<typeof readStatementText>>;
  * caller can go on (classify, read card lines) without opening and reading the file again. It handles its
  * own errors: anything it throws is reported as a bank reading error.
  */
-export async function readBankDocument<T = never>(bytes: Uint8Array, password: string | readonly string[], signal: AbortSignal, onPageProgress?: (progress: BankPageProgress) => void, withDocument?: (pdf: StatementPdf, texts: readonly StatementPageText[], pages: readonly BankPage[]) => Promise<T>): Promise<{
+export async function readBankDocument<T = never>(bytes: Uint8Array, password: string | readonly string[], signal: AbortSignal, onPageProgress?: (progress: BankPageProgress) => void, withDocument?: (pdf: StatementPdf, texts: readonly StatementPageText[], pages: readonly BankPage[]) => Promise<T>, options?: { allowEmptyText?: boolean }): Promise<{
     pages: BankPage[];
     mode: 'bank';
     extra?: T;
@@ -158,7 +158,7 @@ export async function readBankDocument<T = never>(bytes: Uint8Array, password: s
                 page.cleanup();
             }
         }
-        if (!chars)
+        if (!chars && !options?.allowEmptyText)
             throw new Error(BANK_PDF_ERRORS.noText);
         if (withDocument) extra = await withDocument(pdf, texts, pages);
     }

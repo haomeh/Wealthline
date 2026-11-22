@@ -141,7 +141,7 @@ export function statementMetadata(lines:string[], title = '', fileName = ''): {b
   const bank = find(issuers) ?? find([...issuers,[/台新|TAISHIN/i,'台新']])
   const identity={bank,...(bank === '匯豐' && /AMOUNT\s*\(\s*SGD\s*\)|ACCOUNT\s+SUMMARY\s+SGD/i.test(lines.join(' ')) ? {currency:'SGD'} : {})}
   for(const line of lines) {
-    const closing=line.match(/^Statement From \d{1,2}\s+[A-Z]{3}\s+\d{4}\s+to\s+(\d{1,2})\s+([A-Z]{3})\s+(\d{4})/i)
+    const closing=line.match(/^(?:Statement\s+)?From\s+\d{1,2}\s+[A-Z]{3}\s+\d{4}\s+to\s+(\d{1,2})\s+([A-Z]{3})\s+(\d{4})\b/i)
     const date=closing && englishDate(`${closing[1]} ${closing[2]}`)
     if(identity.currency && closing && date && validDate(`${closing[3]}-${date.replace('/','-')}`)) return {...identity,month:`${closing[3]}-${date.slice(0,2)}`,monthSource:'帳單結帳日'}
   }

@@ -86,6 +86,38 @@ export async function detectStatementKind(bytes: Uint8Array, password: string | 
   // A classifier failure is not a reading error: it is thrown as it is, after the document is closed.
   let failed: { error: unknown } | undefined
   const document = await readBankDocument(bytes, password, signal, undefined, async (pdf, texts, pages) => {
+    if (pages.every(p => p.items.length === 0)) {
+      const { BANK_PDF_ERRORS } = await import('./bankStatementErrors')
+      const glyphOcr = await import('./hsbcSgOcr')
+      let probe: Awaited<ReturnType<typeof glyphOcr.probeHsbcSgGlyphPdf>>
+      try { probe = await glyphOcr.probeHsbcSgGlyphPdf(pdf, signal, onProgress) }
+      catch (error) {
+        if (signal.aborted) throw new Error('已取消解析')
+        failed = { error }
+        return undefined
+      }
+      if (!probe) {
+        failed = { error: new Error(BANK_PDF_ERRORS.noText) }
+        return undefined
+      }
+      let reader: typeof import('./statementPdf') | undefined
+      try {
+        reader = await import('./statementPdf')
+        const metadata = await pdf.getMetadata().catch(() => null)
+        const info = metadata?.info as { Title?: unknown } | undefined
+        const title = typeof info?.Title === 'string' ? info.Title : ''
+        const read = await glyphOcr.readHsbcSgGlyphPdf(pdf, signal, onProgress, probe)
+        if (!read) {
+          failed = { error: new Error(BANK_PDF_ERRORS.noText) }
+          return undefined
+        }
+        return { kind: 'card' as const, bank: '匯豐', prepared: { kind: 'card', read: { ...read, title: read.title || title } } satisfies PreparedStatement }
+      } catch (e) {
+        if (signal.aborted) throw new Error('已取消解析')
+        const error = reader ? reader.statementPdfError(e) : e
+        return { kind: 'card' as const, bank: '匯豐', prepared: { kind: 'card', error: error instanceof Error ? error.message : '無法解析帳單' } satisfies PreparedStatement }
+      }
+    }
     let classified: ReturnType<typeof classify>
     try { classified = classify(pages, fileName) } catch (error) { failed = { error }; return undefined }
     const { kind, bank, securities } = classified
@@ -102,7 +134,7 @@ export async function detectStatementKind(bytes: Uint8Array, password: string | 
       const error = reader ? reader.statementPdfError(e) : e
       return { ...kind, prepared: { kind: 'card', error: error instanceof Error ? error.message : '無法解析帳單' } satisfies PreparedStatement }
     }
-  })
+  }, { allowEmptyText: true })
   if (failed) throw failed.error
   return document.extra ?? classifyStatement(document.pages, fileName)
 }
