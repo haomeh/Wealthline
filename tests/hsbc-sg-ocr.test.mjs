@@ -76,6 +76,33 @@ test('extractPageGlyphs tracks CTM save/restore/transform, resolves page.objs, a
   assert.equal(page.glyphs[0].x, 320.5)
   assert.equal(page.glyphs[1].x, 325.0)
   assert.equal(page.glyphs[0].hash, page.glyphs[1].hash)
+
+  // Also verify grouped (84) and repeated (89) mask operators from PDF.js QueueOptimizer
+  const grouped = await hsbcSgOcr.extractPageGlyphs({
+    getViewport: () => ({ width: 595, height: 842 }),
+    objs: { has: k => objs.has(k), get: k => objs.get(k) },
+    getOperatorList: async () => ({
+      fnArray: [84, 89],
+      argsArray: [
+        [[{ data: 'mask_p0_1', width: 8, height: 2, transform: [4, 0, 0, 6, 100, 500] }]],
+        [{ data: 'mask_p0_1', width: 8, height: 2 }, 4, 0, 0, 6, new Float32Array([110, 500, 120, 500])],
+      ],
+    }),
+  }, 1)
+  assert.deepEqual(grouped.glyphs.map(g => g.x), [100, 110, 120])
+  assert.equal(new Set(grouped.glyphs.map(g => g.hash)).size, 1)
+})
+
+test('packAlphaMaskTo1Bit converts browser RGBA ImageBitmap alpha channel to identical 1-bit PDF mask bytes', () => {
+  // 9x2 mask: pixel (0,0) opaque, pixel (7,0) opaque, pixel (8,0) opaque, pixel (1,1) opaque.
+  const width = 9, height = 2
+  const rgba = new Uint8ClampedArray(width * height * 4)
+  const ink = (x, y) => { rgba[(y * width + x) * 4 + 3] = 255 }
+  ink(0, 0); ink(7, 0); ink(8, 0); ink(1, 1)
+  const packed = hsbcSgOcr.packAlphaMaskTo1Bit(rgba, width, height)
+  // Row 0: byte0 = 0b01111110 (0x7e), byte1 = 0b01111111 (0x7f)
+  // Row 1: byte0 = 0b10111111 (0xbf), byte1 = 0b11111111 (0xff)
+  assert.deepEqual([...packed], [0x7e, 0x7f, 0xbf, 0xff])
 })
 
 test('renderGlyphRegionRgba draws 1-bit black pixels on white background and parseOcrTsvWords inverts coordinates', () => {
