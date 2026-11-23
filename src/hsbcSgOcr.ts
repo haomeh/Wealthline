@@ -60,7 +60,14 @@ export interface HsbcSgGlyphProbe {
 type Matrix6 = [number, number, number, number, number, number]
 
 // Standard PDF.js OPS codes (fallback if mocked pdfjs-dist omits OPS).
-const DEFAULT_OPS = { save: 10, restore: 11, transform: 12, paintImageMaskXObject: 83 }
+const DEFAULT_OPS = {
+  save: 10,
+  restore: 11,
+  transform: 12,
+  paintImageMaskXObject: 83,
+  paintImageMaskXObjectGroup: 84,
+  paintImageMaskXObjectRepeat: 89,
+}
 
 const MONTHS = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC']
 const MIN_MASK_GLYPHS = 80
@@ -91,11 +98,35 @@ export function hashGlyphBitmap(width: number, height: number, data: Uint8Array)
   return `${width}x${height}:${h1.toString(36)}_${h2.toString(36)}`
 }
 
+/**
+ * Packs an RGBA image mask (alpha >= 128 = opaque ink, alpha < 128 = transparent) into PDF's
+ * 1-bit MSB-first ImageMask layout (bit 0 = ink, bit 1 = transparent), matching `PDFImage.createMask`.
+ */
+export function packAlphaMaskTo1Bit(rgba: Uint8ClampedArray | Uint8Array, width: number, height: number): Uint8Array {
+  const stride = Math.ceil(width / 8)
+  const packed = new Uint8Array(stride * height)
+  packed.fill(0xff)
+  for (let y = 0; y < height; y++) {
+    const rowOut = y * stride
+    const rowIn = y * width
+    for (let x = 0; x < width; x++) {
+      if (rgba[(rowIn + x) * 4 + 3] >= 128) {
+        packed[rowOut + (x >> 3)] &= ~(1 << (7 - (x & 7)))
+      }
+    }
+  }
+  return packed
+}
+
+type PdfObjsLike = { has: (name: string) => boolean; get: (name: string) => unknown }
 type PdfPageLike = {
   getViewport: (params: { scale: number }) => { width: number; height: number }
   getOperatorList?: () => Promise<{ fnArray: number[]; argsArray: unknown[][] }>
-  objs?: { has: (name: string) => boolean; get: (name: string) => unknown }
+  objs?: PdfObjsLike
+  commonObjs?: PdfObjsLike
 }
+
+type RawMaskRef = { data?: unknown; bitmap?: unknown; width?: number; height?: number; transform?: number[] }
 
 /** Extracts 1-bit `paintImageMaskXObject` glyphs with exact PDF coordinates from a page's operator list. */
 export async function extractPageGlyphs(page: PdfPageLike, pageNumber: number): Promise<GlyphPage> {
@@ -106,45 +137,107 @@ export async function extractPageGlyphs(page: PdfPageLike, pageNumber: number): 
   let opsCode = DEFAULT_OPS
   try {
     const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs')
-    if (pdfjs.OPS) opsCode = pdfjs.OPS
+    if (pdfjs.OPS) opsCode = { ...DEFAULT_OPS, ...pdfjs.OPS }
   } catch { /* fallback to DEFAULT_OPS */ }
 
   const list = await page.getOperatorList()
   const stack: Matrix6[] = []
   let ctm: Matrix6 = [1, 0, 0, 1, 0, 0]
   const glyphs: GlyphBox[] = []
-  for (let i = 0; i < list.fnArray.length; i++) {
-    const fn = list.fnArray[i]
-    const args = list.argsArray[i]
-    if (fn === opsCode.save) {
-      stack.push([...ctm])
-    } else if (fn === opsCode.restore) {
-      ctm = stack.pop() ?? [1, 0, 0, 1, 0, 0]
-    } else if (fn === opsCode.transform && Array.isArray(args) && args.length >= 6) {
-      ctm = mulMatrix(ctm, args as number[])
-    } else if (fn === opsCode.paintImageMaskXObject && Array.isArray(args)) {
-      const arg = args[0] as { data?: unknown; width?: number; height?: number } | undefined
-      if (!arg) continue
-      const resolved = typeof arg.data === 'string' && page.objs?.has(arg.data)
-        ? (page.objs.get(arg.data) as { data?: unknown; width?: number; height?: number } | undefined)
-        : arg
-      if (!resolved?.data || !(resolved.data instanceof Uint8Array)) continue
-      const pw = resolved.width ?? 0
-      const ph = resolved.height ?? 0
-      if (pw <= 0 || ph <= 0) continue
-      const w = Math.abs(ctm[0])
-      const h = Math.abs(ctm[3])
-      if (w <= 0 || h <= 0) continue
-      glyphs.push({
-        x: ctm[4],
-        y: ctm[5],
-        w,
-        h,
-        hash: hashGlyphBitmap(pw, ph, resolved.data),
-        pw,
-        ph,
-        data: resolved.data,
-      })
+  const cache = new Map<string, { pw: number; ph: number; data: Uint8Array; hash: string } | null>()
+
+  // Lazily created scratch canvas for extracting pixels from browser `ImageBitmap` masks
+  // (PDF.js creates `ImageBitmap` and clears `data` whenever `OffscreenCanvas` is supported).
+  let scratchCanvas: HTMLCanvasElement | undefined
+  let scratchCtx: CanvasRenderingContext2D | null = null
+
+  const readBitmap = (bitmap: CanvasImageSource, pw: number, ph: number): Uint8Array | undefined => {
+    if (typeof document === 'undefined') return undefined
+    if (!scratchCanvas) {
+      scratchCanvas = document.createElement('canvas')
+      scratchCtx = scratchCanvas.getContext('2d', { willReadFrequently: true })
+    }
+    if (!scratchCtx) return undefined
+    if (scratchCanvas.width !== pw || scratchCanvas.height !== ph) {
+      scratchCanvas.width = pw
+      scratchCanvas.height = ph
+    } else {
+      scratchCtx.clearRect(0, 0, pw, ph)
+    }
+    scratchCtx.drawImage(bitmap, 0, 0, pw, ph)
+    return packAlphaMaskTo1Bit(scratchCtx.getImageData(0, 0, pw, ph).data, pw, ph)
+  }
+
+  const resolveMask = (arg: RawMaskRef | undefined): { pw: number; ph: number; data: Uint8Array; hash: string } | null => {
+    if (!arg) return null
+    const id = typeof arg.data === 'string' ? arg.data : undefined
+    if (id && cache.has(id)) return cache.get(id)!
+    const store = id?.startsWith('g_') ? page.commonObjs : page.objs
+    const resolved = id && store?.has(id) ? (store.get(id) as RawMaskRef | undefined) : arg
+    const pw = resolved?.width ?? arg.width ?? 0
+    const ph = resolved?.height ?? arg.height ?? 0
+    let data: Uint8Array | undefined
+    if (pw > 0 && ph > 0) {
+      if (resolved?.data instanceof Uint8Array) {
+        data = resolved.data
+      } else if (resolved?.bitmap) {
+        data = readBitmap(resolved.bitmap as CanvasImageSource, pw, ph)
+      }
+    }
+    const entry = data ? { pw, ph, data, hash: hashGlyphBitmap(pw, ph, data) } : null
+    if (id) cache.set(id, entry)
+    return entry
+  }
+
+  const pushGlyph = (entry: { pw: number; ph: number; data: Uint8Array; hash: string } | null, matrix: Matrix6) => {
+    if (!entry) return
+    const w = Math.abs(matrix[0])
+    const h = Math.abs(matrix[3])
+    if (w <= 0 || h <= 0) return
+    glyphs.push({
+      x: matrix[4],
+      y: matrix[5],
+      w,
+      h,
+      hash: entry.hash,
+      pw: entry.pw,
+      ph: entry.ph,
+      data: entry.data,
+    })
+  }
+
+  try {
+    for (let i = 0; i < list.fnArray.length; i++) {
+      const fn = list.fnArray[i]
+      const args = list.argsArray[i]
+      if (fn === opsCode.save) {
+        stack.push([...ctm])
+      } else if (fn === opsCode.restore) {
+        ctm = stack.pop() ?? [1, 0, 0, 1, 0, 0]
+      } else if (fn === opsCode.transform && Array.isArray(args) && args.length >= 6) {
+        ctm = mulMatrix(ctm, args as number[])
+      } else if (fn === opsCode.paintImageMaskXObject && Array.isArray(args)) {
+        pushGlyph(resolveMask(args[0] as RawMaskRef | undefined), ctm)
+      } else if (fn === opsCode.paintImageMaskXObjectGroup && Array.isArray(args) && Array.isArray(args[0])) {
+        for (const image of args[0] as RawMaskRef[]) {
+          if (!Array.isArray(image.transform) || image.transform.length < 6) continue
+          pushGlyph(resolveMask(image), mulMatrix(ctm, image.transform))
+        }
+      } else if (fn === opsCode.paintImageMaskXObjectRepeat && Array.isArray(args) && args.length >= 6) {
+        const entry = resolveMask(args[0] as RawMaskRef | undefined)
+        const scaleX = Number(args[1]), skewX = Number(args[2]), skewY = Number(args[3]), scaleY = Number(args[4])
+        const positions = args[5] as ArrayLike<number> | undefined
+        if (entry && positions) {
+          for (let p = 0; p + 1 < positions.length; p += 2) {
+            pushGlyph(entry, mulMatrix(ctm, [scaleX, skewX, skewY, scaleY, positions[p], positions[p + 1]]))
+          }
+        }
+      }
+    }
+  } finally {
+    if (scratchCanvas) {
+      scratchCanvas.width = 0
+      scratchCanvas.height = 0
     }
   }
   return { page: pageNumber, width: viewport.width, height: viewport.height, glyphs }
