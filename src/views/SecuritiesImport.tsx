@@ -223,9 +223,9 @@ export function SecuritiesImport({ files, prepared, data, busy, onChange, onImpo
             onChange={e => setNames(n => ({ ...n, [group.account]: e.target.value }))}
           />
         </label>
-        {error && <div role="alert"><p>{error}</p></div>}
+        {error && <div className="banner error" role="alert"><p>{error}</p></div>}
         {result && result.errors.length > 0 && (
-          <div role="alert">
+          <div className="banner error" role="alert">
             <p>以下問題必須處理，尚未套用任何資料：</p>
             <ul>{result.errors.map((e, i) => <li key={i}>{e.message}</li>)}</ul>
           </div>
@@ -259,7 +259,7 @@ export function SecuritiesImport({ files, prepared, data, busy, onChange, onImpo
       </div>
     ))}
     {!previews.length && (
-      <div role="status">
+      <div className="notice" role="status">
         <p>沒有可匯入的證券帳戶內容，未匯入任何資料。</p>
         <button disabled={busy} onClick={() => onImported('沒有可匯入的證券帳戶內容，未匯入任何資料。')}>關閉這個分頁</button>
       </div>

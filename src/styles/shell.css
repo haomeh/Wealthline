@@ -131,7 +131,7 @@
   flex-direction: column;
   gap: 3px;
   padding: 12px;
-  border-radius: 14px;
+  border-radius: var(--card-radius);
   background: var(--surface);
   border: 1px solid var(--hairline);
   font-size: 12px;
@@ -414,7 +414,7 @@
     justify-content: space-between;
     gap: 12px;
     padding: 10px 10px 10px 16px;
-    border-radius: 18px;
+    border-radius: var(--card-radius);
     background: var(--ink);
     color: var(--page);
     font-size: 14px;
@@ -424,7 +424,7 @@
   .save-bar button.primary {
     flex: none;
     padding: 10px 16px;
-    border-radius: 12px;
+    border-radius: var(--subcard-radius);
     min-height: 44px;
   }
 

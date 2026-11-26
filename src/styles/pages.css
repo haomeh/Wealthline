@@ -117,13 +117,13 @@
 .debt-method span.on { background: var(--surface); color: var(--ink); font-weight: 700; box-shadow: var(--shadow); }
 .debt-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .debt-field { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--ink-2); }
-.debt-field strong { padding: 10px 12px; border-radius: 12px; border: 1px solid var(--hairline); font-family: var(--num); font-variant-numeric: lining-nums tabular-nums; font-size: 17px; font-weight: 500; color: var(--ink); }
+.debt-field strong { padding: 10px 12px; border-radius: var(--subcard-radius); border: 1px solid var(--hairline); font-family: var(--num); font-variant-numeric: lining-nums tabular-nums; font-size: 17px; font-weight: 500; color: var(--ink); }
 .debt-result { display: flex; flex-direction: column; gap: 12px; padding-left: 24px; border-left: 1px solid var(--hairline); }
 .debt-result .liability-balance { font-size: 34px; }
 .debt-facts { display: grid; grid-template-columns: 1fr auto; gap: 8px; margin: 0; font-size: 13px; }
 .debt-facts dt { color: var(--ink-2); }
 .debt-facts dd { margin: 0; text-align: right; }
-.debt-note { padding: 10px 12px; border-radius: 12px; background: var(--warn-wash); font-size: 12px; line-height: 1.6; }
+.debt-note { padding: 10px 14px; border-radius: var(--notice-radius); background: var(--warn-wash); color: var(--ink); font-size: 0.88rem; line-height: 1.5; }
 .debt-detail .liability-record-details { margin-top: 16px; }
 .debt-share { justify-content: center; gap: 8px; }
 @media (max-width: 899px) {
@@ -173,7 +173,7 @@ button.pin-chip:hover:not(:disabled) { background: var(--ink); opacity: 0.85; }
 /* 自動判斷: the detection report, with a kind choice for each unrecognized file. */
 .statement-entry-report h3 { margin: 0 0 4px; font-size: 15px; }
 .statement-entry-report ul { list-style: none; padding: 0; margin: 12px 0; display: grid; gap: 10px; }
-.statement-entry-report li { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 12px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); font-size: .85rem; }
+.statement-entry-report li { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 12px; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--subcard-radius); background: var(--surface); font-size: .85rem; }
 .statement-entry-report li > span { flex: 1 1 260px; min-width: 0; overflow-wrap: anywhere; }
 .statement-entry-report li .field { margin: 0; flex: 0 1 220px; }
 .statement-entry-report .row { flex-wrap: wrap; gap: 8px; }
@@ -272,7 +272,7 @@ button.pin-chip:hover:not(:disabled) { background: var(--ink); opacity: 0.85; }
 .coverage-month-meta { margin-left: auto; }
 .coverage-month-body { padding: 4px 0 16px 20px; display: flex; flex-direction: column; gap: 14px; }
 .coverage-groups { display: grid; gap: 10px; }
-.coverage-group { padding: 10px 12px; border-radius: 12px; border: 1px solid var(--hairline); background: var(--surface-2); }
+.coverage-group { padding: 10px 12px; border-radius: var(--subcard-radius); border: 1px solid var(--hairline); background: var(--surface-2); }
 .coverage-group-critical { background: var(--critical-wash); border-color: transparent; }
 .coverage-group-warn { background: var(--warn-wash); border-color: transparent; }
 .coverage-group h4 { margin: 0 0 8px; font-size: 13px; font-weight: 700; }
@@ -285,7 +285,7 @@ button.pin-chip:hover:not(:disabled) { background: var(--ink); opacity: 0.85; }
 .coverage-nodes-section { display: flex; flex-direction: column; gap: 8px; }
 .coverage-nodes-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px; }
 .coverage-node-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
-.coverage-node { padding: 10px 12px; border: 1px solid var(--hairline); border-radius: 12px; background: var(--surface); display: flex; flex-direction: column; gap: 6px; }
+.coverage-node { padding: 10px 12px; border: 1px solid var(--hairline); border-radius: var(--subcard-radius); background: var(--surface); display: flex; flex-direction: column; gap: 6px; }
 .coverage-node.has-zero { border-color: color-mix(in srgb, var(--critical) 35%, var(--hairline)); }
 .coverage-node-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 6px 12px; }
 .coverage-node-title { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; }

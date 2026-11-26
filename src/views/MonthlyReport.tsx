@@ -58,8 +58,8 @@ export function MonthlyReport({data,month,today,readiness,dirty,busy,sessionIden
   <div className="row"><h2>{report?.month??month} 每月報表</h2><button onClick={onClose}>{current?.snapshot?'離開快照，查看目前收支資料':'返回收支明細'}</button></div>
   <p>{current?.snapshot?'原始 JSON 快照 · 唯讀，不受目前資料變更影響':dirty?'目前資料預覽 · 包含未儲存修改；匯出前請儲存':'目前資料預覽 · 匯出使用已儲存版本'}</p>
   <div className="row"><button disabled={working||busy||readiness!=='ready'} onClick={()=>void generate()}>產生目前資料預覽</button><button disabled={working||busy||dirty||readiness!=='ready'||!captureReport} onClick={()=>void generate('json')}>匯出 JSON</button><button disabled={working||busy||dirty||readiness!=='ready'||!captureReport} onClick={()=>void generate('csv')}>匯出 CSV</button><label>開啟 JSON 快照<FileInput aria-label="開啟 JSON 快照" accept=".json,application/json" disabled={working} onChange={e=>{const file=e.target.files?.[0];e.target.value='';if(file)void open(file)}}/></label></div>
-  {readiness!=='ready'&&<p role="status">目前明細尚未完整載入，無法產生完整報表；仍可開啟既有快照。</p>}
-  {working&&<p role="status">正在驗證報表…</p>}{error&&<p role="alert">{error}</p>}
+  {readiness!=='ready'&&<p className="notice" role="status">目前明細尚未完整載入，無法產生完整報表；仍可開啟既有快照。</p>}
+  {working&&<p className="notice" role="status">正在驗證報表…</p>}{error&&<p className="banner error" role="alert">{error}</p>}
   {report&&<><h3>{reviewLabel}</h3><p>政策基準日 {report.asOfDate} · 產生時間 {report.generatedAt} · 資料版本 {report.sourceDataVersion} · 政策 {report.policyVersion}</p><p className="report-fingerprint">內容指紋 {report.fingerprint}</p>
    {monthlyReportWarnings(report).map(w=><p key={w} className="notice">{w}</p>)}
    {report.review.record?.confirmations.map(c=><p key={JSON.stringify(c.source)}>{c.source.kind==='card'?c.source.card:report.bankLabels[c.source.accountId]??`已移除帳戶 ${c.source.accountId}`}：{c.decision==='no-activity'?'人工確認無活動':'人工核對'}{c.exceptionNote?` · ${c.exceptionNote}`:''}</p>)}

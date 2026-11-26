@@ -25,7 +25,7 @@
 .bank-help { min-width: 0; margin: 10px 0; font-size: .82rem; color: var(--ink-2); }
 .bank-help > summary { cursor: pointer; min-height: 32px; padding: 5px 0; }
 .bank-help p + p { margin-top: 8px; }
-.bank-import-report { margin: 18px 0; padding: 12px 14px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-2); min-width: 0; }
+.bank-import-report { margin: 18px 0; padding: 12px 14px; border: 1px solid var(--border); border-radius: var(--subcard-radius); background: var(--surface-2); min-width: 0; }
 .bank-import-report > summary { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 4px 12px; cursor: pointer; min-height: 32px; font-size: .85rem; }
 .bank-import-report > summary::before { content: '▸'; }
 .bank-import-report[open] > summary::before { content: '▾'; }
@@ -36,7 +36,7 @@
 .bank-section-head { display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 4px 12px; }
 .bank-section-head h3 { margin: 0; min-width: 0; overflow-wrap: anywhere; }
 .bank-section-note { margin-top: 8px; font-size: .82rem; color: var(--ink-2); }
-.bank-section-warning { padding: 10px 12px; border-left-color: var(--accent); border-radius: 0 8px 8px 0; background: var(--accent-wash); font-size: .85rem; }
+.bank-section-warning { padding: 10px 14px; border-left: 3px solid var(--accent); border-radius: var(--notice-radius); background: var(--warn-wash); color: var(--ink); font-size: 0.88rem; line-height: 1.5; }
 .bank-section-warning .bank-help { margin-bottom: 0; }
 .bank-account-mapping { margin: 16px 0; }
 .bank-preview-list { border-top: 1px solid var(--border); }

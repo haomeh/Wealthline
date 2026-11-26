@@ -288,7 +288,7 @@ export function QuantityEditor({ data, busy = false, date: initialDate, expected
       {!!periodPreview.conflicts.length && <><details open><summary>需確認的重疊／明確紀錄（{periodPreview.conflicts.length}）</summary><ul>{periodPreview.conflicts.map((message,i)=><li key={i}>{message}</li>)}</ul></details><label><input type="checkbox" checked={confirmed} onChange={e=>setConfirmed(e.target.checked)}/> 我已核對差異，同意依上述優先順序套用；原紀錄保留。</label></>}
     </>}
     {error && <p role="alert" className="banner error">{error}</p>}
-    {busy && <p role="status">背景作業中，請稍後再儲存。</p>}
+    {busy && <p className="notice" role="status">背景作業中，請稍後再儲存。</p>}
     <div className="quantity-actions">
       {step === 0 && <button className="primary" disabled={!account} onClick={() => setStep(1)}>下一步：選標的</button>}
       {step === 1 && <button className="primary" disabled={!selected} onClick={goToQuantity}>下一步：填數量</button>}

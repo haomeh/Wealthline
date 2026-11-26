@@ -337,7 +337,7 @@ dialog.review {
   max-height: calc(100dvh - 64px);
   padding: 28px;
   border: none;
-  border-radius: 28px;
+  border-radius: var(--tile-radius);
   background: var(--surface);
   color: var(--ink);
   box-shadow: 0 30px 80px -20px rgba(30, 20, 12, 0.5);
@@ -359,7 +359,7 @@ dialog.review .changes.review-list ul {
   margin: 0;
   padding: 0;
   border: 1px solid var(--hairline);
-  border-radius: 18px;
+  border-radius: var(--card-radius);
   overflow: hidden;
 }
 
@@ -552,7 +552,7 @@ details.daily .hint {
   .tabs button { padding-left: 10px; padding-right: 10px; white-space: nowrap; }
 }
 
-.loan-projection { min-width: 0; margin: 1rem 0; padding: 1rem; background: var(--surface-2); border: 1px solid var(--hairline); border-radius: 12px; }
+.loan-projection { min-width: 0; margin: 1rem 0; padding: 1rem; background: var(--surface-2); border: 1px solid var(--hairline); border-radius: var(--subcard-radius); }
 .loan-projection h4 { margin: 0 0 .5rem; }
 .loan-projection details { min-width: 0; }
 .loan-schedule { max-width: 100%; overflow-x: auto; }
@@ -562,7 +562,7 @@ details.daily .hint {
 
 .loan-terms { border: 0; padding: 0; margin: 0; min-width: 0; display: grid; gap: 1rem; }
 .liability-form small { overflow-wrap: anywhere; }
-.quantity-editor { margin: 16px 0; padding: 16px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface-2); }
+.quantity-editor { margin: 16px 0; padding: 16px; border: 1px solid var(--border); border-radius: var(--subcard-radius); background: var(--surface-2); }
 .quantity-day { margin-top: 16px; border-top: 1px solid var(--border); padding-top: 12px; }
 .quantity-rows { display: grid; gap: 8px; }
 .quantity-row { min-width: 0; padding: 12px 0; border-bottom: 1px solid var(--hairline); overflow-wrap: anywhere; }
@@ -598,17 +598,17 @@ section.daily .scroll { max-width: 100%; overflow-x: auto; }
 .quantity-selection { padding: 10px; border-radius: 8px; background: var(--surface); }
 .quantity-editor input:not([type="checkbox"]):not([type="radio"]), .quantity-editor select, .quantity-panel > .field select { width: 100%; box-sizing: border-box; }
 .quantity-editor input[type="checkbox"] { width: 18px; height: 18px; min-height: 18px; flex: 0 0 18px; margin: 2px 0 0; }
-.quantity-preview-card { margin: 12px 0; padding: 14px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); display: grid; gap: 10px; }
+.quantity-preview-card { margin: 12px 0; padding: 14px; border: 1px solid var(--border); border-radius: var(--subcard-radius); background: var(--surface); display: grid; gap: 10px; }
 .quantity-preview-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 6px 12px; }
 .quantity-preview-total { font-size: 1.25rem; }
 .quantity-preview-dl { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 6px 16px; margin: 0; font-size: 0.88rem; }
 .quantity-preview-dl dt { color: var(--ink-2); }
 .quantity-preview-dl dd { margin: 0; text-align: right; }
 .period-preview { list-style: none; padding: 0; margin: 12px 0; display: grid; gap: 8px; }
-.period-preview > li { padding: 10px 12px; border: 1px solid var(--hairline); border-radius: 10px; background: var(--surface); display: grid; gap: 6px; }
+.period-preview > li { padding: 10px 12px; border: 1px solid var(--hairline); border-radius: var(--subcard-radius); background: var(--surface); display: grid; gap: 6px; }
 .completion-item-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 4px 10px; }
 .completion-zero-toggle { display: inline-flex; align-items: center; gap: 8px; font-size: 0.84rem; color: var(--ink-2); cursor: pointer; }
-.completion-confirm { display: flex; align-items: flex-start; gap: 10px; margin: 14px 0; padding: 10px 12px; border-radius: 10px; background: var(--warn-wash); font-size: 0.88rem; line-height: 1.5; cursor: pointer; }
+.completion-confirm { display: flex; align-items: flex-start; gap: 10px; margin: 14px 0; padding: 10px 14px; border-radius: var(--notice-radius); background: var(--warn-wash); font-size: 0.88rem; line-height: 1.5; cursor: pointer; }
 .completion-confirm span { min-width: 0; }
 .quantity-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 20px 0 8px; }
 .quantity-panel button, .quantity-panel summary { min-height: 44px; }
@@ -690,7 +690,7 @@ section.daily .scroll { max-width: 100%; overflow-x: auto; }
 
 .history-entry-actions { display: flex; flex-wrap: wrap; gap: 8px; min-width: 0; }
 .history-entry-actions button { white-space: normal; }
-.baseline-account { min-width: 0; margin: 16px 0; padding: 16px; border: 1px solid var(--border); border-radius: 10px; }
+.baseline-account { min-width: 0; margin: 16px 0; padding: 16px; border: 1px solid var(--border); border-radius: var(--subcard-radius); }
 .baseline-account legend { max-width: 100%; overflow-wrap: anywhere; font-weight: 600; }
 .baseline-account .field + .field { margin-top: 16px; }
 .baseline-confirm { display: flex; align-items: flex-start; gap: 10px; margin: 20px 0; line-height: 1.6; }
@@ -735,7 +735,7 @@ button.preview-value:hover, button.preview-value:focus-visible { border-color: v
 .statement-import > ul { overflow-wrap: anywhere; }
 .statement-upload-fields { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); align-items: center; gap: 24px; border: 0; margin: 24px 0; padding: 0; min-width: 0; }
 .statement-upload-fields .field { margin: 0; min-width: 0; }
-.statement-upload { padding: 22px; border: 1px dashed var(--border); border-radius: 10px; background: var(--surface); }
+.statement-upload { padding: 22px; border: 1px dashed var(--border); border-radius: var(--subcard-radius); background: var(--surface); }
 .statement-upload input { width: 100%; min-width: 0; box-sizing: border-box; margin-top: 8px; font-size: .8rem; border: 0; background: transparent; padding: 0; }
 .statement-upload input::file-selector-button { border: 1px solid var(--border); border-radius: 6px; padding: 9px 12px; margin-right: 12px; background: var(--surface); color: var(--text); cursor: pointer; }
 .statement-password input { width: 100%; min-width: 0; box-sizing: border-box; }
@@ -797,7 +797,7 @@ dialog.expense-rule-dialog { max-width: 440px; }
 .cashflow-period-trigger { display: inline-flex; align-items: center; gap: 10px; padding: 0 16px; font-size: 1.25rem; font-weight: 600; border-left: 1px solid var(--border) !important; border-right: 1px solid var(--border) !important; }
 .cashflow-period-trigger span { font-size: .8rem; color: var(--accent); }
 .cashflow-period-trigger[aria-expanded="true"] { background: var(--surface-2); }
-.cashflow-picker { max-width: 440px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 12px; padding: 16px; margin: -8px 0 20px; box-shadow: 0 8px 24px rgb(0 0 0 / .12); }
+.cashflow-picker { max-width: 440px; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--subcard-radius); padding: 16px; margin: -8px 0 20px; box-shadow: 0 8px 24px rgb(0 0 0 / .12); }
 .cashflow-picker-head, .cashflow-picker-year { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
 .cashflow-picker-head { margin-bottom: 8px; }
 .cashflow-picker-head button, .cashflow-picker-year button { border: 0; background: transparent; }

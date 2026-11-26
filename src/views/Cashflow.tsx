@@ -138,7 +138,7 @@ function LiveCashflow({ data, onChange, busy = false, dirty, sessionIdentity, ca
       <div className="row center"><button className="primary" onClick={onImport}>匯入帳單</button></div>
     </section> : <>
       {converting && <p role="status" className="notice">正在換算每月匯率…</p>}
-      {failed && <div role="alert" className="notice"><p>無法完成 TWD 換算：{(!shown && needsFx && error) || bars.error}。未顯示部分合計。</p>{!shown && rawGroups.length > 0 && <CurrencyTotals groups={rawGroups} label={period.label} />}<button onClick={() => { retry(); bars.retry() }}>重試匯率</button></div>}
+      {failed && <div role="alert" className="notice error"><p>無法完成 TWD 換算：{(!shown && needsFx && error) || bars.error}。未顯示部分合計。</p>{!shown && rawGroups.length > 0 && <CurrencyTotals groups={rawGroups} label={period.label} />}<button onClick={() => { retry(); bars.retry() }}>重試匯率</button></div>}
       {!rawGroups.length && <section className="panel cashflow-no-record"><p className="muted">{period.label}無紀錄，不代表收支為零。{shownBars ? '其他月份仍照常顯示。' : ''}</p>
         {period.latestMonth && <button onClick={() => period.showMonth(period.latestMonth!)}>查看 {Number(period.latestMonth.slice(0, 4))} 年 {Number(period.latestMonth.slice(5, 7))} 月</button>}
       </section>}

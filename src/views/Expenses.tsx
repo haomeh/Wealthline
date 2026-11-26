@@ -26,7 +26,7 @@ import { FileInput } from './FileInput'
 export function Expenses({data,onChange,busy,passwordScope,recordId,returnTo,importing:routed,onImporting,onOpenImport,queued,onImported}: {recordId?:string;returnTo?:string;passwordScope?:string;data:WealthData;onChange:(next:WealthData)=>void;busy:boolean;importing?:boolean;onImporting?:(open:boolean)=>void;onOpenImport?:()=>void;queued?:QueuedImport;onImported?:(message:string)=>boolean}) {
  const back = cashflowReturnTo(returnTo??null)
  const returnLink = back && <button type="button" className="link" onClick={()=>navigate(back,{scroll:'preserve',focus:'cashflow-records'})}>返回收支明細</button>
- const missingRecord = recordId && !data.expenses?.some(e=>e.id===recordId) ? <p role="status">找不到指定紀錄，可能已移除。</p> : null
+ const missingRecord = recordId && !data.expenses?.some(e=>e.id===recordId) ? <p className="notice" role="status">找不到指定紀錄，可能已移除。</p> : null
   // The app keeps the open import in the URL; mounted on its own, the page keeps it itself.
   const [opened,setOpened] = useState(false)
   const importing = routed ?? opened, setImporting = onImporting ?? setOpened

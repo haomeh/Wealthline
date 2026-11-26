@@ -30,7 +30,7 @@ export type BankLedgerScope = LedgerScope & {status?:string;onLoadEarlier:()=>vo
 export function BankTransactions({data,onChange,busy,passwordScope,historyReady=true,historyStatus,onLoadHistory,ledger,recordId,returnTo,importing:routed,onImporting,onOpenImport,queued,onImported}: {recordId?:string;returnTo?:string;data:WealthData;onChange:(next:WealthData)=>void;busy:boolean;passwordScope?:string;historyReady?:boolean;historyStatus?:string;onLoadHistory?:()=>void;ledger?:BankLedgerScope;importing?:boolean;onImporting?:(open:boolean)=>void;onOpenImport?:()=>void;queued?:QueuedImport;onImported?:(message:string)=>boolean}) {
  const back = cashflowReturnTo(returnTo??null)
  const returnLink = back && <button type="button" className="link" onClick={()=>navigate(back,{scroll:'preserve',focus:'cashflow-records'})}>返回收支明細</button>
- const missingRecord = recordId && !data.bankTransactions?.some(e=>e.id===recordId) ? <p role="status">找不到指定紀錄，可能已移除。</p> : null
+ const missingRecord = recordId && !data.bankTransactions?.some(e=>e.id===recordId) ? <p className="notice" role="status">找不到指定紀錄，可能已移除。</p> : null
  const focusRoot=useRef<HTMLDivElement>(null)
  useLayoutEffect(()=>{if(recordId)focusRoot.current?.querySelector<HTMLInputElement>('input, select, button')?.focus()},[recordId])
  const latest=useRef<{data:WealthData;busy:boolean;onChange:(next:WealthData)=>void;loadMonth?:(month:string)=>void}>({data,busy,onChange})

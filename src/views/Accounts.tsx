@@ -270,8 +270,8 @@ function ImportPanel({ data, onChange, onDone }: Props & { onDone: () => void })
       </div>
       {preview && <div aria-live="polite">
         <h4>匯入預覽：{preview.result.rows} 列、{preview.result.accounts} 個帳戶</h4>
-        {preview.source !== data && <p role="alert">資料已變更，請重新預覽後再確認。</p>}
-        {preview.result.errors.length > 0 && <div role="alert">
+        {preview.source !== data && <p className="banner warn" role="alert">資料已變更，請重新預覽後再確認。</p>}
+        {preview.result.errors.length > 0 && <div className="banner error" role="alert">
           <p>以下錯誤必須全部修正，尚未套用任何資料：</p>
           <ul>{preview.result.errors.map((e, i) => <li key={i}>{e.line ? `第 ${e.line} 列：` : ''}{e.message}</li>)}</ul>
         </div>}

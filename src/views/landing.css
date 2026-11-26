@@ -204,17 +204,19 @@ div.landing > main {
 }
 
 .landing .signin-box p.signin-message {
-  padding: 12px 14px;
-  border-radius: 14px;
+  padding: 10px 14px;
+  border-radius: var(--notice-radius);
   background: var(--surface-2);
   color: var(--ink);
+  font-size: 0.88rem;
+  line-height: 1.5;
   overflow-wrap: anywhere;
 }
 
 .landing .signin-box p.signin-message.error {
-  background: var(--accent-wash);
-  color: var(--ink);
-  border-left: 3px solid var(--accent);
+  background: var(--critical-wash);
+  color: var(--critical);
+  border-left: 3px solid var(--critical);
 }
 
 /* Hero preview: overview tiles (1c) */

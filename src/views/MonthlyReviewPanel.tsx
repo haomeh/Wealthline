@@ -70,7 +70,7 @@ export function MonthlyReviewPanel(props: MonthlyReviewPanelProps) {
   return <section className="panel monthly-review" aria-label="每月核對">
     <div className="panel-head"><h3>{month} 每月核對</h3><span role="status">{readiness === 'error' ? '明細載入失敗，無法核對' : readiness !== 'ready' ? '明細尚未載入，無法核對' : status}{exceptions > 0 ? ` · 保留 ${exceptions} 筆未分類` : ''}{dirty ? ' · 待儲存' : ''}{busy ? ' · 儲存中' : ''}</span></div>
     <p className="muted small">人工核對只代表你已檢查預期來源；依已匯入紀錄，不代表完整月份。{month > today.slice(0, 7) ? '未來月份不能確認。' : ''}</p>
-    {error && <p role="alert">{error}</p>}
+    {error && <p className="banner error" role="alert">{error}</p>}
     <fieldset disabled={disabled}><legend>預期來源（包含所有幣別）</legend>
       {[...choices.values()].map(source => <label className="review-source-choice" key={reviewSourceKey(source)}><input type="checkbox" checked={expected.has(reviewSourceKey(source))} onChange={() => toggle(source)} />{source.kind === 'card' ? '信用卡' : '銀行'} · {label(source)}</label>)}
       <form onSubmit={e => { e.preventDefault(); if (!disabled && card.trim() && !expected.has(reviewSourceKey({ kind: 'card', card }))) { commit({ ...review, expectedSources: [...review.expectedSources, { kind: 'card', card }] }); setCard('') } }}>

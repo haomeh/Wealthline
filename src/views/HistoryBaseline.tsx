@@ -73,7 +73,7 @@ export function HistoryBaseline({data,busy=false,initialDate='',onApply,onCancel
       <p className="muted small">只沿用數量／餘額。總額快照及部分／未驗證的歷史清單不能作持倉基底。選擇目前持倉時，以今天畫面上的完整清單為來源。</p>
       {source && <>
         <p className="quantity-selection">來源：{source.kind==='current'?'目前持倉 · ':''}{source.date}<br/>{source.accounts.length} 個帳戶 · {source.entries.length} 項數量</p>
-        {source.error ? <p role="alert" className="notice">{source.error}</p> : <>
+        {source.error ? <p role="alert" className="notice error">{source.error}</p> : <>
           <label className="field"><span>回補目的日期</span><input type="date" readOnly={!!initialDate} max={localDate(now)} value={date} onChange={e=>{reset();setComplete(false);setDate(e.target.value)}}/></label>
           <p className="muted small">數量已帶入，只修改不同的項目。填的是目的日「絕對總數量」，不是增減量；當時未持有請填 0，不可留空。</p>
           {source.accounts.map(a=><fieldset className="baseline-account" key={a.id}><legend>{accountLabel({name:a.name,country:source.entries.find(e=>e.accountId===a.id)?.country})}</legend>{source.entries.filter(e=>e.accountId===a.id).map(e=>{

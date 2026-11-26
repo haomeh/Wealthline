@@ -29,6 +29,9 @@
   --warn-wash: #f6ebd0;
   --shadow: 0 1px 2px rgba(60, 40, 20, 0.05), 0 10px 28px -14px rgba(60, 40, 20, 0.16);
   --tile-radius: 24px;
+  --card-radius: 16px;
+  --subcard-radius: 12px;
+  --notice-radius: 10px;
 
   /* Categorical series, fixed order (validated on #fffcf8: adjacent CVD ΔE ≥ 12.0, normal ≥ 20.8). */
   --s1: #c2603a;
@@ -287,19 +290,26 @@ textarea {
 
 .banner {
   padding: 10px 14px;
-  border-radius: 10px;
+  border-radius: var(--notice-radius);
   margin-bottom: 16px;
+  font-size: 0.88rem;
+  line-height: 1.5;
+  word-break: break-word;
 }
 
 .banner.error {
   background: var(--critical-wash);
   color: var(--critical);
-  word-break: break-word;
 }
 
 .banner.warn {
   background: var(--warn-wash);
-  word-break: break-word;
+  color: var(--ink);
+}
+
+.banner.info {
+  background: var(--accent-wash);
+  color: var(--ink);
 }
 
 .total-check-mismatch {
@@ -356,10 +366,23 @@ textarea {
 
 .notice {
   margin-top: 12px;
-  padding: 8px 12px;
-  border-radius: 8px;
+  padding: 10px 14px;
+  border-radius: var(--notice-radius);
   background: var(--warn-wash);
+  color: var(--ink);
   font-size: 0.88rem;
+  line-height: 1.5;
+  word-break: break-word;
+}
+
+.notice.info {
+  background: var(--accent-wash);
+  color: var(--ink);
+}
+
+.notice.error {
+  background: var(--critical-wash);
+  color: var(--critical);
 }
 
 button.google {
