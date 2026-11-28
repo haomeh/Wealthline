@@ -375,3 +375,17 @@ test('summaries counted the old way are counted again when the data is opened, a
   await store.loadDrive(token, model.parseWealthData)
   assert.deepEqual(partReads(again), ['main'])
 })
+
+test('main file is saved compactly and folder lookups are cached within one saveDrive', async () => {
+  installDrive()
+  const data = model.parseWealthData(v13())
+  const state = store.emptyDriveState()
+  await store.saveDrive(token, data, state, NOW)
+  const mainText = drive.dataFile().text
+  assert.equal(mainText.includes('\n'), false)
+  // Creating 5 parts across 2 subfolders caches folder lookups within saveDrive (3 subfolder/root queries for 5 parts + 1 for initial main file = 4, instead of 11).
+  const folderQueries = drive.log.filter((r) => r.method === 'GET' && r.url.includes('folder'))
+  assert.equal(folderQueries.length, 4)
+  const reopened = await openAll()
+  assert.deepEqual(byId(reopened.data), byId(model.parseWealthData({ ...v13(), version: 15 })))
+})

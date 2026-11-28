@@ -23,13 +23,14 @@
 
 import { dataVersion, supportedSplitVersion } from '../dataVersion'
 import type { AccessToken } from './auth'
-import { DriveConflictError, PARTLY_SAVED, RELOAD_NEEDED, assertCurrent, createPart, findDataFile, listParts, parseJson, readFile, saveDataText, updatePart, type DriveVersion, type ListedPart } from './drive'
+import { DriveConflictError, PARTLY_SAVED, RELOAD_NEEDED, assertCurrent, createPart, findDataEntry, listParts, parseJson, readFile, saveDataText, updatePart, type DriveVersion, type ListedPart } from './drive'
+import { getCachedFile, pruneDriveCache, putCachedFile } from './driveCache'
 import { canonicalHash, isPartName, joinData, keptLedger, ledgerPart, mergeCopies, parsePart, partFileName, recordsHash, rowKey, serializePart, splitData, type Part, type PartContent } from '../dataParts'
 import { cashflowMonths, type CashflowMonthTotals } from '../cashflow'
 import { emptySummary, parseSummary, partSummary, rulesOf, type DataSummary, type PartSummary, type Rules } from '../dataSummary'
 import type { Change, Snapshot } from '../history'
 import { newId, type WealthData } from '../model'
-import { DataTooLargeError, assertWritable, byteSize, serializeData } from '../storageLimits'
+import { DataTooLargeError, assertWritable, byteSize, serializeCompactData } from '../storageLimits'
 
 interface StoredFile extends DriveVersion {
   text: string
@@ -67,6 +68,8 @@ export interface DriveState {
   // (MissingPartError). Their summary entries are kept, so the main file still names them and
   // the parts show again once Drive lists them; a save that would write records to one stops.
   skipped?: string[]
+  // Scope for encrypted browser cache in IndexedDB (e.g. google:<sub>).
+  cacheScope?: string
 }
 
 export const emptyDriveState = (): DriveState => ({ datasetId: newId(), split: false, parts: new Map(), summary: emptySummary(), rules: {} })
@@ -171,6 +174,20 @@ async function eachLimited<T, R>(items: T[], task: (item: T) => Promise<R>): Pro
 async function readPart(token: AccessToken, state: DriveState, name: string): Promise<Part> {
   const stored = state.parts.get(name)!
   if (stored.part) return stored.part
+  if (state.cacheScope && stored.md5 && !stored.others?.length) {
+    const cached = await getCachedFile(state.cacheScope, stored.fileId, stored.md5)
+    if (cached) {
+      try {
+        const part = parsePart(cached.text, state.datasetId)
+        if (part.name === name) {
+          state.parts.set(name, { ...stored, etag: cached.etag, text: cached.text, size: byteSize(cached.text), part, hash: recordsHash(name, part.content) })
+          return part
+        }
+      } catch {
+        // Invalid cached payload: fall back to Drive.
+      }
+    }
+  }
   const files = await Promise.all([stored.fileId, ...(stored.others ?? [])].map((id) => readFile(token, id)))
   const copies = files.map((file) => {
     const part = parsePart(file.text, state.datasetId)
@@ -180,6 +197,9 @@ async function readPart(token: AccessToken, state: DriveState, name: string): Pr
   const part = copies.length > 1 ? mergeCopies(copies) : copies[0]
   const [file] = files
   state.parts.set(name, { ...stored, etag: file.etag, text: file.text, size: byteSize(file.text), part, hash: recordsHash(name, part.content) })
+  if (state.cacheScope && stored.md5 && !stored.others?.length) {
+    await putCachedFile(state.cacheScope, stored.fileId, stored.md5, file.etag, file.text)
+  }
   return part
 }
 
@@ -253,15 +273,18 @@ async function refreshSummary(token: AccessToken, state: DriveState): Promise<vo
 
 // Returns null when the user has no data file yet. `parse` validates the data. A part the summary
 // names but Drive does not list stops opening (MissingPartError) unless it is in `skip`.
-export async function loadDrive(token: AccessToken, parse: (raw: unknown) => WealthData, skip: readonly string[] = []): Promise<{ data: WealthData; state: DriveState } | null> {
-  const fileId = await findDataFile(token)
-  if (!fileId) return null
-  const main = await readFile(token, fileId)
+export async function loadDrive(token: AccessToken, parse: (raw: unknown) => WealthData, skip: readonly string[] = [], cacheScope?: string): Promise<{ data: WealthData; state: DriveState } | null> {
+  const entry = await findDataEntry(token)
+  if (!entry) return null
+  if (cacheScope) void pruneDriveCache(cacheScope)
+  const cached = cacheScope && entry.md5 ? await getCachedFile(cacheScope, entry.id, entry.md5) : null
+  const main = cached ? { fileId: entry.id, etag: cached.etag, text: cached.text } : await readFile(token, entry.id)
+  if (!cached && cacheScope && entry.md5) await putCachedFile(cacheScope, entry.id, entry.md5, main.etag, main.text)
   const raw = parseJson(main.text) as Record<string, unknown>
   const datasetId = supportedSplitVersion(raw?.version) && typeof raw.datasetId === 'string' && raw.datasetId ? raw.datasetId : ''
   // An older file, or one without a data set (a restored backup), holds everything itself.
   const rules = rulesFrom(raw)
-  if (!datasetId) return { data: withParts(parse(raw), 'all'), state: { ...emptyDriveState(), main, rules } }
+  if (!datasetId) return { data: withParts(parse(raw), 'all'), state: { ...emptyDriveState(), main, rules, ...(cacheScope && { cacheScope }) } }
   const { summary: stored, ...rest } = raw
   const summary = parseSummary(stored)
   // Every part the summary names must still be there, or a save would create it again without its records.
@@ -271,7 +294,7 @@ export async function loadDrive(token: AccessToken, parse: (raw: unknown) => Wea
   const parts = new Map<string, StoredPart>()
   for (const name of new Set([...listed.keys(), ...Object.keys(summary.parts)])) if (!absent.includes(name)) parts.set(name, pick(name, listed.get(name), summary.parts[name]))
   const data = withParts(parse(joinData(rest, [])), new Set())
-  const state: DriveState = { datasetId, main, split: true, parts, summary, rules, ...(absent.length && { skipped: absent }) }
+  const state: DriveState = { datasetId, main, split: true, parts, summary, rules, ...(absent.length && { skipped: absent }), ...(cacheScope && { cacheScope }) }
   await refreshSummary(token, state)
   return { data, state }
 }
@@ -328,7 +351,7 @@ export function mergeParts(data: WealthData, parts: Part[], parse: (raw: unknown
     if (edited.size) added = added.map((p) => ({ ...p, content: Object.fromEntries(Object.entries(p.content).map(([key, rows]) => [key, rows.filter((row) => !edited.has(rowKey(key as keyof PartContent, row)))])) }))
   }
   // Parsed together with the rest of the data, so the records are checked like at load.
-  const joined = parse(JSON.parse(JSON.stringify(joinData(data as unknown as Record<string, unknown>, added))), 'part')
+  const joined = parse(joinData(data as unknown as Record<string, unknown>, added), 'part')
   const next: WealthData = {
     ...data,
     ...(joined.expenses !== undefined && { expenses: joined.expenses }),
@@ -419,13 +442,13 @@ export async function saveDrive(token: AccessToken, data: WealthData, state: Dri
   if (state.split && state.main) {
     const known = (before.bankTransactionAccounts ?? []) as { id: string }[]
     const added = (data.bankTransactionAccounts ?? []).filter((a) => !known.some((k) => k.id === a.id))
-    if (added.length) accountsText = assertSized(serializeData({ ...before, bankTransactionAccounts: [...known, ...added] }))
+    if (added.length) accountsText = assertSized(serializeCompactData({ ...before, bankTransactionAccounts: [...known, ...added] }))
   }
   // The main file's summary is only known once the parts are written; its size is checked with
   // the longest file id and checksum in their place.
   const estimate: DataSummary = { ...state.summary, parts: { ...state.summary.parts } }
   for (const { part } of writes) estimate.parts[part.name] = { hash: hashes.get(part.name)!, md5: '0'.repeat(32), fileId: '0'.repeat(64), sequence: part.sequence, ...partSummary(part.name, part.content, rules) }
-  assertWritable(serializeData({ ...main, summary: estimate }))
+  assertWritable(serializeCompactData({ ...main, summary: estimate }))
 
   // Another device's save changes the main file: stop before writing over anything it wrote.
   if (state.main) await assertCurrent(token, state.main)
@@ -448,12 +471,14 @@ export async function saveDrive(token: AccessToken, data: WealthData, state: Dri
       })
     }
     // One at a time: creating parts may create their folders, which must not happen twice.
+    const folderCache = new Map<string, string>()
     for (const { part, text } of writes) {
       const { name } = part
       const old = state.parts.get(name)
-      const written = old ? await updatePart(token, { fileId: old.fileId, etag: old.etag! }, text) : await createPart(token, name, partFileName(name), state.datasetId, text)
+      const written = old ? await updatePart(token, { fileId: old.fileId, etag: old.etag! }, text) : await createPart(token, name, partFileName(name), state.datasetId, text, folderCache)
       if (!old) created.push(name)
       state.parts.set(name, { fileId: written.fileId, etag: written.etag, md5: written.md5, text, size: byteSize(text), part, hash: hashes.get(name) })
+      if (state.cacheScope && written.md5) await putCachedFile(state.cacheScope, written.fileId, written.md5, written.etag, text)
       summary.parts[name] = entryFor(state, name, part.content)
       // Back to the text read before this save, or to no records in a file this save created.
       const backPart: Part = old?.part ?? { name, sequence: part.sequence, content: {} }
@@ -467,10 +492,11 @@ export async function saveDrive(token: AccessToken, data: WealthData, state: Dri
     // Changed rules recount every transaction part; missing entries are made.
     await refreshSummary(token, state)
 
-    const mainText = serializeData({ ...main, summary })
+    const mainText = serializeCompactData({ ...main, summary })
     if (state.main?.text !== mainText) {
       const written = await saveDataText(token, mainText, state.main)
       state.main = { ...written, text: mainText }
+      if (state.cacheScope && written.md5) await putCachedFile(state.cacheScope, written.fileId, written.md5, written.etag, mainText)
     }
   } catch (e) {
     // A lost connection leaves the files as written (see the order above). A refused write is

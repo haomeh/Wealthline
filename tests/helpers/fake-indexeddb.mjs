@@ -39,6 +39,28 @@ export function createFakeIndexedDB() {
             return key
           }),
           delete: (key) => write(() => { data.delete(key) }),
+          openCursor: () => {
+            const entries = [...data.entries()]
+            let i = 0
+            const r = { result: null, error: null, onsuccess: null, onerror: null }
+            const step = () => {
+              if (i >= entries.length) {
+                r.result = null
+                r.onsuccess?.()
+                return
+              }
+              const [key, value] = entries[i++]
+              r.result = {
+                key,
+                value,
+                delete: () => { if (mode !== 'readwrite') throw new Error('read-only transaction'); data.delete(key) },
+                continue: () => later(step),
+              }
+              r.onsuccess?.()
+            }
+            jobs.push({ r, apply: () => { later(step); return null } })
+            return r
+          },
         })
         later(() => {
           // A failed request aborts the transaction: undo what it wrote.

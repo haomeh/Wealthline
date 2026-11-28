@@ -26,6 +26,7 @@ export const RELOAD_NEEDED = 'Google Drive 中的資料已由其他裝置更新�
 export interface DriveVersion {
   fileId: string
   etag: string
+  md5?: string | null
 }
 
 // A written part file, with Drive's MD5 checksum of its content (null when Drive does not say).
@@ -34,11 +35,11 @@ export interface PartVersion extends DriveVersion {
 }
 const partVersionOf = (raw: { id?: string; etag?: string; md5Checksum?: string }): PartVersion => ({ ...versionOf(raw), md5: raw.md5Checksum ?? null })
 
-function versionOf(raw: { id?: string; etag?: string }): DriveVersion {
+function versionOf(raw: { id?: string; etag?: string; md5Checksum?: string }): DriveVersion {
   if (!raw.id || !raw.etag || !/^"[^"]+"$/.test(raw.etag)) {
     throw new Error('Drive 未提供有效版本，無法安全儲存。請保留本機修改並重新載入。')
   }
-  return { fileId: raw.id, etag: raw.etag }
+  return { fileId: raw.id, etag: raw.etag, ...(raw.md5Checksum !== undefined && { md5: raw.md5Checksum }) }
 }
 
 async function readVersion(token: AccessToken, fileId: string): Promise<DriveVersion & { headRevisionId: string }> {
@@ -83,14 +84,15 @@ async function driveFetch(token: AccessToken, url: string, init: RequestInit = {
   return res
 }
 
-async function findEntry(token: AccessToken, role: string): Promise<{ id: string; name?: string } | null> {
+async function findEntry(token: AccessToken, role: string): Promise<{ id: string; name?: string; md5?: string | null } | null> {
   const q = `appProperties has { key='${APP_PROP.key}' and value='${role}' } and trashed = false`
-  const url = `${API}?q=${encodeURIComponent(q)}&spaces=drive&fields=files(id,name),nextPageToken&orderBy=createdTime&pageSize=100`
-  const { files, nextPageToken } = (await (await driveFetch(token, url, { cache: 'no-store' })).json()) as { files: { id: string; name?: string }[]; nextPageToken?: string }
+  const url = `${API}?q=${encodeURIComponent(q)}&spaces=drive&fields=files(id,name,md5Checksum),nextPageToken&orderBy=createdTime&pageSize=100`
+  const { files, nextPageToken } = (await (await driveFetch(token, url, { cache: 'no-store' })).json()) as { files: { id: string; name?: string; md5Checksum?: string }[]; nextPageToken?: string }
   if (role === APP_PROP.data && (files.length > 1 || nextPageToken)) {
     throw new DriveConflictError('Drive 中有多個資料檔，已停止讀寫以免選錯版本。請先備份並在 Drive 比對整理；本機修改仍保留。')
   }
-  return files[0] ?? null
+  const first = files[0]
+  return first ? { id: first.id, name: first.name, md5: first.md5Checksum ?? null } : null
 }
 
 const findFile = async (token: AccessToken, role: string) => (await findEntry(token, role))?.id ?? null
@@ -111,9 +113,14 @@ async function renameLegacyFolder(token: AccessToken): Promise<void> {
   }
 }
 
-async function ensureFolder(token: AccessToken, role = APP_PROP.folder, name = FOLDER_NAME, parent?: string): Promise<string> {
+async function ensureFolder(token: AccessToken, role = APP_PROP.folder, name = FOLDER_NAME, parent?: string, cache?: Map<string, string>): Promise<string> {
+  const cached = cache?.get(role)
+  if (cached) return cached
   const existing = await findFile(token, role)
-  if (existing) return existing
+  if (existing) {
+    cache?.set(role, existing)
+    return existing
+  }
   const res = await driveFetch(token, `${API}?fields=id`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -124,7 +131,9 @@ async function ensureFolder(token: AccessToken, role = APP_PROP.folder, name = F
       ...(parent && { parents: [parent] }),
     }),
   })
-  return ((await res.json()) as { id: string }).id
+  const id = ((await res.json()) as { id: string }).id
+  cache?.set(role, id)
+  return id
 }
 
 function multipartBody(metadata: object, content: string): { body: string; contentType: string } {
@@ -154,8 +163,9 @@ export async function readFile(token: AccessToken, fileId: string): Promise<Driv
   return { fileId: version.fileId, etag: version.etag, text }
 }
 
-// The main data file's id, or null when the user has none yet.
+// The main data file's id (or full entry with md5), or null when the user has none yet.
 export const findDataFile = (token: AccessToken) => findFile(token, APP_PROP.data)
+export const findDataEntry = (token: AccessToken) => findEntry(token, APP_PROP.data)
 
 export function parseJson(text: string): unknown {
   try {
@@ -192,10 +202,10 @@ export async function listParts(token: AccessToken, datasetId: string): Promise<
 }
 
 // Creates part file `name` (e.g. ledger-2026-Q4) in its subfolder. Refuses oversized content.
-export async function createPart(token: AccessToken, name: string, fileName: string, datasetId: string, content: string): Promise<PartVersion> {
+export async function createPart(token: AccessToken, name: string, fileName: string, datasetId: string, content: string, folderCache?: Map<string, string>): Promise<PartVersion> {
   assertWritable(content)
   const folder = PART_FOLDERS[name.startsWith('ledger-') ? 'ledger' : 'history']
-  const parent = await ensureFolder(token, folder.role, folder.name, await ensureFolder(token))
+  const parent = await ensureFolder(token, folder.role, folder.name, await ensureFolder(token, APP_PROP.folder, FOLDER_NAME, undefined, folderCache), folderCache)
   const { body, contentType } = multipartBody(
     {
       title: fileName,
@@ -240,7 +250,7 @@ export async function saveDataText(token: AccessToken, content: string, version?
     const migrate = current.name === LEGACY_DATA_FILE_NAME
     const upload = migrate ? multipartBody({ title: DATA_FILE_NAME }, content) : { body: content, contentType: 'application/json' }
     // This condition must be enforced by Drive on the write itself, not a preflight GET.
-    const res = await driveFetch(token, `${UPLOAD}/${version.fileId}?uploadType=${migrate ? 'multipart' : 'media'}&fields=id,etag`, {
+    const res = await driveFetch(token, `${UPLOAD}/${version.fileId}?uploadType=${migrate ? 'multipart' : 'media'}&fields=id,etag,md5Checksum`, {
       method: 'PUT',
       headers: { 'Content-Type': upload.contentType, 'If-Match': version.etag },
       body: upload.body,
@@ -261,7 +271,7 @@ export async function saveDataText(token: AccessToken, content: string, version?
     },
     content,
   )
-  const res = await driveFetch(token, `${UPLOAD}?uploadType=multipart&fields=id,etag`, {
+  const res = await driveFetch(token, `${UPLOAD}?uploadType=multipart&fields=id,etag,md5Checksum`, {
     method: 'POST',
     headers: { 'Content-Type': contentType },
     body,

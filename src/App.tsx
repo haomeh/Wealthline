@@ -179,11 +179,12 @@ export default function App() {
     let file: Awaited<ReturnType<typeof loadDrive>>
     try {
       p = await fetchProfile(t)
+      const cacheScope = `google:${p.sub}`
       setOpening({ step: 'drive', profile: p })
-      file = await loadDrive(t, parseWealthData).catch((e) => {
+      file = await loadDrive(t, parseWealthData, [], cacheScope).catch((e) => {
         // A part file Drive does not list: the user may open without it, nothing is removed.
         if (!(e instanceof MissingPartError) || !confirm(`${e.message}\n\n要先開啟其他資料嗎？找不到的分檔中的紀錄這次不會顯示，主檔仍保留它的記錄，檔案還原後重新載入就會出現。`)) throw e
-        return loadDrive(t, parseWealthData, e.names)
+        return loadDrive(t, parseWealthData, e.names, cacheScope)
       })
     } finally {
       setOpening(null)

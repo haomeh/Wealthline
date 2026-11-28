@@ -10,6 +10,9 @@ export type StorageLevel = 'ok' | 'warn' | 'block'
 // The Drive data file and downloads share this layout, so their sizes match.
 export const serializeData = (data: unknown) => JSON.stringify(data, null, 2)
 
+// Compact layout for Drive/local storage: omits indentation whitespace to keep main files small.
+export const serializeCompactData = (data: unknown) => JSON.stringify(data)
+
 export const byteSize = (text: string) => new TextEncoder().encode(text).length
 
 export const storageLevel = (bytes: number): StorageLevel => (bytes > BLOCK_BYTES ? 'block' : bytes > WARN_BYTES ? 'warn' : 'ok')

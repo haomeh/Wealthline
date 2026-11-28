@@ -136,7 +136,7 @@ function Privacy() {
       </Section>
 
       <Section title="四、資料如何使用">
-        <p>上述資料只用於提供你在畫面上看到的功能：登入、讀寫你的資料檔、計算總資產、負債與淨資產、呈現配置與歷史走勢、整理銀行與信用卡交易及分類收支，以及估算還款。手動儲存與儲存歷史修改時會更新 Drive 檔案；每天首次開啟已有資料的帳號時，也可能自動保存當日快照。我們不會：</p>
+        <p>上述資料只用於提供你在畫面上看到的功能：登入、讀寫你的資料檔、計算總資產、負債與淨資產、呈現配置與歷史走勢、整理銀行與信用卡交易及分類收支，以及估算還款。手動儲存與儲存歷史修改時會更新 Drive 檔案；每天首次開啟已有資料的帳號時，也可能自動保存當日快照。為減少重複下載未變動的 Drive 檔案，Google 模式下也會將主檔與分檔內容以不可匯出的 AES-GCM 金鑰加密後暫存於此瀏覽器的 IndexedDB，並於 30 天後自動過期；共享裝置請清除網站資料。我們不會：</p>
         <ul>
           <li>出售或出租你的 Google 帳號資料及完整財務資料；</li>
           <li>將資料用於廣告、行銷、信用評估或建立使用者檔案；</li>
@@ -319,7 +319,7 @@ function PrivacyEnglish() {
       <p>Google user data is used only to provide the features you see in the app:</p>
       <ul>
         <li>your email, name and picture are shown in the account menu so you know which account is signed in, and your email lets you sign in again with one click;</li>
-        <li>the Drive files are read to calculate assets, debts, net worth, allocation, historical values, categorized bank/card income and consumption, and repayment estimates. Opening the app usually reads only the main file; part files are read when you open a page that needs them. The files are updated when you save changes or historical edits, and may also be updated automatically to record the day’s first snapshot when you open an existing account.</li>
+        <li>the Drive files are read to calculate assets, debts, net worth, allocation, historical values, categorized bank/card income and consumption, and repayment estimates. Opening the app usually reads only the main file; part files are read when you open a page that needs them. To avoid re-downloading unchanged Drive files, main and part contents may also be cached for up to 30 days in this browser’s IndexedDB, encrypted with a non-extractable AES-GCM key per Google account; clear site data on shared devices. The files are updated when you save changes or historical edits, and may also be updated automatically to record the day’s first snapshot when you open an existing account.</li>
       </ul>
       <p>
         Wealthline does not use Google user data for advertising, does not sell it, does not use it for credit or lending decisions, does not build user
